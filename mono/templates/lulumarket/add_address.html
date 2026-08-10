@@ -1,0 +1,1 @@
+{% extends 'lulumarket/base.html' %}{% block title %}Add address | Lulumarket{% endblock %}{% block content %}<section class="hero"><h1>Add a delivery address</h1><form method="post">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Save address</button></form></section>{% endblock %}

@@ -1,0 +1,19 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.secret
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Django/local runtime
+mono/db.sqlite3-journal
+mono/media/
+mono/staticfiles/
+
+# Local tooling
+.vscode/*.log
+
