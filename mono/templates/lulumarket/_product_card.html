@@ -1,1 +1,10 @@
-<article class="product-card">{% if product.image %}<img src="{{ product.image.url }}" alt="{{ product.name }}">{% endif %}<h3><a href="{% url 'product_detail' product.pk %}">{{ product.name }}</a></h3><div class="price">₹{{ product.price }}</div>{% if product.stock_quantity == 0 %}<p class="muted">Out of stock</p>{% else %}<form class="actions" method="post" action="{% url 'add_to_cart' product.pk %}">{% csrf_token %}<input type="hidden" name="quantity" value="1"><button class="button" type="submit">Add to cart</button></form>{% endif %}</article>
+<article class="product-card">
+	<a class="card-link" href="{% url 'product_detail' product.pk %}" aria-label="View {{ product.name }}">
+		{% if product.image %}<img src="{{ product.image.url }}" alt="{{ product.name }}">{% endif %}
+		<h3>{{ product.name }}</h3>
+		<p class="product-description">{{ product.description }}</p>
+		<div class="price">₹{{ product.price }}</div>
+		{% if product.stock_quantity == 0 %}<p class="muted">Out of stock</p>{% endif %}
+	</a>
+	{% if product.stock_quantity > 0 %}<form class="actions" method="post" action="{% url 'add_to_cart' product.pk %}">{% csrf_token %}<input type="hidden" name="quantity" value="1"><button class="button" type="submit">Add to cart</button></form>{% endif %}
+</article>

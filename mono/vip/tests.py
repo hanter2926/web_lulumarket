@@ -40,6 +40,20 @@ class StorefrontFlowTests(TestCase):
 			with self.subTest(path=path):
 				self.assertEqual(self.client.get(path).status_code, 200)
 
+	def test_product_cards_link_to_each_product(self):
+		second = Product.objects.create(
+			name='Second product',
+			description='Another item',
+			price='200.00',
+			category=self.category,
+			stock_quantity=2,
+		)
+		response = self.client.get('/products/')
+		self.assertContains(response, f'href="/product/{self.product.pk}/"')
+		self.assertContains(response, f'href="/product/{second.pk}/"')
+		self.assertContains(response, self.product.description)
+		self.assertContains(response, second.description)
+
 	def test_protected_and_state_changing_routes(self):
 		self.assertEqual(self.client.get('/wishlist/').status_code, 302)
 		self.login()
