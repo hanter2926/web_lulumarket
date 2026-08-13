@@ -1,1 +1,31 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Payment issue | Lulumarket{% endblock %}{% block content %}<section class="hero"><h1>Payment could not be completed</h1><p>Please return to checkout and try again.</p><a class="button" href="{% url 'checkout' %}">Back to checkout</a></section>{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Payment Issue | Lulumarket{% endblock %}
+
+{% block content %}
+
+<section class="hero">
+
+    <div class="container">
+
+        <h1>
+            Payment Could Not Be Completed
+        </h1>
+
+        <p>
+            Your payment could not be completed.
+            Please return to checkout and try again.
+        </p>
+
+        <a
+            class="button"
+            href="{% url 'checkout' %}"
+        >
+            Back to Checkout
+        </a>
+
+    </div>
+
+</section>
+
+{% endblock %}

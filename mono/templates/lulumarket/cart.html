@@ -1,1 +1,115 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Cart | Lulumarket{% endblock %}{% block content %}<div class="section-head"><h1>Your cart</h1></div>{% if user.is_authenticated %}{% for item in cart_items %}<div class="cart-row"><span><a href="{% url 'product_detail' item.product.pk %}">{{ item.product.name }}</a><br><span class="muted">₹{{ item.product.price }} each</span></span><form method="post" action="{% url 'update_cart' item.pk %}">{% csrf_token %}<input type="number" name="quantity" min="1" max="{{ item.product.stock_quantity }}" value="{{ item.quantity }}"><button type="submit">Update</button></form><span class="price">₹{{ item.get_total }}</span><a href="{% url 'remove_from_cart' item.pk %}">Remove</a></div>{% empty %}<p class="muted">Your cart is empty.</p>{% endfor %}<div class="section-head"><strong>Total: ₹{{ total_price }}</strong>{% if cart_items %}<a class="button" href="{% url 'checkout' %}">Checkout</a>{% endif %}</div>{% else %}<p>Please <a href="{% url 'login' %}">log in</a> to use your cart.</p>{% endif %}{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Cart | Lulumarket{% endblock %}
+
+{% block content %}
+
+<div class="section-head">
+    <h1>Your Cart</h1>
+</div>
+
+{% if user.is_authenticated %}
+
+    {% for item in cart_items %}
+
+        <div class="cart-row">
+
+            <div class="cart-product">
+                <span>
+                    <a href="{% url 'product_detail' item.product.pk %}">
+                        {{ item.product.name }}
+                    </a>
+                </span>
+
+                <br>
+
+                <span class="muted">
+                    ₹{{ item.product.price }} each
+                </span>
+            </div>
+
+            <div class="cart-quantity">
+                <form method="post" action="{% url 'update_cart' item.pk %}">
+
+                    {% csrf_token %}
+
+                    <input
+                        type="number"
+                        name="quantity"
+                        min="1"
+                        max="{{ item.product.stock_quantity }}"
+                        value="{{ item.quantity }}"
+                    >
+
+                    <button type="submit">
+                        Update
+                    </button>
+
+                </form>
+            </div>
+
+            <div class="cart-total">
+                <span class="price">
+                    ₹{{ item.get_total }}
+                </span>
+            </div>
+
+            <div class="cart-remove">
+                <a href="{% url 'remove_from_cart' item.pk %}">
+                    Remove
+                </a>
+            </div>
+
+        </div>
+
+    {% empty %}
+
+        <div class="empty-cart">
+            <h2>Your cart is empty</h2>
+
+            <p class="muted">
+                You haven't added any products to your cart yet.
+            </p>
+
+            <a class="button" href="{% url 'home' %}">
+                Continue Shopping
+            </a>
+        </div>
+
+    {% endfor %}
+
+
+    {% if cart_items %}
+
+        <div class="section-head cart-summary">
+
+            <strong>
+                Total: ₹{{ total_price }}
+            </strong>
+
+            <a class="button" href="{% url 'checkout' %}">
+                Checkout
+            </a>
+
+        </div>
+
+    {% endif %}
+
+
+{% else %}
+
+    <div class="login-cart-message">
+
+        <h2>Please log in</h2>
+
+        <p>
+            Please
+            <a href="{% url 'login' %}">log in</a>
+            to use your cart.
+        </p>
+
+    </div>
+
+{% endif %}
+
+{% endblock %}

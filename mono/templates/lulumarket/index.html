@@ -1,1 +1,58 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Lulumarket | Thoughtful goods{% endblock %}{% block content %}<section class="hero"><p class="muted">A considered marketplace</p><h1>Good things, found simply.</h1><p>Explore practical, beautiful products selected for everyday living.</p><a class="button" href="{% url 'products' %}">Browse products</a></section><div class="section-head"><h2>Latest arrivals</h2><a href="{% url 'products' %}">View all</a></div><div class="grid">{% for product in products %}{% include 'lulumarket/_product_card.html' %}{% empty %}<p class="muted">Products will appear here once added in the admin.</p>{% endfor %}</div>{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Lulumarket | Thoughtful Goods{% endblock %}
+
+{% block content %}
+
+<section class="hero">
+
+    <p class="muted">
+        A considered marketplace
+    </p>
+
+    <h1>
+        Good things, found simply.
+    </h1>
+
+    <p>
+        Explore practical, beautiful products selected for
+        everyday living.
+    </p>
+
+    <a class="button" href="{% url 'products' %}">
+        Browse Products
+    </a>
+
+</section>
+
+
+<div class="section-head">
+
+    <h2>
+        Latest Arrivals
+    </h2>
+
+    <a href="{% url 'products' %}">
+        View All
+    </a>
+
+</div>
+
+
+<div class="grid">
+
+    {% for product in products %}
+
+        {% include 'lulumarket/_product_card.html' %}
+
+    {% empty %}
+
+        <p class="muted">
+            Products will appear here once added in the admin.
+        </p>
+
+    {% endfor %}
+
+</div>
+
+{% endblock %}

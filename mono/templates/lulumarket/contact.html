@@ -1,1 +1,37 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Contact | Lulumarket{% endblock %}{% block content %}<section class="hero"><h1>Contact us</h1><p>Have a question about an order or product?</p><form method="post">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Send message</button></form></section>{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Contact | Lulumarket{% endblock %}
+
+{% block content %}
+
+<section class="hero">
+
+    <div class="container">
+
+        <h1>Contact Us</h1>
+
+        <p>
+            Have a question about an order or product?
+            We’re here to help.
+        </p>
+
+        <form method="post">
+
+            {% csrf_token %}
+
+            {{ form.as_p }}
+
+            <button
+                class="button"
+                type="submit"
+            >
+                Send Message
+            </button>
+
+        </form>
+
+    </div>
+
+</section>
+
+{% endblock %}

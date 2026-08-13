@@ -574,7 +574,7 @@ def checkout_view(request):
                 price=item.product.price
             )
 
-    amount_in_paise = int(total_price * 100)
+    amount_in_paise = int(total_price * 100) 
     if payment_method == 'RAZORPAY' and razorpay_client:
         if not order.razorpay_order_id or order.total != total_price:
             try:

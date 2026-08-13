@@ -1,1 +1,51 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Order confirmed | Lulumarket{% endblock %}{% block content %}<section class="hero"><h1>Order confirmed</h1>{% if order %}<p>Your order #{{ order.pk }} has been placed for ₹{{ order.total }}.</p><a class="button" href="{% url 'order_detail' order.pk %}">View order</a>{% else %}<p>Your payment was successful.</p>{% endif %}</section>{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Order Confirmed | Lulumarket{% endblock %}
+
+{% block content %}
+
+<section class="hero">
+
+    <div class="container">
+
+        <h1>
+            Order Confirmed 🎉
+        </h1>
+
+        {% if order %}
+
+            <p>
+                Your order
+                <strong>#{{ order.pk }}</strong>
+                has been placed successfully for
+                <strong>₹{{ order.total }}</strong>.
+            </p>
+
+            <a
+                class="button"
+                href="{% url 'order_detail' order.pk %}"
+            >
+                View Order
+            </a>
+
+        {% else %}
+
+            <p>
+                Your payment was successful.
+                Thank you for shopping with Lulumarket.
+            </p>
+
+            <a
+                class="button"
+                href="{% url 'products' %}"
+            >
+                Continue Shopping
+            </a>
+
+        {% endif %}
+
+    </div>
+
+</section>
+
+{% endblock %}
