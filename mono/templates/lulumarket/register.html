@@ -1,1 +1,50 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Sign up | Lulumarket{% endblock %}{% block content %}<section class="hero"><h1>Create your account</h1><form method="post">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Sign up</button></form></section>{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Sign Up | Lulumarket{% endblock %}
+
+{% block content %}
+
+<section class="hero">
+
+    <div class="container">
+
+        <h1>
+            Create Your Account
+        </h1>
+
+        <p class="muted">
+            Sign up to start shopping with Lulumarket.
+        </p>
+
+
+        <form method="post">
+
+            {% csrf_token %}
+
+            {{ form.as_p }}
+
+            <button
+                class="button"
+                type="submit"
+            >
+                Sign Up
+            </button>
+
+        </form>
+
+
+        <p class="account-link">
+
+            Already have an account?
+
+            <a href="{% url 'login' %}">
+                Log In
+            </a>
+
+        </p>
+
+    </div>
+
+</section>
+
+{% endblock %}

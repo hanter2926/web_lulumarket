@@ -1,1 +1,55 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Search | Lulumarket{% endblock %}{% block content %}<div class="section-head"><h1>Search{% if query %}: {{ query }}{% endif %}</h1></div><div class="grid">{% for product in products %}{% include 'lulumarket/_product_card.html' %}{% empty %}<p class="muted">No matching products.</p>{% endfor %}</div>{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Search | Lulumarket{% endblock %}
+
+{% block content %}
+
+<div class="section-head">
+
+    <h1>
+        Search{% if query %}: {{ query }}{% endif %}
+    </h1>
+
+    <form method="get" action="{% url 'search' %}">
+
+        <input
+            type="search"
+            name="q"
+            value="{{ query }}"
+            placeholder="Search products..."
+            aria-label="Search products"
+        >
+
+        <button
+            class="button"
+            type="submit"
+        >
+            Search
+        </button>
+
+    </form>
+
+</div>
+
+
+<div class="grid">
+
+    {% for product in products %}
+
+        {% include 'lulumarket/_product_card.html' %}
+
+    {% empty %}
+
+        <p class="muted">
+            {% if query %}
+                No matching products found for "{{ query }}".
+            {% else %}
+                Please enter a product name to search.
+            {% endif %}
+        </p>
+
+    {% endfor %}
+
+</div>
+
+{% endblock %}

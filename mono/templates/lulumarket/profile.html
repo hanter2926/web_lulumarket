@@ -1,1 +1,52 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Account | Lulumarket{% endblock %}{% block content %}<section class="hero"><h1>Your account</h1><form method="post">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Save profile</button></form><div class="actions"><a href="{% url 'order_history' %}">Order history</a><a href="{% url 'add_address' %}">Add address</a></div></section>{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Account | Lulumarket{% endblock %}
+
+{% block content %}
+
+<section class="hero">
+
+    <div class="container">
+
+        <h1>
+            Your Account
+        </h1>
+
+        <p class="muted">
+            Manage your profile and account details.
+        </p>
+
+
+        <form method="post">
+
+            {% csrf_token %}
+
+            {{ form.as_p }}
+
+            <button
+                class="button"
+                type="submit"
+            >
+                Save Profile
+            </button>
+
+        </form>
+
+
+        <div class="actions">
+
+            <a href="{% url 'order_history' %}">
+                Order History
+            </a>
+
+            <a href="{% url 'add_address' %}">
+                Add Address
+            </a>
+
+        </div>
+
+    </div>
+
+</section>
+
+{% endblock %}

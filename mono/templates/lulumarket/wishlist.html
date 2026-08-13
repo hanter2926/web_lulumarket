@@ -1,1 +1,68 @@
-{% extends 'lulumarket/base.html' %}{% block title %}Wishlist | Lulumarket{% endblock %}{% block content %}<div class="section-head"><h1>Your wishlist</h1></div><div class="grid">{% for product in wishlist.products.all %}{% include 'lulumarket/_product_card.html' %}<form method="post" action="{% url 'remove_from_wishlist' product.pk %}">{% csrf_token %}<button type="submit">Remove</button></form>{% empty %}<p class="muted">Your wishlist is empty.</p>{% endfor %}</div>{% endblock %}
+{% extends 'lulumarket/base.html' %}
+
+{% block title %}Wishlist | Lulumarket{% endblock %}
+
+{% block content %}
+
+<div class="section-head">
+
+    <h1>
+        Your Wishlist ❤️
+    </h1>
+
+</div>
+
+
+<div class="grid">
+
+    {% for product in wishlist.products.all %}
+
+        <article class="wishlist-item">
+
+            {% include 'lulumarket/_product_card.html' %}
+
+            <form
+                method="post"
+                action="{% url 'remove_from_wishlist' product.pk %}"
+            >
+
+                {% csrf_token %}
+
+                <button
+                    type="submit"
+                    class="button"
+                >
+                    Remove from Wishlist
+                </button>
+
+            </form>
+
+        </article>
+
+    {% empty %}
+
+        <div class="empty-state">
+
+            <h2>
+                Your wishlist is empty
+            </h2>
+
+            <p class="muted">
+                Save your favorite products here and
+                find them easily later.
+            </p>
+
+            <a
+                class="button"
+                href="{% url 'products' %}"
+            >
+                Browse Products
+            </a>
+
+        </div>
+
+    {% endfor %}
+
+</div>
+
+{% endblock %}
