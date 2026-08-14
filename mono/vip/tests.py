@@ -1,9 +1,13 @@
+from io import BytesIO
+
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from PIL import Image
 
 from unittest.mock import patch
 
-from .models import Category, Product, Order, ContactSubmission, Wallet, CoinTransaction
+from .models import Category, Product, Order, ContactSubmission, Wallet, CoinTransaction, SiteSettings
 from . import views
 
 
@@ -53,6 +57,28 @@ class StorefrontFlowTests(TestCase):
 		self.assertContains(response, f'href="/product/{second.pk}/"')
 		self.assertContains(response, self.product.description)
 		self.assertContains(response, second.description)
+
+	def test_navbar_search_form_uses_products_route_and_keeps_q_filter(self):
+		response = self.client.get('/products/?q=test')
+		self.assertContains(response, 'class="nav-search-form"')
+		self.assertContains(response, 'name="q"')
+		self.assertContains(response, 'action="/products/"')
+		self.assertContains(response, 'value="test"')
+		self.assertContains(response, 'Search products')
+
+	def test_site_settings_branding_is_available_in_templates(self):
+		buffer = BytesIO()
+		image = Image.new('RGB', (120, 120), color='orange')
+		image.save(buffer, format='PNG')
+		buffer.seek(0)
+		site_settings = SiteSettings.objects.create(
+			site_name='My Dynamic Shop',
+			logo=SimpleUploadedFile('logo.png', buffer.read(), content_type='image/png'),
+			active=True,
+		)
+		response = self.client.get('/products/')
+		self.assertContains(response, 'My Dynamic Shop')
+		self.assertContains(response, site_settings.logo.url)
 
 	def test_protected_and_state_changing_routes(self):
 		self.assertEqual(self.client.get('/wishlist/').status_code, 302)

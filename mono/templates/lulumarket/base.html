@@ -4,22 +4,88 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Lulumarket{% endblock %}</title>
+  <title>{% block title %}{{ site_setting.site_name|default:'Lulumarket' }}{% endblock %}</title>
+  <meta name="description" content="Lulumarket is a modern e-commerce storefront for everyday essentials and thoughtful goods.">
+  {% if site_setting.favicon %}
+    <link rel="icon" type="image/png" href="{{ site_setting.favicon.url }}">
+  {% else %}
+    <link rel="icon" type="image/svg+xml" href="{% static 'images/default-favicon.svg' %}">
+  {% endif %}
   <link rel="stylesheet" href="{% static 'css/site.css' %}">
 </head>
 <body>
-<header class="site-header"><div class="container nav-wrap">
-  <a class="brand" href="{% url 'home' %}">Lulumarket</a>
-  <nav aria-label="Primary navigation">
-    <a href="{% url 'products' %}">Shop</a><a href="{% url 'about' %}">About</a><a href="{% url 'contact' %}">Contact</a>
-    {% if user.is_authenticated %}<a href="{% url 'wishlist' %}">Wishlist</a><a href="{% url 'profile' %}">Account</a><form method="post" action="{% url 'logout' %}" class="inline-form">{% csrf_token %}<button type="submit">Logout</button></form>{% else %}<a href="{% url 'login' %}">Login</a><a class="button small" href="{% url 'register' %}">Sign up</a>{% endif %}
-    <a class="cart-link" href="{% url 'cart' %}">Cart</a>
-  </nav>
-</div></header>
-<main class="container">
-  {% if messages %}<div class="messages">{% for message in messages %}<div class="message {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
-  {% block content %}{% endblock %}
-</main>
-<footer><div class="container"><span>&copy; {% now 'Y' %} Lulumarket</span><span><a href="{% url 'terms' %}">Terms</a> <a href="{% url 'privacy' %}">Privacy</a> <a href="{% url 'faq' %}">FAQ</a></span></div></footer>
-<script src="{% static 'javascript/site.js' %}"></script>
-</body></html>
+  <header class="site-header">
+    <div class="container nav-wrap">
+      <a class="brand" href="{% url 'home' %}">
+        {% if site_setting.logo %}
+          <img src="{{ site_setting.logo.url }}" alt="{{ site_setting.site_name|default:'Lulumarket' }} logo" class="brand-logo">
+        {% elif site_setting.default_image %}
+          <img src="{{ site_setting.default_image.url }}" alt="{{ site_setting.site_name|default:'Lulumarket' }} logo" class="brand-logo">
+        {% else %}
+          <img src="{% static 'images/default-logo.svg' %}" alt="{{ site_setting.site_name|default:'Lulumarket' }} logo" class="brand-logo">
+        {% endif %}
+        <span>{{ site_setting.site_name|default:'Lulumarket' }}</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="{% url 'products' %}" class="{% if request.resolver_match.url_name == 'products' or request.resolver_match.url_name == 'product_detail' %}active{% endif %}">Shop</a>
+        <a href="{% url 'about' %}" class="{% if request.resolver_match.url_name == 'about' %}active{% endif %}">About</a>
+        <a href="{% url 'contact' %}" class="{% if request.resolver_match.url_name == 'contact' %}active{% endif %}">Contact</a>
+
+        <form method="get" action="{% url 'products' %}" class="nav-search-form" role="search">
+          <input
+            type="search"
+            name="q"
+            value="{{ request.GET.q }}"
+            class="nav-search-input"
+            placeholder="Search products"
+            aria-label="Search products"
+          >
+          <button type="submit" class="nav-search-button" aria-label="Search">Search</button>
+        </form>
+
+        {% if user.is_authenticated %}
+          <a href="{% url 'wishlist' %}" class="{% if request.resolver_match.url_name == 'wishlist' %}active{% endif %}">Wishlist</a>
+          <a href="{% url 'profile' %}" class="{% if request.resolver_match.url_name == 'profile' %}active{% endif %}">Account</a>
+          <form method="post" action="{% url 'logout' %}" class="inline-form">
+            {% csrf_token %}
+            <button type="submit" class="nav-button">Logout</button>
+          </form>
+        {% else %}
+          <a href="{% url 'login' %}" class="{% if request.resolver_match.url_name == 'login' %}active{% endif %}">Login</a>
+          <a class="button button-small" href="{% url 'register' %}">Sign Up</a>
+        {% endif %}
+
+        <a href="{% url 'cart' %}" class="cart-link {% if request.resolver_match.url_name == 'cart' %}active{% endif %}">Cart</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <div class="container">
+      {% if messages %}
+        <div class="messages">
+          {% for message in messages %}
+            <div class="message {{ message.tags }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-wrap">
+      <span>&copy; {% now 'Y' %} {{ site_setting.site_name|default:'Lulumarket' }}</span>
+      <span>
+        <a href="{% url 'terms' %}">Terms</a>
+        <a href="{% url 'privacy' %}">Privacy</a>
+        <a href="{% url 'faq' %}">FAQ</a>
+      </span>
+    </div>
+  </footer>
+
+  <script src="{% static 'javascript/site.js' %}"></script>
+</body>
+</html>

@@ -29,29 +29,6 @@
 
     </h1>
 
-
-    <form
-        method="get"
-        action="{% url 'products' %}"
-    >
-
-        <input
-            type="search"
-            name="q"
-            value="{{ request.GET.q }}"
-            placeholder="Search products"
-            aria-label="Search products"
-        >
-
-        <button
-            class="button"
-            type="submit"
-        >
-            Search
-        </button>
-
-    </form>
-
 </div>
 
 

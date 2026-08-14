@@ -3,6 +3,30 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+class SiteSettings(models.Model):
+    site_name = models.CharField(max_length=120, default='Lulumarket')
+    logo = models.ImageField(upload_to='site/logo/', blank=True, null=True)
+    favicon = models.ImageField(upload_to='site/favicon/', blank=True, null=True)
+    default_image = models.ImageField(upload_to='site/default/', blank=True, null=True)
+    hero_banner = models.ImageField(upload_to='site/hero/', blank=True, null=True)
+    hero_background = models.ImageField(upload_to='site/backgrounds/', blank=True, null=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Site settings'
+        verbose_name_plural = 'Site settings'
+        ordering = ['-id']
+
+    def __str__(self):
+        return self.site_name or 'Lulumarket'
+
+    @classmethod
+    def get_active(cls):
+        return cls.objects.filter(active=True).first() or cls(site_name='Lulumarket')
+
+
 class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField()
@@ -14,6 +38,7 @@ class Product(models.Model):
     size = models.ForeignKey('Size', on_delete=models.CASCADE, null=True, blank=True)
     image = models.ImageField(upload_to='products/')
     stock_quantity = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
@@ -22,6 +47,10 @@ class Product(models.Model):
 class Category(models.Model):
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True, null=True, blank=True)
+    icon = models.ImageField(upload_to='categories/icons/', blank=True, null=True)
+    image = models.ImageField(upload_to='categories/images/', blank=True, null=True)
+    description = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name

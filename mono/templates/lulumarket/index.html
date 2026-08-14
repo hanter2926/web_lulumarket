@@ -4,55 +4,51 @@
 
 {% block content %}
 
-<section class="hero">
+<section class="hero hero-split">
+    <div>
+        <span class="eyebrow">A considered marketplace</span>
+        <h1>Good things, found simply.</h1>
+        <p>
+            Explore practical, beautiful products selected for everyday living.
+            Thoughtful essentials, modern finds, and everyday upgrades in one calm shopping experience.
+        </p>
+        <div class="hero-actions">
+            <a class="button" href="{% url 'products' %}">Browse Products</a>
+            <a class="button button-secondary" href="{% url 'about' %}">Learn More</a>
+        </div>
+    </div>
 
-    <p class="muted">
-        A considered marketplace
-    </p>
-
-    <h1>
-        Good things, found simply.
-    </h1>
-
-    <p>
-        Explore practical, beautiful products selected for
-        everyday living.
-    </p>
-
-    <a class="button" href="{% url 'products' %}">
-        Browse Products
-    </a>
-
+    <div class="hero-panel">
+        <div class="info-grid">
+            <div class="info-card">
+                <h3>New arrivals</h3>
+                <p>Fresh picks curated for everyday living.</p>
+            </div>
+            <div class="info-card">
+                <h3>Fast checkout</h3>
+                <p>Simple cart flow with secure online payments.</p>
+            </div>
+            <div class="info-card">
+                <h3>Trusted quality</h3>
+                <p>Products chosen for utility, comfort, and style.</p>
+            </div>
+        </div>
+    </div>
 </section>
 
+<section class="section">
+    <div class="section-header">
+        <h2>Latest Arrivals</h2>
+        <a class="section-link" href="{% url 'products' %}">View All</a>
+    </div>
 
-<div class="section-head">
-
-    <h2>
-        Latest Arrivals
-    </h2>
-
-    <a href="{% url 'products' %}">
-        View All
-    </a>
-
-</div>
-
-
-<div class="grid">
-
-    {% for product in products %}
-
-        {% include 'lulumarket/_product_card.html' %}
-
-    {% empty %}
-
-        <p class="muted">
-            Products will appear here once added in the admin.
-        </p>
-
-    {% endfor %}
-
-</div>
+    <div class="grid">
+        {% for product in products %}
+            {% include 'lulumarket/_product_card.html' %}
+        {% empty %}
+            <p class="muted">Products will appear here once added in the admin.</p>
+        {% endfor %}
+    </div>
+</section>
 
 {% endblock %}
