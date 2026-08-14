@@ -4,7 +4,7 @@ from django.utils.html import format_html
 from .models import (
     Product, Category, SubCategory, Color, Brand, Size, Order, OrderItem,
     Cart, CartItem, ProductImage, Profile, Wishlist, Coupon, Address, Wallet,
-    CoinTransaction, ContactSubmission, SiteSettings,
+    CoinTransaction, ContactSubmission, SiteSettings, Slider,
 )
 
 
@@ -65,6 +65,21 @@ class CategoryAdmin(admin.ModelAdmin):
     def image_preview(self, obj):
         if obj.image:
             return format_html('<img src="{}" style="max-height:60px; max-width:100px; object-fit:cover;" />', obj.image.url)
+        return '—'
+    image_preview.short_description = 'Image preview'
+
+
+@admin.register(Slider)
+class SliderAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'is_active', 'display_order', 'auto_slide_seconds', 'image_preview')
+    list_filter = ('is_active',)
+    search_fields = ('title', 'subtitle', 'description')
+    readonly_fields = ('image_preview',)
+    ordering = ('display_order',)
+
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" style="max-height:80px; max-width:200px; object-fit:cover;" />', obj.image.url)
         return '—'
     image_preview.short_description = 'Image preview'
 

@@ -17,7 +17,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 # Local imports
-from .models import Product, Category, SubCategory, Color, Brand, Size, CartItem, Order, Wishlist, Address, Coupon, Wallet
+from .models import Product, Category, SubCategory, Color, Brand, Size, CartItem, Order, Wishlist, Address, Coupon, Wallet, Slider
 from .forms import UserRegistrationForm, UserLoginForm, UserProfileForm, AddressForm, ContactSubmissionForm
 from .utlis import send_order_confirmation, calculate_and_add_coins, spend_coins_for_order
 
@@ -68,8 +68,9 @@ def _wallet_coins(user):
 
 def index(request):
     """Home page view"""
-    products = Product.objects.all().order_by('-id')[:8] 
-    context = {'products': products}
+    products = Product.objects.all().order_by('-id')[:8]
+    slides = Slider.objects.filter(is_active=True).order_by('display_order')
+    context = {'products': products, 'slides': slides}
     return render(request, 'lulumarket/index.html', context)
 
 def about(request):

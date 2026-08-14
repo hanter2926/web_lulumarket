@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.validators import RegexValidator
 
 
 class SiteSettings(models.Model):
@@ -25,6 +26,34 @@ class SiteSettings(models.Model):
     @classmethod
     def get_active(cls):
         return cls.objects.filter(active=True).first() or cls(site_name='Lulumarket')
+
+
+class Slider(models.Model):
+    """Homepage slider/banner managed from admin."""
+    SIZE_VALIDATOR = RegexValidator(r'^(auto|\d+(px|%))$', 'Enter a valid size like "100%", "450px" or "auto"')
+
+    title = models.CharField(max_length=200, blank=True)
+    subtitle = models.CharField(max_length=200, blank=True)
+    description = models.TextField(blank=True)
+    image = models.ImageField(upload_to='sliders/', blank=True, null=True)
+    button_text = models.CharField(max_length=80, blank=True)
+    button_url = models.URLField(blank=True)
+    width = models.CharField(max_length=10, default='100%', validators=[SIZE_VALIDATOR])
+    height = models.CharField(max_length=10, default='450px', validators=[SIZE_VALIDATOR])
+    display_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    auto_slide_seconds = models.PositiveIntegerField(default=5, help_text='Seconds before auto-advancing to next slide')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', '-created_at']
+        verbose_name = 'Slider'
+        verbose_name_plural = 'Sliders'
+
+    def __str__(self):
+        return self.title or f"Slide {self.pk}"
 
 
 class Product(models.Model):

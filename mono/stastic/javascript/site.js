@@ -4,4 +4,8 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!window.confirm(element.dataset.confirm)) event.preventDefault();
     });
   });
+  // Load carousel script if present
+  var script = document.createElement('script');
+  script.src = '/stastic/javascript/carousel.js';
+  document.body.appendChild(script);
 });

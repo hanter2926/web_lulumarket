@@ -8,41 +8,26 @@
 
     <div class="container">
 
-        <h1>
-            Your Account
-        </h1>
+        <div class="profile-card">
+            <h1 class="profile-title">Your Account</h1>
+            <p class="muted profile-subtitle">Manage your profile and account details.</p>
 
-        <p class="muted">
-            Manage your profile and account details.
-        </p>
+            <form method="post" novalidate>
+                {% csrf_token %}
 
+                <div class="form-body">
+                    {{ form.as_p }}
+                </div>
 
-        <form method="post">
+                <div class="form-actions">
+                    <button class="button" type="submit">Save Profile</button>
+                </div>
+            </form>
 
-            {% csrf_token %}
-
-            {{ form.as_p }}
-
-            <button
-                class="button"
-                type="submit"
-            >
-                Save Profile
-            </button>
-
-        </form>
-
-
-        <div class="actions">
-
-            <a href="{% url 'order_history' %}">
-                Order History
-            </a>
-
-            <a href="{% url 'add_address' %}">
-                Add Address
-            </a>
-
+            <div class="actions actions-centered">
+                <a href="{% url 'order_history' %}">Order History</a>
+                <a href="{% url 'add_address' %}">Add Address</a>
+            </div>
         </div>
 
     </div>
