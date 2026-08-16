@@ -1,3 +1,7 @@
 /* Styles for register page */
 
-/* Add page-specific CSS rules here */
+.auth-card { padding: 20px; max-width: 620px; margin: 18px auto; }
+.auth-card h1 { font-size: 1.4rem; }
+
+@media (min-width: 520px) { .auth-card { padding: 28px; } }
+

@@ -375,6 +375,8 @@ def register(request):
         if form.is_valid():
             user = form.save()
             login(request, user)
+            # Flag the session to show the account-created popup on the next page load
+            request.session['show_account_popup'] = True
             messages.success(request, "Registration successful. Welcome!")
             return redirect('home')
     else:

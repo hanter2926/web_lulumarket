@@ -1,4 +1,9 @@
 {% extends 'lulumarket/base.html' %}
+{% load static %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/payment_success.css' %}">
+{% endblock %}
 
 {% block title %}Order Confirmed | Lulumarket{% endblock %}
 

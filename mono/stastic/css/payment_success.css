@@ -1,3 +1,5 @@
 /* Styles for payment_success page */
 
-/* Add page-specific CSS rules here */
+.payment-success { text-align:center; padding: 22px; }
+.payment-success .button { margin-top: 12px; }
+

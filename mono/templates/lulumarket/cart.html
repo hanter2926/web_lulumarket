@@ -1,4 +1,9 @@
 {% extends 'lulumarket/base.html' %}
+{% load static %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/cart.css' %}">
+{% endblock %}
 
 {% block title %}Cart | Lulumarket{% endblock %}
 

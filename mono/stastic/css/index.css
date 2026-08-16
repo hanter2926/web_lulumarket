@@ -1,3 +1,13 @@
 /* Styles for index page */
 
-/* Add page-specific CSS rules here */
+.hero { padding: 18px 0; }
+.carousel-wrapper { border-radius: 14px; overflow: hidden; }
+.carousel-caption h2 { font-size: clamp(1.2rem, 3vw, 2rem); }
+
+.latest-grid { margin-top: 18px; }
+
+@media (min-width: 768px) {
+	.hero { padding: 36px 0; }
+	.hero-split { grid-template-columns: 1.2fr 0.8fr; }
+}
+

@@ -1,3 +1,12 @@
 /* Styles for products page */
 
-/* Add page-specific CSS rules here */
+.grid { gap: 18px; }
+.product-card { transition: transform .22s ease, box-shadow .22s ease; }
+.product-card:hover { transform: translateY(-6px); }
+
+.product-card h3 { font-size: 1.05rem; }
+
+@media (min-width: 992px) {
+	.grid { grid-template-columns: repeat(4, 1fr); }
+}
+

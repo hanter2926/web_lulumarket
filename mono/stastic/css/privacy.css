@@ -1,3 +1,5 @@
 /* Styles for privacy page */
 
-/* Add page-specific CSS rules here */
+.page-shell { padding: 18px; }
+.page-shell h1 { margin-bottom: 12px; }
+

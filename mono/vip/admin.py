@@ -6,6 +6,7 @@ from .models import (
     Cart, CartItem, ProductImage, Profile, Wishlist, Coupon, Address, Wallet,
     CoinTransaction, ContactSubmission, SiteSettings, Slider,
 )
+from .models import AccountPopup
 
 
 @admin.register(SiteSettings)
@@ -114,6 +115,20 @@ class ProductAdmin(admin.ModelAdmin):
     def image_preview(self, obj):
         if obj.image:
             return format_html('<img src="{}" style="max-height:80px; max-width:120px; object-fit:cover;" />', obj.image.url)
+        return '—'
+    image_preview.short_description = 'Image preview'
+
+
+@admin.register(AccountPopup)
+class AccountPopupAdmin(admin.ModelAdmin):
+    list_display = ('title', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
+    readonly_fields = ('image_preview',)
+    fields = ('title', 'message', 'image', 'image_preview', 'button_text', 'button_url', 'is_active')
+
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html('<img src="{}" style="max-height:120px; max-width:240px; object-fit:cover;" />', obj.image.url)
         return '—'
     image_preview.short_description = 'Image preview'
 

@@ -1,3 +1,9 @@
 /* Styles for orders page */
 
-/* Add page-specific CSS rules here */
+.panel { padding: 16px; transition: transform .22s ease, box-shadow .22s ease; }
+.panel h2 { margin: 0 0 6px; }
+.panel:hover { transform: translateY(-4px); }
+
+.orders-grid { display:grid; gap:12px; }
+@media (min-width:720px) { .orders-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+

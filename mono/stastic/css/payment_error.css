@@ -1,3 +1,6 @@
 /* Styles for payment_error page */
 
-/* Add page-specific CSS rules here */
+.hero { padding: 28px 0; }
+.button { min-width: 160px; }
+.payment-error { color: #7a3b2c; }
+

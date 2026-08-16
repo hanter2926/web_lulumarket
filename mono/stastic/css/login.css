@@ -1,3 +1,11 @@
 /* Styles for login page */
 
-/* Add page-specific CSS rules here */
+.auth-card { padding: 22px; max-width: 520px; margin: 18px auto; }
+.auth-card h1 { font-size: 1.6rem; }
+.form-stack { display: grid; gap:12px; }
+.form-stack input[type="text"], .form-stack input[type="password"] { padding: 12px; border-radius: 10px; }
+
+@media (min-width: 520px) {
+	.auth-card { padding: 28px; }
+}
+

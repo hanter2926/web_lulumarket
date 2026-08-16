@@ -275,3 +275,21 @@ class CoinTransaction(models.Model):
 
     def __str__(self):
         return f"{self.transaction_type}: {self.coins} Coins"
+
+
+class AccountPopup(models.Model):
+    title = models.CharField(max_length=200)
+    message = models.TextField(blank=True)
+    image = models.ImageField(upload_to='popups/', blank=True, null=True)
+    button_text = models.CharField(max_length=80, blank=True)
+    button_url = models.URLField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Account Popup'
+        verbose_name_plural = 'Account Popups'
+
+    def __str__(self):
+        return self.title or f"Popup {self.pk}"

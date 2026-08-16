@@ -1,3 +1,10 @@
 /* Styles for order_detail page */
 
-/* Add page-specific CSS rules here */
+.order-items { display: grid; gap: 12px; margin-top: 12px; }
+.order-item { padding: 12px; border-radius: 12px; background: var(--panel); border:1px solid var(--line); }
+.order-total { margin-top: 18px; text-align:right; }
+
+@media (min-width: 720px) {
+	.order-items { grid-template-columns: 1fr 380px; }
+}
+

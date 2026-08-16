@@ -1,3 +1,21 @@
 /* Styles for cart page */
 
-/* Add page-specific CSS rules here */
+/* Mobile-first cart layout */
+.cart-row { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: center; padding: 12px; border-radius: 12px; }
+.cart-product a { font-weight: 700; color: var(--forest-900); }
+.cart-quantity input { width: 100%; max-width: 140px; }
+.cart-total .price { font-weight: 800; font-size: 1.05rem; }
+.cart-remove a { color: var(--accent); }
+
+.empty-cart { padding: 28px; text-align:center; }
+
+/* larger screens: side-by-side rows */
+@media (min-width: 720px) {
+	.cart-row { grid-template-columns: 1.6fr 0.8fr 0.6fr 0.4fr; }
+	.cart-quantity input { width: 88px; }
+}
+
+/* small polish animations */
+.cart-row { transition: transform .22s ease, box-shadow .22s ease; }
+.cart-row:hover { transform: translateY(-3px); box-shadow: 0 16px 32px rgba(12,20,17,0.06); }
+
