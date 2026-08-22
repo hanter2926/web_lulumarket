@@ -1,0 +1,53 @@
+{% extends 'base/base.html' %}
+
+{% block title %}Login / Register{% endblock %}
+
+{% block content %}
+<div style="max-width: 980px; margin: 40px auto; display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <div style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
+        <h2>Login</h2>
+        {% if error and active_tab == 'login' %}
+            <p style="color: #b91c1c;">{{ error }}</p>
+        {% endif %}
+        <form method="post" action="/accounts/login/">
+            {% csrf_token %}
+            <div style="margin-bottom: 14px;">
+                <label for="login_email">Email</label><br>
+                <input id="login_email" name="email" type="email" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="login_password">Password</label><br>
+                <input id="login_password" name="password" type="password" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <button type="submit" style="width: 100%; padding: 11px; background: #111827; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Login</button>
+        </form>
+    </div>
+
+    <div style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
+        <h2>Register / Signup</h2>
+        {% if error and active_tab == 'signup' %}
+            <p style="color: #b91c1c;">{{ error }}</p>
+        {% endif %}
+        <form method="post" action="/accounts/register/">
+            {% csrf_token %}
+            <div style="margin-bottom: 14px;">
+                <label for="full_name">Full Name</label><br>
+                <input id="full_name" name="full_name" type="text" style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="signup_email">Email</label><br>
+                <input id="signup_email" name="email" type="email" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="signup_phone">Phone Number</label><br>
+                <input id="signup_phone" name="phone" type="tel" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="signup_password">Password</label><br>
+                <input id="signup_password" name="password" type="password" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <button type="submit" style="width: 100%; padding: 11px; background: #2563eb; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Create Account</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

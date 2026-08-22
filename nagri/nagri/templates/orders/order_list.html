@@ -1,0 +1,64 @@
+{% extends 'base/base.html' %}
+
+{% block title %}Orders{% endblock %}
+
+{% block content %}
+<h2>Orders</h2>
+<p>Order listing page.</p>
+
+<button id="rzp-checkout-btn" type="button">Pay with Razorpay</button>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+  document.getElementById('rzp-checkout-btn').addEventListener('click', function () {
+    fetch('/orders/orders/create/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token }}'
+      },
+      body: JSON.stringify({
+        product_id: 1,
+        quantity: 1
+      })
+    })
+      .then(response => response.json())
+      .then(data => {
+        const options = {
+          key: data.key,
+          amount: data.amount,
+          currency: data.currency,
+          name: data.name,
+          description: data.description,
+          order_id: data.razorpay_order_id,
+          handler: function (response) {
+            fetch('/orders/verify-payment/', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+              },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            })
+              .then(res => res.json())
+              .then(result => {
+                alert(result.detail || 'Payment verified successfully.');
+              })
+              .catch(() => alert('Payment verification request failed.'));
+          },
+          theme: {
+            color: '#3399cc'
+          }
+        };
+
+        const razorpay = new Razorpay(options);
+        razorpay.open();
+      })
+      .catch(() => alert('Could not create Razorpay order.'));
+  });
+</script>
+{% endblock %}

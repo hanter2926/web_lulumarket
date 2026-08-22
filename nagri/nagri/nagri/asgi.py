@@ -1,16 +1,22 @@
-"""
-ASGI config for nagri project.
-
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
-"""
-
 import os
 
+from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.auth import AuthMiddlewareStack
 from django.core.asgi import get_asgi_application
+from django.urls import path
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'nagri.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "nagri.settings")
 
-application = get_asgi_application()
+# Import websocket app routes here when you add consumers.
+# Example: from chat.consumers import ChatConsumer
+
+application = ProtocolTypeRouter(
+    {
+        "http": get_asgi_application(),
+        "websocket": AuthMiddlewareStack(
+            URLRouter([
+                # path("ws/chat/", ChatConsumer.as_asgi()),
+            ])
+        ),
+    }
+)

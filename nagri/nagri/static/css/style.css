@@ -1,0 +1,32 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #f5f5f5;
+    color: #1f1f1f;
+}
+
+header {
+    background: #1f2937;
+    padding: 1rem 2rem;
+}
+
+nav {
+    display: flex;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+}
+
+nav a {
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+main {
+    padding: 2rem;
+}
+
+h1, h2 {
+    color: #111827;
+}

@@ -1,0 +1,93 @@
+from django.db.models import Q
+from rest_framework import permissions, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+from .models import Category, Product, SubCategory
+from .serializers import CategorySerializer, ProductSerializer, SubCategorySerializer
+
+
+class CategoryViewSet(viewsets.ModelViewSet):
+    queryset = Category.objects.all().order_by("id")
+    serializer_class = CategorySerializer
+    permission_classes = [permissions.AllowAny]
+
+    @action(detail=True, methods=["get"])
+    def subcategories(self, request, pk=None):
+        category = self.get_object()
+        subcategories = SubCategory.objects.filter(category=category)
+        serializer = SubCategorySerializer(subcategories, many=True)
+        return Response(serializer.data)
+
+
+class SubCategoryViewSet(viewsets.ModelViewSet):
+    queryset = SubCategory.objects.select_related("category").all().order_by("id")
+    serializer_class = SubCategorySerializer
+    permission_classes = [permissions.AllowAny]
+
+
+class ProductViewSet(viewsets.ModelViewSet):
+    queryset = Product.objects.select_related("category", "subcategory").all().order_by("id")
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = Product.objects.select_related("category", "subcategory").all()
+
+        category = self.request.query_params.get("category")
+        if category:
+            queryset = queryset.filter(category_id=category)
+
+        subcategory = self.request.query_params.get("subcategory")
+        if subcategory:
+            queryset = queryset.filter(subcategory_id=subcategory)
+
+        brand = self.request.query_params.get("brand")
+        if brand:
+            queryset = queryset.filter(brand__icontains=brand)
+
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search)
+                | Q(description__icontains=search)
+                | Q(short_description__icontains=search)
+                | Q(tags__icontains=search)
+            )
+
+        min_price = self.request.query_params.get("min_price")
+        max_price = self.request.query_params.get("max_price")
+        if min_price:
+            queryset = queryset.filter(price__gte=min_price)
+        if max_price:
+            queryset = queryset.filter(price__lte=max_price)
+
+        in_stock = self.request.query_params.get("in_stock")
+        if in_stock is not None:
+            queryset = queryset.filter(inventory__stock_quantity__gt=0) if in_stock.lower() == "true" else queryset.filter(inventory__stock_quantity__lte=0)
+
+        rating = self.request.query_params.get("rating")
+        if rating:
+            queryset = queryset.filter(rating__gte=rating)
+
+        featured = self.request.query_params.get("featured")
+        if featured is not None:
+            queryset = queryset.filter(is_featured=featured.lower() == "true")
+
+        bestseller = self.request.query_params.get("bestseller")
+        if bestseller is not None:
+            queryset = queryset.filter(is_bestseller=bestseller.lower() == "true")
+
+        return queryset.order_by("-is_featured", "-is_bestseller", "-rating", "id")
+
+    @action(detail=False, methods=["get"])
+    def featured(self, request):
+        products = self.get_queryset().filter(is_featured=True)
+        serializer = self.get_serializer(products, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["get"])
+    def bestsellers(self, request):
+        products = self.get_queryset().filter(is_bestseller=True)
+        serializer = self.get_serializer(products, many=True)
+        return Response(serializer.data)

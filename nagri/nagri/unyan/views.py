@@ -1,3 +1,10 @@
-from django.shortcuts import render
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
 
-# Create your views here.
+from .serializers import BaseSerializer
+
+
+@api_view(["GET"])
+def home(request):
+    serializer = BaseSerializer()
+    return Response(serializer.data)

@@ -1,0 +1,70 @@
+{% extends 'base/base.html' %}
+
+{% block title %}My Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard-shell">
+    <h2>My Account</h2>
+
+    <section class="card">
+        <h3>Personal Information</h3>
+        <p><strong>Name:</strong> {{ profile.full_name|default:'Not added yet' }}</p>
+        <p><strong>Email:</strong> {{ user.email }}</p>
+        <p><strong>Phone:</strong> {{ profile.phone|default:'Not added yet' }}</p>
+        <p><strong>Delivery Location:</strong> {{ profile.delivery_location|default:'Not added yet' }}</p>
+    </section>
+
+    <section class="card">
+        <h3>Saved Addresses</h3>
+        {% if addresses %}
+            <ul>
+                {% for address in addresses %}
+                    <li>
+                        <strong>{{ address.label }}</strong> - {{ address.address_line_1 }}, {{ address.city }}, {{ address.state }}
+                        {% if address.is_default %}<span>(Default)</span>{% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No saved addresses yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h3>Order History</h3>
+        {% if orders %}
+            <ul>
+                {% for order in orders %}
+                    <li>
+                        <strong>#{{ order.order_number }}</strong>
+                        <span>{{ order.status }}</span>
+                        <span>{{ order.tracking_status }}</span>
+                        <a href="/orders/orders/{{ order.id }}/invoice/">Download invoice</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No orders yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h3>Quick Access</h3>
+        <p>Wishlist items: {{ wishlist_count }}</p>
+        <p>Cart items: {{ cart_count }}</p>
+    </section>
+
+    <section class="card">
+        <h3>Saved Payment Options</h3>
+        {% if payment_methods %}
+            <ul>
+                {% for method in payment_methods %}
+                    <li>{{ method.card_brand }} ending {{ method.card_last4 }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No saved cards yet.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
