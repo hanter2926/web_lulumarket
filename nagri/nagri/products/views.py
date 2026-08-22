@@ -1,10 +1,60 @@
 from django.db.models import Q
+from django.shortcuts import render
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .models import Category, Product, SubCategory
 from .serializers import CategorySerializer, ProductSerializer, SubCategorySerializer
+
+
+def product_list_view(request):
+    queryset = Product.objects.select_related("category", "subcategory").filter(is_active=True).order_by("-is_featured", "-is_bestseller", "-rating", "id")
+
+    search = request.GET.get("search", "").strip()
+    category = request.GET.get("category", "").strip()
+    subcategory = request.GET.get("subcategory", "").strip()
+    min_price = request.GET.get("min_price", "").strip()
+    max_price = request.GET.get("max_price", "").strip()
+
+    if search:
+        queryset = queryset.filter(
+            Q(name__icontains=search)
+            | Q(description__icontains=search)
+            | Q(short_description__icontains=search)
+            | Q(tags__icontains=search)
+            | Q(brand__icontains=search)
+        )
+
+    if category:
+        queryset = queryset.filter(Q(category_id=category) | Q(category__slug=category))
+
+    if subcategory:
+        queryset = queryset.filter(Q(subcategory_id=subcategory) | Q(subcategory__slug=subcategory))
+
+    if min_price:
+        try:
+            queryset = queryset.filter(price__gte=min_price)
+        except ValueError:
+            pass
+
+    if max_price:
+        try:
+            queryset = queryset.filter(price__lte=max_price)
+        except ValueError:
+            pass
+
+    context = {
+        "products": queryset,
+        "search": search,
+        "category": category,
+        "category_filter": category,
+        "subcategory": subcategory,
+        "min_price": min_price,
+        "max_price": max_price,
+        "categories": Category.objects.all().order_by("name"),
+    }
+    return render(request, "products/product_list.html", context)
 
 
 class CategoryViewSet(viewsets.ModelViewSet):

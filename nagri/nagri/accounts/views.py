@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.contrib.auth import login as auth_login, logout as auth_logout
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
@@ -372,6 +373,7 @@ def otp_login_page(request):
     return render(request, "accounts/otp_login.html")
 
 
+@login_required(login_url="/accounts/auth/")
 def dashboard_page(request):
     profile = UserProfile.objects.filter(user=request.user).first()
     addresses = Address.objects.filter(user=request.user).order_by("-is_default", "-created_at")

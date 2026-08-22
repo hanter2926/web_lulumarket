@@ -3,6 +3,58 @@
 {% block title %}Products{% endblock %}
 
 {% block content %}
-<h2>Products</h2>
-<p>Product listing page.</p>
+<div style="max-width: 1200px; margin: 32px auto; padding: 0 16px;">
+    <h2>Products</h2>
+
+    <form method="get" style="display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; align-items: end;">
+        <div>
+            <label for="search">Search</label><br>
+            <input id="search" type="text" name="search" value="{{ search }}" placeholder="Search products" style="padding: 10px; width: 220px;">
+        </div>
+        <div>
+            <label for="category">Category</label><br>
+            <select id="category" name="category" style="padding: 10px; width: 180px;">
+                <option value="">All Categories</option>
+                {% for category in categories %}
+                    <option value="{{ category.id }}" {% if category.id|stringformat:'s' == category_filter %}selected{% endif %}>{{ category.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="min_price">Min Price</label><br>
+            <input id="min_price" type="number" name="min_price" value="{{ min_price }}" placeholder="500" style="padding: 10px; width: 140px;">
+        </div>
+        <div>
+            <label for="max_price">Max Price</label><br>
+            <input id="max_price" type="number" name="max_price" value="{{ max_price }}" placeholder="2000" style="padding: 10px; width: 140px;">
+        </div>
+        <div>
+            <button type="submit" style="padding: 10px 16px; background: #111827; color: white; border: none; border-radius: 8px; cursor: pointer;">Apply Filters</button>
+        </div>
+    </form>
+
+    <p><strong>{{ products|length }}</strong> product(s) found.</p>
+
+    {% if products %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-top: 24px;">
+            {% for product in products %}
+                <div style="border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; padding: 16px;">
+                    <div style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">{{ product.category.name }}</div>
+                    <h3 style="margin: 0 0 8px;">{{ product.name }}</h3>
+                    <p style="margin: 0 0 8px; color: #4b5563;">{{ product.short_description|default:product.description|truncatechars:120 }}</p>
+                    <div style="font-weight: 700; font-size: 20px; color: #111827;">₹{{ product.price }}</div>
+                    {% if product.compare_price %}
+                        <div style="text-decoration: line-through; color: #9ca3af;">₹{{ product.compare_price }}</div>
+                    {% endif %}
+                    <div style="margin-top: 10px; color: #2563eb; font-size: 12px;">
+                        {% if product.is_featured %}Featured{% endif %}
+                        {% if product.is_bestseller %} • Bestseller{% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No products match your search.</p>
+    {% endif %}
+</div>
 {% endblock %}
