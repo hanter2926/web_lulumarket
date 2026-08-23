@@ -1,0 +1,38 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Terms & Conditions{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/policies/terms_conditions.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+    <div class="container py-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Terms & Conditions</li>
+            </ol>
+        </nav>
+
+        <div class="policy-card">
+            <h1>Terms & Conditions</h1>
+            <p>By using Nagri, you agree to comply with these terms and conditions. Please read them carefully before placing an order.</p>
+
+            <h3>Use of site</h3>
+            <p>We provide the platform for lawful shopping and communication. You agree not to misuse the site or related services.</p>
+
+            <h3>Orders and pricing</h3>
+            <p>All products are subject to availability. We reserve the right to correct pricing or product information and to cancel orders where necessary.</p>
+
+            <h3>Payments and refunds</h3>
+            <p>Payments are processed through secure methods. Refund eligibility depends on our refund and return policies.</p>
+
+            <h3>Liability</h3>
+            <p>Nagri is not liable for indirect or incidental losses arising from site usage, delays, or service disruption beyond reasonable control.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

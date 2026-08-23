@@ -1,0 +1,24 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Access Denied{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/errors/403.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="container py-5">
+        <div class="error-card">
+            <div class="error-code">403</div>
+            <h1>Access denied</h1>
+            <p>You do not have permission to view this page.</p>
+            <div class="actions">
+                <a href="{% url 'home' %}" class="btn btn-primary">Home</a>
+                <a href="{% url 'contact_support' %}" class="btn btn-outline-primary">Contact support</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

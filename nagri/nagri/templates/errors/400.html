@@ -1,0 +1,24 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Bad Request{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/errors/400.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="container py-5">
+        <div class="error-card">
+            <div class="error-code">400</div>
+            <h1>Bad request</h1>
+            <p>The request could not be processed. Please check your input and try again.</p>
+            <div class="actions">
+                <a href="{% url 'home' %}" class="btn btn-primary">Home</a>
+                <a href="{% url 'product_list' %}" class="btn btn-outline-primary">Continue shopping</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

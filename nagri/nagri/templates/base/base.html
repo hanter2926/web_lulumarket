@@ -157,6 +157,18 @@
                         <li><a href="{% url 'terms_conditions' %}">Terms & Conditions</a></li>
                         <li><a href="{% url 'refund_policy' %}">Refund Policy</a></li>
                         <li><a href="{% url 'shipping_policy' %}">Shipping Policy</a></li>
+                        <li><a href="{% url 'return_policy' %}">Return Policy</a></li>
+                        <li><a href="{% url 'cancellation_policy' %}">Cancellation Policy</a></li>
+                    </ul>
+                </div>
+
+                <div class="col-md-3 mb-4">
+                    <h5 class="footer-title">Support</h5>
+                    <ul class="footer-links">
+                        <li><a href="{% url 'help_center' %}">Help Center</a></li>
+                        <li><a href="{% url 'contact_support' %}">Contact Support</a></li>
+                        <li><a href="{% url 'contact' %}">Contact Us</a></li>
+                        <li><a href="{% url 'about' %}">About Us</a></li>
                     </ul>
                 </div>
                 
@@ -193,6 +205,7 @@
     
     <!-- Base JS -->
     <script src="{% static 'js/base/main.js' %}"></script>
+    <script src="{% static 'js/base/navbar.js' %}"></script>
     
     <!-- Page-specific JS -->
     {% block extra_js %}{% endblock %}

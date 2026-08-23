@@ -1,0 +1,28 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Payment Pending{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/payment/payment_pending.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="status-page pending">
+    <div class="container py-5">
+        <div class="status-card">
+            <div class="status-icon"><i class="fas fa-clock"></i></div>
+            <h1>Payment pending</h1>
+            <p>Your payment is being processed. We’ll update your order status once it is confirmed.</p>
+            <div class="info-grid">
+                <div><span>Order ID</span><strong>#{{ order.order_number }}</strong></div>
+                <div><span>Status</span><strong>Pending verification</strong></div>
+            </div>
+            <div class="actions">
+                <a href="{% url 'order_detail' order.id %}" class="btn btn-primary">Check Status</a>
+                <a href="{% url 'product_list' %}" class="btn btn-outline-secondary">Continue Shopping</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

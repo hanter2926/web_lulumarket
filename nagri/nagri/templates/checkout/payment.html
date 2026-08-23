@@ -1,0 +1,80 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Payment - Checkout{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/checkout/payment.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="checkout-page">
+    <div class="container py-4">
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="checkout-card">
+                    <div class="checkout-header">
+                        <div>
+                            <p class="eyebrow">Step 4 of 5</p>
+                            <h1>Select payment method</h1>
+                        </div>
+                    </div>
+
+                    <div class="progress-steps">
+                        <span class="step done">1</span>
+                        <span class="step done">2</span>
+                        <span class="step done">3</span>
+                        <span class="step active">4</span>
+                        <span class="step">5</span>
+                    </div>
+
+                    <div class="payment-content">
+                        <form method="post">
+                            {% csrf_token %}
+                            <div class="coupon-box">
+                                <h3>Apply coupon</h3>
+                                <div class="coupon-row">
+                                    {{ coupon_form.coupon_code }}
+                                    <button type="submit" class="btn btn-outline-primary" name="action" value="apply_coupon">Apply</button>
+                                </div>
+                            </div>
+
+                            <div class="payment-options">
+                                {% for radio in payment_form.payment_method %}
+                                    <label class="payment-option">
+                                        {{ radio.tag }}
+                                        <div class="option-content">
+                                            <strong>{{ radio.choice_label }}</strong>
+                                        </div>
+                                    </label>
+                                {% endfor %}
+                            </div>
+
+                            <div class="checkout-actions">
+                                <a href="{% url 'checkout_delivery' %}" class="btn btn-outline-secondary">Back</a>
+                                <button type="submit" class="btn btn-primary">Review order</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <aside class="summary-card">
+                    <h3>Price summary</h3>
+                    <div class="summary-row"><span>Subtotal</span><span>₹{{ subtotal }}</span></div>
+                    <div class="summary-row"><span>Delivery</span><span>₹{{ delivery_charge }}</span></div>
+                    <div class="summary-row"><span>Discount</span><span>-₹{{ discount_amount }}</span></div>
+                    <div class="summary-divider"></div>
+                    <div class="summary-row total"><span>Total</span><span>₹{{ total }}</span></div>
+                    <p class="summary-note">Selected delivery: {{ delivery_method|title }}</p>
+                </aside>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/checkout/checkout.js' %}"></script>
+{% endblock %}

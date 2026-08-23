@@ -1,0 +1,28 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Payment Successful{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/payment/payment_success.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="status-page success">
+    <div class="container py-5">
+        <div class="status-card">
+            <div class="status-icon"><i class="fas fa-check-circle"></i></div>
+            <h1>Payment successful</h1>
+            <p>Your order has been confirmed successfully.</p>
+            <div class="info-grid">
+                <div><span>Order ID</span><strong>#{{ order.order_number }}</strong></div>
+                <div><span>Amount</span><strong>₹{{ order.total_amount }}</strong></div>
+            </div>
+            <div class="actions">
+                <a href="{% url 'product_list' %}" class="btn btn-primary">Continue Shopping</a>
+                <a href="{% url 'order_detail' order.id %}" class="btn btn-outline-primary">View Order</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

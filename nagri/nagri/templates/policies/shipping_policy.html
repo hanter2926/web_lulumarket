@@ -1,0 +1,39 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Shipping Policy{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/policies/shipping_policy.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+    <div class="container py-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Shipping Policy</li>
+            </ol>
+        </nav>
+
+        <div class="policy-card">
+            <h1>Shipping Policy</h1>
+            <p>We work to deliver your products safely and on time across eligible locations.</p>
+
+            <h3>Delivery timelines</h3>
+            <ul>
+                <li>Standard delivery: 5–7 days</li>
+                <li>Express delivery: 2–3 days</li>
+                <li>Overnight delivery where available</li>
+            </ul>
+
+            <h3>Charges</h3>
+            <p>Standard delivery is free for eligible orders. Express and overnight services may carry additional charges depending on the destination and product.</p>
+
+            <h3>Tracking</h3>
+            <p>You can track your order status from the order details page once it is shipped.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

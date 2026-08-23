@@ -1,0 +1,56 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Payment - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/payment/payment.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="payment-page">
+    <div class="container py-5">
+        <div class="payment-card">
+            <div class="status-badge">Secure Checkout</div>
+            <h1>Complete your payment</h1>
+            <p class="lead">Order #{{ order.order_number }} • Amount ₹{{ order.total_amount }}</p>
+
+            {% if order.payment_method == 'cod' %}
+                <div class="alert alert-info">Cash on delivery selected. No payment is required right now.</div>
+                <a href="{% url 'order_confirmation' order.id %}" class="btn btn-primary">Continue to confirmation</a>
+            {% else %}
+                <div class="payment-actions">
+                    <button class="btn btn-primary" id="payNowBtn">Pay Now</button>
+                    <a href="{% url 'cart_detail' %}" class="btn btn-outline-secondary">Back to cart</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script src="{% static 'js/checkout/checkout.js' %}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const payButton = document.getElementById('payNowBtn');
+            if (!payButton) return;
+            payButton.addEventListener('click', function () {
+                fetch('{% url "verify_payment" %}', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+                    body: JSON.stringify({
+                        razorpay_order_id: '{{ order.razorpay_order_id|default:"" }}',
+                        razorpay_payment_id: '{{ order.razorpay_payment_id|default:"" }}',
+                        razorpay_signature: '{{ order.razorpay_signature|default:"" }}'
+                    })
+                }).then(r => r.json()).then(() => {
+                    window.location.href = '{% url "payment_success" order.id %}';
+                }).catch(() => {
+                    window.location.href = '{% url "payment_failed" order.id %}';
+                });
+            });
+        });
+    </script>
+{% endblock %}

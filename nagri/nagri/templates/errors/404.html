@@ -1,0 +1,25 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Page Not Found{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/errors/404.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="container py-5">
+        <div class="error-card">
+            <div class="error-code">404</div>
+            <h1>Page not found</h1>
+            <p>The page you are looking for may have moved or no longer exists.</p>
+            <div class="actions">
+                <a href="{% url 'product_list' %}" class="btn btn-primary">Continue shopping</a>
+                <a href="{% url 'home' %}" class="btn btn-outline-primary">Home</a>
+                <a href="{% url 'product_list' %}?search=" class="btn btn-outline-secondary">Search</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

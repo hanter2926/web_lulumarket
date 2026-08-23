@@ -1,0 +1,85 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Delivery Method - Checkout{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/checkout/delivery.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="checkout-page">
+    <div class="container py-4">
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="checkout-card">
+                    <div class="checkout-header">
+                        <div>
+                            <p class="eyebrow">Step 3 of 5</p>
+                            <h1>Choose delivery method</h1>
+                        </div>
+                    </div>
+
+                    <div class="progress-steps">
+                        <span class="step done">1</span>
+                        <span class="step done">2</span>
+                        <span class="step active">3</span>
+                        <span class="step">4</span>
+                        <span class="step">5</span>
+                    </div>
+
+                    <div class="delivery-panel">
+                        <div class="address-summary">
+                            <h3>Delivering to</h3>
+                            <p><strong>{{ address.full_name }}</strong> • {{ address.phone }}</p>
+                            <p>{{ address.address_line_1 }}{% if address.address_line_2 %}, {{ address.address_line_2 }}{% endif %}</p>
+                            <p>{{ address.city }}, {{ address.state }} - {{ address.pincode }}</p>
+                        </div>
+
+                        <form method="post">
+                            {% csrf_token %}
+                            <div class="delivery-options">
+                                {% for radio in form.delivery_method %}
+                                    <label class="delivery-option">
+                                        {{ radio.tag }}
+                                        <div class="option-content">
+                                            <div>
+                                                <span class="option-title">{{ radio.choice_label }}</span>
+                                            </div>
+                                        </div>
+                                    </label>
+                                {% endfor %}
+                            </div>
+
+                            <div class="checkout-actions">
+                                <a href="{% url 'checkout_address' %}" class="btn btn-outline-secondary">Back</a>
+                                <button type="submit" class="btn btn-primary">Continue to payment</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <aside class="summary-card">
+                    <h3>Order summary</h3>
+                    <div class="summary-row">
+                        <span>Delivery</span>
+                        <span>Calculated next</span>
+                    </div>
+                    <div class="summary-row">
+                        <span>Payment</span>
+                        <span>Secure</span>
+                    </div>
+                    <div class="summary-divider"></div>
+                    <p class="support-note">Free delivery on eligible orders. Need help? <a href="{% url 'contact_support' %}">Contact support</a>.</p>
+                </aside>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/checkout/checkout.js' %}"></script>
+{% endblock %}

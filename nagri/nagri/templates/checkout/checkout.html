@@ -1,5 +1,5 @@
 {% extends "base/base.html" %}
-{% load static %}
+{% load static nagri_filters %}
 
 {% block title %}Checkout - Nagri{% endblock %}
 
@@ -78,7 +78,7 @@
                                     <small>₹{{ item.product.price }} each</small>
                                 </div>
                                 <div class="price-total">
-                                    ₹{{ item.product.price|floatformat:2 }} × {{ item.quantity }} = <strong>₹{{ total_item|add:item.product.price|mul:item.quantity }}</strong>
+                                    ₹{{ item.product.price|floatformat:2 }} × {{ item.quantity }} = <strong>₹{{ item.product.price|mul:item.quantity }}</strong>
                                 </div>
                             </div>
                         </div>

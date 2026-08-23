@@ -1,3 +1,5 @@
+from django.core.cache import cache
+from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import render
 from rest_framework import permissions, viewsets
@@ -8,8 +10,21 @@ from .models import Category, Product, SubCategory
 from .serializers import CategorySerializer, ProductSerializer, SubCategorySerializer
 
 
+def _get_cached_categories():
+    cache_key = "nagri_categories"
+    categories = cache.get(cache_key)
+    if categories is None:
+        categories = list(Category.objects.only("id", "name").order_by("name"))
+        cache.set(cache_key, categories, 600)
+    return categories
+
+
 def product_list_view(request):
-    queryset = Product.objects.select_related("category", "subcategory").filter(is_active=True).order_by("-is_featured", "-is_bestseller", "-rating", "id")
+    queryset = (
+        Product.objects.select_related("category", "subcategory", "inventory")
+        .filter(is_active=True)
+        .order_by("-is_featured", "-is_bestseller", "-rating", "-created_at", "id")
+    )
 
     search = request.GET.get("search", "").strip()
     category = request.GET.get("category", "").strip()
@@ -44,15 +59,20 @@ def product_list_view(request):
         except ValueError:
             pass
 
+    paginator = Paginator(queryset, 12)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
     context = {
-        "products": queryset,
+        "products": page_obj.object_list,
+        "page_obj": page_obj,
         "search": search,
         "category": category,
         "category_filter": category,
         "subcategory": subcategory,
         "min_price": min_price,
         "max_price": max_price,
-        "categories": Category.objects.all().order_by("name"),
+        "categories": _get_cached_categories(),
     }
     return render(request, "products/product_list.html", context)
 
@@ -77,12 +97,12 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.select_related("category", "subcategory").all().order_by("id")
+    queryset = Product.objects.select_related("category", "subcategory", "inventory").all().order_by("id")
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        queryset = Product.objects.select_related("category", "subcategory").all()
+        queryset = Product.objects.select_related("category", "subcategory", "inventory").all()
 
         category = self.request.query_params.get("category")
         if category:
@@ -146,13 +166,19 @@ class ProductViewSet(viewsets.ModelViewSet):
 def product_detail_view(request, product_id):
     """Display detailed information about a specific product"""
     from django.shortcuts import get_object_or_404
-    
-    product = get_object_or_404(Product, id=product_id, is_active=True)
-    related_products = Product.objects.filter(
-        category=product.category,
-        is_active=True
-    ).exclude(id=product_id).order_by('-rating', '-created_at')[:6]
-    
+
+    product = get_object_or_404(
+        Product.objects.select_related("category", "subcategory", "inventory"),
+        id=product_id,
+        is_active=True,
+    )
+    related_products = (
+        Product.objects.select_related("category", "subcategory", "inventory")
+        .filter(category=product.category, is_active=True)
+        .exclude(id=product_id)
+        .order_by("-rating", "-created_at")[:6]
+    )
+
     context = {
         'product': product,
         'related_products': related_products,

@@ -1,0 +1,84 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Review Order - Checkout{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/checkout/order_review.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="checkout-page">
+    <div class="container py-4">
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="checkout-card">
+                    <div class="checkout-header">
+                        <div>
+                            <p class="eyebrow">Step 5 of 5</p>
+                            <h1>Review and place order</h1>
+                        </div>
+                    </div>
+
+                    <div class="progress-steps">
+                        <span class="step done">1</span>
+                        <span class="step done">2</span>
+                        <span class="step done">3</span>
+                        <span class="step done">4</span>
+                        <span class="step active">5</span>
+                    </div>
+
+                    <div class="review-section">
+                        <h3>Shipping</h3>
+                        <p><strong>{{ address.full_name }}</strong> • {{ address.phone }}</p>
+                        <p>{{ address.address_line_1 }}{% if address.address_line_2 %}, {{ address.address_line_2 }}{% endif %}</p>
+                        <p>{{ address.city }}, {{ address.state }} - {{ address.pincode }}</p>
+                    </div>
+
+                    <div class="review-section">
+                        <h3>Delivery and payment</h3>
+                        <p><strong>Delivery:</strong> {{ delivery_method|title }}</p>
+                        <p><strong>Payment:</strong> {{ payment_method|title }}</p>
+                    </div>
+
+                    <div class="review-section">
+                        <h3>Items</h3>
+                        {% for item in cart_items %}
+                            <div class="review-item">
+                                <div>
+                                    <strong>{{ item.product.name }}</strong>
+                                    <small>Qty: {{ item.quantity }}</small>
+                                </div>
+                                <span>₹{{ item.product.price|floatformat:2 }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="checkout-actions">
+                            <a href="{% url 'checkout_payment' %}" class="btn btn-outline-secondary">Back</a>
+                            <button type="submit" class="btn btn-primary">Place order</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <aside class="summary-card">
+                    <h3>Order total</h3>
+                    <div class="summary-row"><span>Subtotal</span><span>₹{{ subtotal }}</span></div>
+                    <div class="summary-row"><span>Delivery</span><span>₹{{ delivery_charge }}</span></div>
+                    <div class="summary-row"><span>Discount</span><span>-₹{{ discount_amount }}</span></div>
+                    <div class="summary-divider"></div>
+                    <div class="summary-row total"><span>Total</span><span>₹{{ total }}</span></div>
+                </aside>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/checkout/checkout.js' %}"></script>
+{% endblock %}

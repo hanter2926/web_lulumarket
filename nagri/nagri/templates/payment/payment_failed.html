@@ -1,0 +1,28 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Payment Failed{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/payment/payment_failed.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="status-page failure">
+    <div class="container py-5">
+        <div class="status-card">
+            <div class="status-icon"><i class="fas fa-times-circle"></i></div>
+            <h1>Payment failed</h1>
+            <p>We couldn’t complete your payment. Your order has not been confirmed.</p>
+            <div class="info-grid">
+                <div><span>Order ID</span><strong>#{{ order.order_number }}</strong></div>
+                <div><span>Amount</span><strong>₹{{ order.total_amount }}</strong></div>
+            </div>
+            <div class="actions">
+                <a href="{% url 'checkout_payment' %}" class="btn btn-primary">Retry Payment</a>
+                <a href="{% url 'cart_detail' %}" class="btn btn-outline-secondary">Back to Cart</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

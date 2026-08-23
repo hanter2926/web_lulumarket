@@ -8,7 +8,6 @@
 {% endblock %}
 
 {% block content %}
-
 <div class="breadcrumb-section">
     <div class="container">
         <ul class="breadcrumb-nav">
@@ -29,8 +28,7 @@
                 <!-- Search -->
                 <div class="filter-group">
                     <h4>Search</h4>
-                    <input type="text" name="search" class="form-control" placeholder="Search products..." 
-                           value="{{ search }}">
+                    <input type="text" name="search" class="form-control" placeholder="Search products..." value="{{ search }}">
                 </div>
 
                 <!-- Categories -->
@@ -38,14 +36,12 @@
                     <h4>Category</h4>
                     {% for cat in categories %}
                         <label>
-                            <input type="radio" name="category" value="{{ cat.id }}" 
-                                   {% if category == cat.id|stringformat:"s" %}checked{% endif %}>
+                            <input type="radio" name="category" value="{{ cat.id }}" {% if category == cat.id|stringformat:"s" %}checked{% endif %}>
                             {{ cat.name }}
                         </label>
                     {% endfor %}
                     <label>
-                        <input type="radio" name="category" value="" 
-                               {% if not category %}checked{% endif %}>
+                        <input type="radio" name="category" value="" {% if not category %}checked{% endif %}>
                         All Categories
                     </label>
                 </div>
@@ -55,12 +51,10 @@
                     <h4>Price Range</h4>
                     <div class="price-range-slider">
                         <label>Min Price: ₹<span id="minPriceDisplay">0</span></label>
-                        <input type="range" name="min_price" min="0" max="100000" step="100" 
-                               value="{{ min_price|default:0 }}" id="minPriceInput">
+                        <input type="range" name="min_price" min="0" max="100000" step="100" value="{{ min_price|default:0 }}" id="minPriceInput">
                         <br>
                         <label>Max Price: ₹<span id="maxPriceDisplay">100000</span></label>
-                        <input type="range" name="max_price" min="0" max="100000" step="100" 
-                               value="{{ max_price|default:100000 }}" id="maxPriceInput">
+                        <input type="range" name="max_price" min="0" max="100000" step="100" value="{{ max_price|default:100000 }}" id="maxPriceInput">
                     </div>
                 </div>
 
@@ -72,7 +66,6 @@
 
         <!-- Products Section -->
         <section class="products-section">
-            <!-- Header -->
             <div class="products-header">
                 <h2>{% if search %}Search Results for "{{ search }}"{% else %}All Products{% endif %}</h2>
                 <div class="sort-controls">
@@ -89,238 +82,112 @@
 
             <!-- Products Grid -->
             {% if products %}
-            <div class="products-grid">
-                {% for product in products %}
-                <div class="product-card">
-                    <div class="product-card-image">
-                        {% if product.image %}
-                            <img src="{{ product.image.url }}" alt="{{ product.name }}">
-                        {% else %}
-                            <div class="placeholder-image">
-                                <i class="fas fa-image"></i>
-                            </div>
-                        {% endif %}
-                        
-                        {% if product.is_featured %}
-                            <div class="product-badge badge-featured">Featured</div>
-                        {% elif product.is_bestseller %}
-                            <div class="product-badge badge-bestseller">Best Seller</div>
-                        {% endif %}
-                    </div>
-
-                    <div class="product-info">
-                        <h3><a href="{% url 'product_detail' product.id %}">{{ product.name }}</a></h3>
-                        
-                        <p class="product-category">{{ product.category.name }}</p>
-
-                        <div class="product-rating">
-                            {% for i in "12345" %}
-                                {% if forloop.counter <= product.rating %}
-                                    <i class="fas fa-star"></i>
+                <div class="products-grid">
+                    {% for product in products %}
+                        <div class="product-card">
+                            <div class="product-card-image">
+                                {% if product.image %}
+                                    <img src="{{ product.image.url }}" alt="{{ product.name }}">
                                 {% else %}
-                                    <i class="far fa-star"></i>
+                                    <div class="placeholder-image">
+                                        <i class="fas fa-image"></i>
+                                    </div>
                                 {% endif %}
-                            {% endfor %}
-                        </div>
 
-                        <div class="product-price">
-                            <span class="price-current">₹{{ product.price }}</span>
-                            {% if product.compare_price and product.compare_price > product.price %}
-                                <span class="price-original">₹{{ product.compare_price }}</span>
-                            {% endif %}
-                        </div>
+                                {% if product.is_featured %}
+                                    <div class="product-badge badge-featured">Featured</div>
+                                {% elif product.is_bestseller %}
+                                    <div class="product-badge badge-bestseller">Best Seller</div>
+                                {% endif %}
+                            </div>
 
-                        <div class="product-stock">
-                            {% if product.inventory.stock_quantity > 0 %}
-                                <span class="stock-in"><i class="fas fa-check-circle"></i> In Stock</span>
-                            {% else %}
-                                <span class="stock-out"><i class="fas fa-times-circle"></i> Out of Stock</span>
-                            {% endif %}
-                        </div>
+                            <div class="product-info">
+                                <h3><a href="{% url 'product_detail' product.id %}">{{ product.name }}</a></h3>
+                                <p class="product-category">{{ product.category.name }}</p>
 
-                        <div class="product-actions">
-                            <a href="{% url 'product_detail' product.id %}" class="btn btn-primary btn-sm">
-                                <i class="fas fa-eye"></i> View
-                            </a>
-                            {% if product.inventory.stock_quantity > 0 %}
-                                <button class="btn btn-outline-primary btn-sm" onclick="addToCart({{ product.id }})">
-                                    <i class="fas fa-shopping-cart"></i>
-                                </button>
-                            {% else %}
-                                <button class="btn btn-secondary btn-sm" disabled>
-                                    <i class="fas fa-ban"></i>
-                                </button>
-                            {% endif %}
+                                <div class="product-rating">
+                                    {% for i in "12345" %}
+                                        {% if forloop.counter <= product.rating %}
+                                            <i class="fas fa-star"></i>
+                                        {% else %}
+                                            <i class="far fa-star"></i>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+
+                                <div class="product-price">
+                                    <span class="price-current">₹{{ product.price }}</span>
+                                    {% if product.compare_price and product.compare_price > product.price %}
+                                        <span class="price-original">₹{{ product.compare_price }}</span>
+                                    {% endif %}
+                                </div>
+
+                                <div class="product-stock">
+                                    {% if product.inventory.stock_quantity > 0 %}
+                                        <span class="stock-in"><i class="fas fa-check-circle"></i> In Stock</span>
+                                    {% else %}
+                                        <span class="stock-out"><i class="fas fa-times-circle"></i> Out of Stock</span>
+                                    {% endif %}
+                                </div>
+
+                                <div class="product-actions">
+                                    <a href="{% url 'product_detail' product.id %}" class="btn btn-primary btn-sm">
+                                        <i class="fas fa-eye"></i> View
+                                    </a>
+                                    {% if product.inventory.stock_quantity > 0 %}
+                                        <button class="btn btn-outline-primary btn-sm" onclick="addToCart({{ product.id }})">
+                                            <i class="fas fa-shopping-cart"></i>
+                                        </button>
+                                    {% else %}
+                                        <button class="btn btn-secondary btn-sm" disabled>
+                                            <i class="fas fa-ban"></i>
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
-            </div>
             {% else %}
-            <div class="no-products">
-                <i class="fas fa-search"></i>
-                <h3>No Products Found</h3>
-                <p>We couldn't find any products matching your criteria. Try adjusting your filters.</p>
-            </div>
+                <div class="no-products">
+                    <i class="fas fa-search"></i>
+                    <h3>No Products Available</h3>
+                    {% if search %}
+                        <p>We couldn't find any products matching your search.</p>
+                    {% else %}
+                        <p>Sorry, currently no products are available.</p>
+                    {% endif %}
+                </div>
             {% endif %}
         </section>
     </div>
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // Update price displays
-    document.getElementById('minPriceInput').addEventListener('input', function() {
-        document.getElementById('minPriceDisplay').textContent = this.value;
-    });
-    
-    document.getElementById('maxPriceInput').addEventListener('input', function() {
-        document.getElementById('maxPriceDisplay').textContent = this.value;
-    });
+    const minPriceInput = document.getElementById('minPriceInput');
+    const maxPriceInput = document.getElementById('maxPriceInput');
+
+    if (minPriceInput) {
+        minPriceInput.addEventListener('input', function() {
+            const minDisplay = document.getElementById('minPriceDisplay');
+            if (minDisplay) minDisplay.textContent = this.value;
+        });
+    }
+
+    if (maxPriceInput) {
+        maxPriceInput.addEventListener('input', function() {
+            const maxDisplay = document.getElementById('maxPriceDisplay');
+            if (maxDisplay) maxDisplay.textContent = this.value;
+        });
+    }
 
     function applySortByValue(value) {
-        // This can be enhanced with actual sorting logic
         console.log('Sort by:', value);
     }
 
     function addToCart(productId) {
-        // Simple add to cart function
-        console.log('Adding product', productId, 'to cart');
-        alert('Product added to cart!');
-    }
-</script                          value="{{ min_price|default:0 }}" id="minPriceInput">
-                        <br>
-                        <label>Max Price: ₹<span id="maxPriceDisplay">100000</span></label>
-                        <input type="range" name="max_price" min="0" max="100000" step="100" 
-                               value="{{ max_price|default:100000 }}" id="maxPriceInput">
-                    </div>
-                </div>
-
-                <!-- Actions -->
-                <button type="submit" class="btn btn-primary btn-apply-filter">Apply Filters</button>
-                <a href="{% url 'product_list' %}" class="btn btn-clear-filter">Clear Filters</a>
-            </form>
-        </aside>
-
-        <!-- Products Section -->
-        <section class="products-section">
-            <!-- Header -->
-            <div class="products-header">
-                <h2>{% if search %}Search Results for "{{ search }}"{% else %}All Products{% endif %}</h2>
-                <div class="sort-controls">
-                    <label for="sortBy">Sort by:</label>
-                    <select id="sortBy" onchange="applySortByValue(this.value)">
-                        <option value="">Best Match</option>
-                        <option value="rating">Rating</option>
-                        <option value="price_asc">Price: Low to High</option>
-                        <option value="price_desc">Price: High to Low</option>
-                        <option value="newest">Newest</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Products Grid -->
-            {% if products %}
-            <div class="products-grid">
-                {% for product in products %}
-                <div class="product-card">
-                    <div class="product-card-image">
-                        {% if product.image %}
-                            <img src="{{ product.image.url }}" alt="{{ product.name }}">
-                        {% else %}
-                            <div class="placeholder-image">
-                                <i class="fas fa-image"></i>
-                            </div>
-                        {% endif %}
-                        
-                        {% if product.is_featured %}
-                            <div class="product-badge badge-featured">Featured</div>
-                        {% elif product.is_bestseller %}
-                            <div class="product-badge badge-bestseller">Best Seller</div>
-                        {% endif %}
-                    </div>
-
-                    <div class="product-info">
-                        <h3><a href="{% url 'product_detail' product.id %}">{{ product.name }}</a></h3>
-                        
-                        <p class="product-category">{{ product.category.name }}</p>
-
-                        <div class="product-rating">
-                            {% for i in "12345" %}
-                                {% if forloop.counter <= product.rating %}
-                                    <i class="fas fa-star"></i>
-                                {% else %}
-                                    <i class="far fa-star"></i>
-                                {% endif %}
-                            {% endfor %}
-                        </div>
-
-                        <div class="product-price">
-                            <span class="price-current">₹{{ product.price }}</span>
-                            {% if product.compare_price and product.compare_price > product.price %}
-                                <span class="price-original">₹{{ product.compare_price }}</span>
-                            {% endif %}
-                        </div>
-
-                        <div class="product-stock">
-                            {% if product.inventory.stock_quantity > 0 %}
-                                <span class="stock-in"><i class="fas fa-check-circle"></i> In Stock</span>
-                            {% else %}
-                                <span class="stock-out"><i class="fas fa-times-circle"></i> Out of Stock</span>
-                            {% endif %}
-                        </div>
-
-                        <div class="product-actions">
-                            <a href="{% url 'product_detail' product.id %}" class="btn btn-primary btn-sm">
-                                <i class="fas fa-eye"></i> View
-                            </a>
-                            {% if product.inventory.stock_quantity > 0 %}
-                                <button class="btn btn-outline-primary btn-sm" onclick="addToCart({{ product.id }})">
-                                    <i class="fas fa-shopping-cart"></i>
-                                </button>
-                            {% else %}
-                                <button class="btn btn-secondary btn-sm" disabled>
-                                    <i class="fas fa-ban"></i>
-                                </button>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="no-products">
-                <i class="fas fa-search"></i>
-                <h3>No Products Found</h3>
-                <p>We couldn't find any products matching your criteria. Try adjusting your filters.</p>
-            </div>
-            {% endif %}
-        </section>
-    </div>
-</div>
-
-{% endblock %}
-
-{% block extra_js %}
-<script>
-    // Update price displays
-    document.getElementById('minPriceInput').addEventListener('input', function() {
-        document.getElementById('minPriceDisplay').textContent = this.value;
-    });
-    
-    document.getElementById('maxPriceInput').addEventListener('input', function() {
-        document.getElementById('maxPriceDisplay').textContent = this.value;
-    });
-
-    function applySortByValue(value) {
-        // This can be enhanced with actual sorting logic
-        console.log('Sort by:', value);
-    }
-
-    function addToCart(productId) {
-        // Simple add to cart function
         console.log('Adding product', productId, 'to cart');
         alert('Product added to cart!');
     }

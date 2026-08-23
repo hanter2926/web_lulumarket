@@ -1,0 +1,32 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Cancellation Policy{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/policies/cancellation_policy.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+    <div class="container py-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Cancellation Policy</li>
+            </ol>
+        </nav>
+
+        <div class="policy-card">
+            <h1>Cancellation Policy</h1>
+            <p>We understand that plans can change. Orders can be cancelled before dispatch or once the shipment has been booked as per policy.</p>
+
+            <h3>Before dispatch</h3>
+            <p>Orders cancelled before dispatch are generally refunded in full unless a partial processing fee applies.</p>
+
+            <h3>After dispatch</h3>
+            <p>Once dispatched, cancellation may not be possible. In that case, you may need to use the return policy after delivery.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

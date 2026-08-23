@@ -1,0 +1,39 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Refund Policy{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/policies/refund_policy.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+    <div class="container py-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Refund Policy</li>
+            </ol>
+        </nav>
+
+        <div class="policy-card">
+            <h1>Refund Policy</h1>
+            <p>We aim to provide a smooth shopping experience. Refunds are processed according to the item condition and order status.</p>
+
+            <h3>Eligibility</h3>
+            <ul>
+                <li>Refund requests are accepted for damaged, defective, or incorrect items.</li>
+                <li>Orders cancelled before dispatch may be eligible for full refund.</li>
+                <li>Items returned after use may be subject to inspection.</li>
+            </ul>
+
+            <h3>Processing</h3>
+            <p>Refunds are generally issued within 5–7 business days after approval and confirmation from our team.</p>
+
+            <h3>How to request</h3>
+            <p>Contact our support team with your order number and issue details for faster processing.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

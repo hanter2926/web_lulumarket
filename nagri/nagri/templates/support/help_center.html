@@ -1,0 +1,76 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Help Center{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/support/help_center.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="support-page">
+    <div class="container py-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Help Center</li>
+            </ol>
+        </nav>
+
+        <div class="support-header">
+            <h1>Help Center</h1>
+            <p>Find answers to common questions and get assistance with your orders.</p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-6 col-lg-4">
+                <div class="info-card">
+                    <div class="icon"><i class="fas fa-box"></i></div>
+                    <h3>Orders</h3>
+                    <p>Track your shipment, check order status, and review past purchases.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="info-card">
+                    <div class="icon"><i class="fas fa-credit-card"></i></div>
+                    <h3>Payments</h3>
+                    <p>Learn about accepted payment methods, payment failures, and verification.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="info-card">
+                    <div class="icon"><i class="fas fa-shipping-fast"></i></div>
+                    <h3>Shipping</h3>
+                    <p>Understand delivery timelines, tracking updates, and freight charges.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="info-card">
+                    <div class="icon"><i class="fas fa-undo"></i></div>
+                    <h3>Returns</h3>
+                    <p>Review return eligibility, deductions, and refund timelines.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="info-card">
+                    <div class="icon"><i class="fas fa-user-shield"></i></div>
+                    <h3>Account</h3>
+                    <p>Manage login, profile settings, address updates, and account verification.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="info-card">
+                    <div class="icon"><i class="fas fa-headset"></i></div>
+                    <h3>Support</h3>
+                    <p>Reach our support team for personalized assistance and order-specific help.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="cta-box">
+            <h3>Still need help?</h3>
+            <a href="{% url 'contact_support' %}" class="btn btn-primary">Contact support</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

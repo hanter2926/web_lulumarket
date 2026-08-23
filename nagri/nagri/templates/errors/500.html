@@ -1,0 +1,24 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Server Error{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/errors/500.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="container py-5">
+        <div class="error-card">
+            <div class="error-code">500</div>
+            <h1>Something went wrong</h1>
+            <p>We’re sorry, but something unexpected happened while processing your request. Please try again shortly.</p>
+            <div class="actions">
+                <a href="{% url 'home' %}" class="btn btn-primary">Home</a>
+                <a href="{% url 'contact_support' %}" class="btn btn-outline-primary">Contact support</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

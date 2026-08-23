@@ -1,0 +1,36 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Return Policy{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/policies/return_policy.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+    <div class="container py-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Return Policy</li>
+            </ol>
+        </nav>
+
+        <div class="policy-card">
+            <h1>Return Policy</h1>
+            <p>We want you to be satisfied with every purchase. If the product is damaged, defective, or not as described, you can raise a return request.</p>
+
+            <h3>Return window</h3>
+            <p>Returns are accepted within 30 days of delivery for most eligible items, unless otherwise specified.</p>
+
+            <h3>Condition for return</h3>
+            <ul>
+                <li>Product should be unused and in original packaging.</li>
+                <li>Original tags, invoice, and accessories should be included.</li>
+                <li>Return requests will be inspected before approval.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

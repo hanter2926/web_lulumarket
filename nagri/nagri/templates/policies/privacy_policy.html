@@ -1,0 +1,43 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Privacy Policy{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/policies/privacy_policy.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="policy-page">
+    <div class="container py-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Privacy Policy</li>
+            </ol>
+        </nav>
+
+        <div class="policy-card">
+            <h1>Privacy Policy</h1>
+            <p>We respect your privacy and treat your personal information with care. This policy explains how we collect, use, protect, and share information when you use Nagri.</p>
+
+            <h3>Information we collect</h3>
+            <ul>
+                <li>Contact details such as name, email, phone number, and address.</li>
+                <li>Order history, billing and shipping details.</li>
+                <li>Account information and preferences.</li>
+                <li>Device, browser, and usage information for analytics and security.</li>
+            </ul>
+
+            <h3>How we use it</h3>
+            <p>We use your data to process orders, provide customer support, improve our products, prevent fraud, and personalize your shopping experience.</p>
+
+            <h3>Sharing and security</h3>
+            <p>We do not sell personal information. We may share limited data with trusted service providers required for delivery, payment, or support operations.</p>
+
+            <h3>Your rights</h3>
+            <p>You may request access, updates, or deletion of your personal information where permitted by law. Contact support to exercise your rights.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

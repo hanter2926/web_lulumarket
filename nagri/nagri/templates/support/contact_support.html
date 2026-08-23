@@ -1,0 +1,64 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Contact Support{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/support/contact_support.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="support-page">
+    <div class="container py-5">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Contact Support</li>
+            </ol>
+        </nav>
+
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <div class="contact-card">
+                    <h1>Contact Support</h1>
+                    <p>We’re here to help with ordering, payments, shipping, and account concerns.</p>
+                    <ul class="contact-list">
+                        <li><i class="fas fa-envelope"></i> support@nagri.example</li>
+                        <li><i class="fas fa-phone"></i> +91 98765 43210</li>
+                        <li><i class="fas fa-clock"></i> Mon - Sat, 9:00 AM - 8:00 PM</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="col-lg-7">
+                <div class="form-card">
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label" for="id_name">Name</label>
+                                {{ form.name }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="id_email">Email</label>
+                                {{ form.email }}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="id_subject">Subject</label>
+                                {{ form.subject }}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="id_message">Message</label>
+                                {{ form.message }}
+                            </div>
+                        </div>
+                        <div class="form-actions mt-4">
+                            <button type="submit" class="btn btn-primary">Send message</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
