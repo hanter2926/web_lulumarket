@@ -141,3 +141,20 @@ class ProductViewSet(viewsets.ModelViewSet):
         products = self.get_queryset().filter(is_bestseller=True)
         serializer = self.get_serializer(products, many=True)
         return Response(serializer.data)
+
+
+def product_detail_view(request, product_id):
+    """Display detailed information about a specific product"""
+    from django.shortcuts import get_object_or_404
+    
+    product = get_object_or_404(Product, id=product_id, is_active=True)
+    related_products = Product.objects.filter(
+        category=product.category,
+        is_active=True
+    ).exclude(id=product_id).order_by('-rating', '-created_at')[:6]
+    
+    context = {
+        'product': product,
+        'related_products': related_products,
+    }
+    return render(request, 'products/product_detail.html', context)

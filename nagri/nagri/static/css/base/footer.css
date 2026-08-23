@@ -1,0 +1,224 @@
+/* ======================================
+   FOOTER.CSS - Footer styling
+   ====================================== */
+
+.footer {
+    background-color: #1a1a1a !important;
+    color: #ffffff;
+    margin-top: auto;
+    border-top: 3px solid #007bff;
+}
+
+.footer-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: #007bff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.footer-text {
+    font-size: 0.95rem;
+    color: #cccccc;
+    line-height: 1.8;
+    margin-bottom: 1rem;
+}
+
+.footer-links {
+    list-style: none;
+    padding: 0;
+}
+
+.footer-links li {
+    margin-bottom: 0.75rem;
+}
+
+.footer-links a {
+    color: #cccccc;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+}
+
+.footer-links a:hover {
+    color: #007bff;
+    transform: translateX(5px);
+}
+
+.footer-links a i {
+    margin-right: 0.5rem;
+    color: #007bff;
+}
+
+/* Social Links */
+.social-links {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.social-links a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: #007bff;
+    color: white;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    text-decoration: none;
+}
+
+.social-links a:hover {
+    background-color: #0056b3;
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3);
+}
+
+/* Newsletter Form */
+.newsletter-form {
+    margin-top: 1rem;
+}
+
+.newsletter-form .input-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.newsletter-form .form-control {
+    background-color: #333333;
+    border: 1px solid #444444;
+    color: #ffffff;
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+}
+
+.newsletter-form .form-control::placeholder {
+    color: #999999;
+}
+
+.newsletter-form .form-control:focus {
+    background-color: #333333;
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    color: #ffffff;
+}
+
+.newsletter-form .btn {
+    background-color: #007bff;
+    color: white;
+    padding: 0.75rem 1.25rem;
+    border: none;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.newsletter-form .btn:hover {
+    background-color: #0056b3;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3);
+}
+
+/* Footer Divider */
+.footer-divider {
+    border: none;
+    border-top: 1px solid #333333;
+    margin: 2rem 0;
+}
+
+/* Footer Copyright */
+.footer-copyright {
+    font-size: 0.9rem;
+    color: #999999;
+    margin-bottom: 0;
+}
+
+/* Footer Payment Icons */
+.footer-text i {
+    font-size: 1.5rem;
+    margin: 0 0.5rem;
+    color: #007bff;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .footer {
+        padding: 3rem 0 !important;
+    }
+    
+    .footer .row {
+        text-align: center;
+    }
+    
+    .social-links {
+        justify-content: center;
+    }
+    
+    .footer-links {
+        text-align: center;
+    }
+    
+    .footer-links a {
+        justify-content: center;
+    }
+    
+    .footer-links a:hover {
+        transform: translateX(0);
+    }
+    
+    .newsletter-form .input-group {
+        flex-direction: column;
+    }
+    
+    .newsletter-form .form-control,
+    .newsletter-form .btn {
+        width: 100%;
+    }
+    
+    .footer-title {
+        margin-top: 1.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .footer {
+        padding: 2rem 0 !important;
+    }
+    
+    .footer-title {
+        font-size: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .footer-text {
+        font-size: 0.9rem;
+    }
+    
+    .footer-links li {
+        margin-bottom: 0.5rem;
+    }
+    
+    .footer-links a {
+        font-size: 0.9rem;
+    }
+    
+    .social-links {
+        gap: 0.75rem;
+    }
+    
+    .social-links a {
+        width: 35px;
+        height: 35px;
+        font-size: 0.9rem;
+    }
+    
+    .footer-copyright {
+        font-size: 0.85rem;
+    }
+}

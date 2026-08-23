@@ -1,8 +1,149 @@
 {% extends 'base/base.html' %}
+{% load static %}
 
-{% block title %}Cart{% endblock %}
+{% block title %}Shopping Cart - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/cart/cart_detail.css' %}">
+{% endblock %}
 
 {% block content %}
-<h2>Cart</h2>
-<p>Your cart is empty for now.</p>
+
+<div class="container py-4">
+    <h1>Shopping Cart</h1>
+
+    {% if items %}
+    <div class="cart-container">
+        <!-- Cart Items -->
+        <div class="cart-items-section">
+            <table class="cart-table">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Price</th>
+                        <th>Quantity</th>
+                        <th>Subtotal</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr class="cart-item" data-item-id="{{ item.id }}">
+                        <td class="product-cell">
+                            <div class="product-info">
+                                {% if item.product.image %}
+                                    <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
+                                {% else %}
+                                    <div class="placeholder">
+                                        <i class="fas fa-image"></i>
+                                    </div>
+                                {% endif %}
+                                <div>
+                                    <p class="product-name">{{ item.product.name }}</p>
+                                    <small class="text-muted">SKU: {{ item.product.id }}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="price-cell">₹{{ item.product.price }}</td>
+                        <td class="quantity-cell">
+                            <div class="quantity-input">
+                                <button class="qty-btn qty-minus" data-item-id="{{ item.id }}">-</button>
+                                <input type="number" class="qty-value" value="{{ item.quantity }}" min="1">
+                                <button class="qty-btn qty-plus" data-item-id="{{ item.id }}">+</button>
+                            </div>
+                        </td>
+                        <td class="subtotal-cell">₹{{ item.product.price|mul:item.quantity }}</td>
+                        <td class="action-cell">
+                            <button class="btn btn-sm btn-danger remove-item" data-item-id="{{ item.id }}">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="continue-shopping">
+                <a href="{% url 'product_list' %}" class="btn btn-outline-primary">
+                    <i class="fas fa-chevron-left"></i> Continue Shopping
+                </a>
+            </div>
+        </div>
+
+        <!-- Cart Summary -->
+        <div class="cart-summary-section">
+            <div class="summary-card">
+                <h3>Order Summary</h3>
+
+                <div class="summary-row">
+                    <span>Subtotal:</span>
+                    <span class="subtotal">₹{{ total }}</span>
+                </div>
+
+                <div class="summary-row">
+                    <span>Discount:</span>
+                    <span class="discount">₹0</span>
+                </div>
+
+                <div class="summary-row">
+                    <span>Shipping:</span>
+                    <span class="shipping">FREE</span>
+                </div>
+
+                <div class="summary-row total-row">
+                    <span>Total Amount:</span>
+                    <span class="total-amount">₹{{ total }}</span>
+                </div>
+
+                <button class="btn btn-primary w-100 btn-checkout" onclick="checkout()">
+                    <i class="fas fa-lock"></i> Proceed to Checkout
+                </button>
+
+                <div class="discount-section">
+                    <h5>Have a Coupon?</h5>
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Enter coupon code" id="couponCode">
+                        <button class="btn btn-outline-primary" onclick="applyCoupon()">Apply</button>
+                    </div>
+                </div>
+
+                <div class="benefits">
+                    <div class="benefit">
+                        <i class="fas fa-check"></i>
+                        <span>Free shipping on orders ₹500+</span>
+                    </div>
+                    <div class="benefit">
+                        <i class="fas fa-check"></i>
+                        <span>30-day returns</span>
+                    </div>
+                    <div class="benefit">
+                        <i class="fas fa-check"></i>
+                        <span>Secure checkout</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+
+    <!-- Empty Cart -->
+    <div class="empty-cart">
+        <div class="empty-cart-icon">
+            <i class="fas fa-shopping-cart"></i>
+        </div>
+        <h2>Your Cart is Empty</h2>
+        <p>Looks like you haven't added anything to your cart yet.</p>
+        <a href="{% url 'product_list' %}" class="btn btn-primary btn-lg">
+            <i class="fas fa-shopping-bag"></i> Start Shopping
+        </a>
+    </div>
+
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/cart/cart.js' %}"></script>
 {% endblock %}

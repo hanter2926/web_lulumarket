@@ -6,16 +6,317 @@ from decimal import Decimal
 import razorpay
 from django.conf import settings
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.db.models import Q, Count
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 
 from cart.models import Cart
 from products.models import Product
+from accounts.models import Address
 
 from .models import Order, OrderItem
 from .serializers import OrderItemSerializer, OrderSerializer
+
+
+@login_required(login_url='login')
+def order_list_view(request):
+    """Display user's orders with statistics"""
+    orders = Order.objects.filter(user=request.user).prefetch_related('items__product').order_by('-created_at')
+    
+    # Calculate statistics
+    total_orders = orders.count()
+    completed_count = orders.filter(status='delivered').count()
+    pending_count = orders.filter(status__in=['pending', 'processing']).count()
+    cancelled_count = orders.filter(status='cancelled').count()
+    
+    context = {
+        'orders': orders,
+        'completed_count': completed_count,
+        'pending_count': pending_count,
+        'cancelled_count': cancelled_count,
+    }
+    return render(request, 'orders/order_list.html', context)
+
+
+@login_required(login_url='login')
+def order_detail_view(request, order_id):
+    """Display detailed information about a specific order"""
+    order = get_object_or_404(Order, id=order_id, user=request.user)
+    items = order.items.all().select_related('product')
+    
+    context = {
+        'order': order,
+        'items': items,
+    }
+    return render(request, 'orders/order_detail.html', context)
+
+
+@login_required(login_url='login')
+def checkout_view(request):
+    """First step of checkout - review cart items"""
+    cart, _ = Cart.objects.get_or_create(user=request.user)
+    items = cart.items.all().select_related('product')
+    
+    if not items.exists():
+        messages.warning(request, 'Your cart is empty. Please add items before checkout.')
+        return redirect('cart_detail')
+    
+    subtotal = sum(item.product.price * item.quantity for item in items)
+    
+    # Store checkout session data
+    request.session['checkout_subtotal'] = str(subtotal)
+    request.session['checkout_step'] = 'checkout'
+    
+    context = {
+        'items': items,
+        'subtotal': subtotal,
+        'cart_count': items.count(),
+    }
+    return render(request, 'checkout/checkout.html', context)
+
+
+@login_required(login_url='login')
+def checkout_address_view(request):
+    """Second step - select/enter shipping address"""
+    from .forms import CheckoutAddressForm
+    
+    user = request.user
+    saved_addresses = Address.objects.filter(user=user)
+    default_address = saved_addresses.filter(is_default=True).first()
+    
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'select_saved':
+            address_id = request.POST.get('address_id')
+            address = get_object_or_404(Address, id=address_id, user=user)
+            request.session['checkout_address_id'] = address.id
+            request.session['checkout_step'] = 'delivery'
+            messages.success(request, 'Address selected successfully.')
+            return redirect('checkout_delivery')
+        
+        elif action == 'new_address':
+            form = CheckoutAddressForm(request.POST)
+            if form.is_valid():
+                address = form.save(commit=False)
+                address.user = user
+                address.save()
+                request.session['checkout_address_id'] = address.id
+                request.session['checkout_step'] = 'delivery'
+                messages.success(request, 'Address saved successfully.')
+                return redirect('checkout_delivery')
+    else:
+        form = CheckoutAddressForm()
+    
+    context = {
+        'saved_addresses': saved_addresses,
+        'default_address': default_address,
+        'form': form,
+    }
+    return render(request, 'checkout/address.html', context)
+
+
+@login_required(login_url='login')
+def checkout_delivery_view(request):
+    """Third step - select delivery method"""
+    from .forms import DeliveryMethodForm
+    
+    address_id = request.session.get('checkout_address_id')
+    if not address_id:
+        messages.warning(request, 'Please select an address first.')
+        return redirect('checkout_address')
+    
+    address = get_object_or_404(Address, id=address_id, user=request.user)
+    
+    if request.method == 'POST':
+        form = DeliveryMethodForm(request.POST)
+        if form.is_valid():
+            request.session['checkout_delivery_method'] = form.cleaned_data['delivery_method']
+            request.session['checkout_step'] = 'payment'
+            return redirect('checkout_payment')
+    else:
+        form = DeliveryMethodForm()
+    
+    context = {
+        'address': address,
+        'form': form,
+    }
+    return render(request, 'checkout/delivery.html', context)
+
+
+@login_required(login_url='login')
+def checkout_payment_view(request):
+    """Fourth step - select payment method"""
+    from .forms import PaymentMethodForm, CouponForm
+    
+    address_id = request.session.get('checkout_address_id')
+    delivery_method = request.session.get('checkout_delivery_method', 'standard')
+    
+    if not address_id:
+        messages.warning(request, 'Please complete previous steps.')
+        return redirect('checkout_address')
+    
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'apply_coupon':
+            coupon_form = CouponForm(request.POST)
+            payment_form = PaymentMethodForm()
+            if coupon_form.is_valid():
+                coupon_code = coupon_form.cleaned_data.get('coupon_code')
+                if coupon_code:
+                    request.session['checkout_coupon'] = coupon_code
+                    messages.success(request, 'Coupon applied successfully.')
+            else:
+                messages.error(request, 'Invalid coupon.')
+        
+        else:
+            payment_form = PaymentMethodForm(request.POST)
+            coupon_form = CouponForm()
+            if payment_form.is_valid():
+                request.session['checkout_payment_method'] = payment_form.cleaned_data['payment_method']
+                request.session['checkout_step'] = 'review'
+                return redirect('checkout_review')
+    else:
+        payment_form = PaymentMethodForm()
+        coupon_form = CouponForm()
+    
+    # Calculate totals
+    subtotal = Decimal(request.session.get('checkout_subtotal', 0))
+    delivery_charge = Decimal(get_delivery_charge(delivery_method))
+    discount_amount = Decimal(0)
+    total = subtotal + delivery_charge - discount_amount
+    
+    context = {
+        'payment_form': payment_form,
+        'coupon_form': coupon_form,
+        'subtotal': subtotal,
+        'delivery_charge': delivery_charge,
+        'discount_amount': discount_amount,
+        'total': total,
+        'delivery_method': delivery_method,
+    }
+    return render(request, 'checkout/payment.html', context)
+
+
+@login_required(login_url='login')
+def checkout_review_view(request):
+    """Fifth step - review order before placing"""
+    user = request.user
+    
+    # Get session data
+    address_id = request.session.get('checkout_address_id')
+    delivery_method = request.session.get('checkout_delivery_method', 'standard')
+    payment_method = request.session.get('checkout_payment_method', 'razorpay')
+    coupon_code = request.session.get('checkout_coupon', '')
+    
+    if not address_id:
+        messages.warning(request, 'Please complete checkout steps.')
+        return redirect('checkout_address')
+    
+    # Get cart and address
+    cart = get_object_or_404(Cart, user=user)
+    cart_items = cart.items.all().select_related('product')
+    address = get_object_or_404(Address, id=address_id, user=user)
+    
+    if not cart_items.exists():
+        messages.warning(request, 'Your cart is empty.')
+        return redirect('cart_detail')
+    
+    # Calculate totals
+    subtotal = sum(item.product.price * item.quantity for item in cart_items)
+    delivery_charge = get_delivery_charge(delivery_method)
+    discount_amount = Decimal(0)
+    total = subtotal + delivery_charge - discount_amount
+    
+    if request.method == 'POST':
+        # Create order
+        order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
+        order = Order.objects.create(
+            user=user,
+            order_number=order_number,
+            subtotal=subtotal,
+            discount_amount=discount_amount,
+            delivery_charge=delivery_charge,
+            total_amount=total,
+            shipping_address=address,
+            shipping_address_name=address.full_name,
+            shipping_address_phone=address.phone,
+            shipping_address_line1=address.address_line_1,
+            shipping_address_line2=address.address_line_2,
+            shipping_address_city=address.city,
+            shipping_address_state=address.state,
+            shipping_address_postal_code=address.pincode,
+            shipping_address_country=address.country,
+            delivery_method=delivery_method,
+            payment_method=payment_method,
+            coupon_code=coupon_code,
+            status='pending',
+            is_paid=False,
+        )
+        
+        # Create order items
+        for cart_item in cart_items:
+            OrderItem.objects.create(
+                order=order,
+                product=cart_item.product,
+                quantity=cart_item.quantity,
+                price=cart_item.product.price,
+            )
+        
+        # Clear cart
+        cart.items.all().delete()
+        
+        # Clear session
+        for key in list(request.session.keys()):
+            if key.startswith('checkout_'):
+                del request.session[key]
+        
+        # Redirect based on payment method
+        if payment_method == 'cod':
+            messages.success(request, f'Order placed successfully! Order #: {order_number}')
+            return redirect('order_confirmation', order_id=order.id)
+        else:
+            return redirect('payment_page', order_id=order.id)
+    
+    context = {
+        'cart_items': cart_items,
+        'address': address,
+        'delivery_method': delivery_method,
+        'payment_method': payment_method,
+        'subtotal': subtotal,
+        'delivery_charge': delivery_charge,
+        'discount_amount': discount_amount,
+        'total': total,
+    }
+    return render(request, 'checkout/order_review.html', context)
+
+
+@login_required(login_url='login')
+def order_confirmation_view(request, order_id):
+    """Order confirmation page after successful order placement"""
+    order = get_object_or_404(Order, id=order_id, user=request.user)
+    items = order.items.all().select_related('product')
+    
+    context = {
+        'order': order,
+        'items': items,
+    }
+    return render(request, 'checkout/order_confirmation.html', context)
+
+
+def get_delivery_charge(delivery_method):
+    """Helper function to get delivery charge"""
+    charges = {
+        'standard': Decimal(0),
+        'express': Decimal(50),
+        'overnight': Decimal(100),
+    }
+    return charges.get(delivery_method, Decimal(0))
 
 
 def verify_razorpay_signature(order_id, payment_id, razorpay_signature, secret):

@@ -1,8 +1,101 @@
 {% extends 'base/base.html' %}
+{% load static %}
 
-{% block title %}Wishlist{% endblock %}
+{% block title %}Wishlist - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/wishlist/wishlist.css' %}">
+{% endblock %}
 
 {% block content %}
-<h2>Wishlist</h2>
-<p>Your saved items will appear here.</p>
+
+<div class="container py-4">
+    <h1>My Wishlist</h1>
+
+    {% if wishlist_items %}
+    <div class="wishlist-container">
+        <div class="wishlist-grid">
+            {% for item in wishlist_items %}
+            <div class="wishlist-card" data-product-id="{{ item.product.id }}">
+                <div class="product-image">
+                    {% if item.product.image %}
+                        <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
+                    {% else %}
+                        <div class="placeholder-image">
+                            <i class="fas fa-image"></i>
+                        </div>
+                    {% endif %}
+                    <button class="btn-remove-wishlist" data-product-id="{{ item.product.id }}" title="Remove from wishlist">
+                        <i class="fas fa-heart"></i>
+                    </button>
+                </div>
+
+                <div class="product-details">
+                    <h4>{{ item.product.name }}</h4>
+                    <p class="category">{{ item.product.category.name }}</p>
+
+                    <div class="rating">
+                        <div class="stars">
+                            {% for i in "12345" %}
+                                {% if forloop.counter <= item.product.rating %}
+                                    <i class="fas fa-star"></i>
+                                {% else %}
+                                    <i class="far fa-star"></i>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="price">
+                        <span class="current">₹{{ item.product.price }}</span>
+                        {% if item.product.compare_price and item.product.compare_price > item.product.price %}
+                            <span class="original">₹{{ item.product.compare_price }}</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="stock">
+                        {% if item.product.inventory.stock_quantity > 0 %}
+                            <span class="in-stock"><i class="fas fa-check-circle"></i> In Stock</span>
+                        {% else %}
+                            <span class="out-of-stock"><i class="fas fa-times-circle"></i> Out of Stock</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="actions">
+                        {% if item.product.inventory.stock_quantity > 0 %}
+                            <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ item.product.id }}">
+                                <i class="fas fa-shopping-cart"></i> Add to Cart
+                            </button>
+                        {% else %}
+                            <button class="btn btn-secondary btn-sm" disabled>
+                                <i class="fas fa-ban"></i> Out of Stock
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% else %}
+
+    <div class="empty-wishlist">
+        <div class="empty-icon">
+            <i class="fas fa-heart-broken"></i>
+        </div>
+        <h2>Your Wishlist is Empty</h2>
+        <p>Add products to your wishlist to save them for later</p>
+        <a href="{% url 'product_list' %}" class="btn btn-primary btn-lg">
+            <i class="fas fa-shopping-bag"></i> Start Shopping
+        </a>
+    </div>
+
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/wishlist/wishlist.js' %}"></script>
 {% endblock %}

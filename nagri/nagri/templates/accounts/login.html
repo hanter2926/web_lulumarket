@@ -1,0 +1,106 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Login - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/accounts/login.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="login-container">
+    <div class="login-wrapper">
+        <div class="login-card">
+            <div class="login-header">
+                <h2>Welcome Back</h2>
+                <p>Sign in to your account</p>
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="post" action="{% url 'email_login' %}" class="login-form">
+                {% csrf_token %}
+
+                <div class="form-group">
+                    <label for="email" class="form-label">Email Address</label>
+                    <input 
+                        type="email" 
+                        class="form-control {% if form.email.errors %}is-invalid{% endif %}" 
+                        id="email" 
+                        name="email" 
+                        placeholder="your@email.com"
+                        required
+                    >
+                    {% if form.email.errors %}
+                        <div class="invalid-feedback">{{ form.email.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="password" class="form-label">Password</label>
+                    <input 
+                        type="password" 
+                        class="form-control {% if form.password.errors %}is-invalid{% endif %}" 
+                        id="password" 
+                        name="password" 
+                        placeholder="••••••••"
+                        required
+                    >
+                    {% if form.password.errors %}
+                        <div class="invalid-feedback">{{ form.password.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-check remember-me">
+                    <input type="checkbox" class="form-check-input" id="remember" name="remember">
+                    <label class="form-check-label" for="remember">
+                        Remember me
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 btn-login">Sign In</button>
+            </form>
+
+            <div class="divider">
+                <span>or</span>
+            </div>
+
+            <div class="alternative-login">
+                <a href="{% url 'otp_login_page' %}" class="btn btn-outline-primary w-100">
+                    <i class="fas fa-mobile-alt"></i> Login with OTP
+                </a>
+            </div>
+
+            <div class="login-footer">
+                <p>
+                    Don't have an account? 
+                    <a href="{% url 'signup_form' %}" class="signup-link">Sign Up</a>
+                </p>
+                <p>
+                    <a href="#" class="forgot-link">Forgot Password?</a>
+                </p>
+            </div>
+        </div>
+
+        <div class="login-benefits">
+            <h3>Why Login?</h3>
+            <ul>
+                <li><i class="fas fa-check"></i> Track your orders</li>
+                <li><i class="fas fa-check"></i> Save your addresses</li>
+                <li><i class="fas fa-check"></i> Manage your wishlist</li>
+                <li><i class="fas fa-check"></i> Get exclusive offers</li>
+                <li><i class="fas fa-check"></i> Faster checkout</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

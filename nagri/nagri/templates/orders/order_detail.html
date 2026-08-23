@@ -1,0 +1,198 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Order #{{ order.order_number }} - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/orders/order_detail.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="container py-4">
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb-nav">
+        <ul>
+            <li><a href="{% url 'home' %}">Home</a></li>
+            <li><span>/</span></li>
+            <li><a href="{% url 'order_list' %}">My Orders</a></li>
+            <li><span>/</span></li>
+            <li>Order #{{ order.order_number }}</li>
+        </ul>
+    </nav>
+
+    <div class="order-detail-container">
+        <!-- Main Content -->
+        <div class="order-detail-main">
+            <!-- Order Header -->
+            <div class="order-header-section">
+                <div class="header-info">
+                    <h1>Order #{{ order.order_number }}</h1>
+                    <p class="order-date">Placed on {{ order.created_at|date:"d M Y" }}</p>
+                </div>
+                <div class="header-status">
+                    <span class="status-badge status-{{ order.status|lower }}">
+                        {{ order.get_status_display }}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Order Timeline -->
+            <div class="order-timeline">
+                <h3>Order Status</h3>
+                <div class="timeline">
+                    <div class="timeline-item completed">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <h4>Order Placed</h4>
+                            <p>{{ order.created_at|date:"d M Y, H:i" }}</p>
+                        </div>
+                    </div>
+                    <div class="timeline-item {% if order.status != 'pending' %}completed{% endif %}">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <h4>Payment Confirmed</h4>
+                            <p>{% if order.is_paid %}{{ order.updated_at|date:"d M Y" }}{% else %}Awaiting payment{% endif %}</p>
+                        </div>
+                    </div>
+                    <div class="timeline-item {% if order.status in 'shipped,delivered' %}completed{% endif %}">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <h4>Shipped</h4>
+                            <p>{% if order.status in 'shipped,delivered' %}In transit{% else %}Soon{% endif %}</p>
+                        </div>
+                    </div>
+                    <div class="timeline-item {% if order.status == 'delivered' %}completed{% endif %}">
+                        <div class="timeline-marker"></div>
+                        <div class="timeline-content">
+                            <h4>Delivered</h4>
+                            <p>{% if order.status == 'delivered' %}Completed{% else %}Coming soon{% endif %}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Order Items -->
+            <div class="order-items-section">
+                <h3>Order Items</h3>
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Price</th>
+                            <th>Quantity</th>
+                            <th>Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td>
+                                <strong>{{ item.product.name }}</strong>
+                                <br><small>SKU: {{ item.product.id }}</small>
+                            </td>
+                            <td>₹{{ item.price }}</td>
+                            <td>{{ item.quantity }}</td>
+                            <td><strong>₹{{ item.price|mul:item.quantity }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Shipping Address -->
+            <div class="shipping-section">
+                <h3>Shipping Address</h3>
+                <div class="address-card">
+                    <p>
+                        <strong>{{ order.shipping_address_name }}</strong><br>
+                        {{ order.shipping_address_line1 }}<br>
+                        {% if order.shipping_address_line2 %}
+                            {{ order.shipping_address_line2 }}<br>
+                        {% endif %}
+                        {{ order.shipping_address_city }}, {{ order.shipping_address_state }} {{ order.shipping_address_postal_code }}<br>
+                        {{ order.shipping_address_country }}<br>
+                        <strong>Phone:</strong> {{ order.shipping_address_phone }}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <aside class="order-detail-sidebar">
+            <!-- Order Summary -->
+            <div class="summary-card">
+                <h3>Order Summary</h3>
+                <div class="summary-row">
+                    <span>Subtotal:</span>
+                    <span>₹{{ order.total_amount }}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Shipping:</span>
+                    <span>FREE</span>
+                </div>
+                <div class="summary-row total">
+                    <span>Total:</span>
+                    <span>₹{{ order.total_amount }}</span>
+                </div>
+            </div>
+
+            <!-- Payment Info -->
+            <div class="info-card">
+                <h3>Payment</h3>
+                <div class="info-row">
+                    <span>Method:</span>
+                    <strong>{{ order.get_payment_provider_display }}</strong>
+                </div>
+                <div class="info-row">
+                    <span>Status:</span>
+                    <strong>{% if order.is_paid %}Paid{% else %}Pending{% endif %}</strong>
+                </div>
+                {% if order.razorpay_payment_id %}
+                <div class="info-row">
+                    <span>Payment ID:</span>
+                    <small>{{ order.razorpay_payment_id }}</small>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Tracking Info -->
+            <div class="info-card">
+                <h3>Tracking</h3>
+                <div class="info-row">
+                    <span>Tracking #:</span>
+                    <strong>{{ order.tracking_number|default:"Not yet assigned" }}</strong>
+                </div>
+                <div class="info-row">
+                    <span>Status:</span>
+                    <strong>{{ order.tracking_status|default:"Processing" }}</strong>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="actions-card">
+                <a href="{% url 'order_list' %}" class="btn btn-secondary w-100">
+                    <i class="fas fa-arrow-left"></i> Back to Orders
+                </a>
+                {% if order.status not in 'cancelled,delivered' %}
+                    <button class="btn btn-outline-danger w-100 mt-2" onclick="cancelOrder()">
+                        <i class="fas fa-times"></i> Cancel Order
+                    </button>
+                {% endif %}
+            </div>
+        </aside>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function cancelOrder() {
+        if (confirm('Are you sure you want to cancel this order?')) {
+            console.log('Cancelling order {{ order.id }}');
+            // Handle order cancellation
+        }
+    }
+</script>
+{% endblock %}

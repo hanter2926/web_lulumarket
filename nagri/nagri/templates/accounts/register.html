@@ -1,0 +1,149 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Register - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/accounts/register.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="register-container">
+    <div class="register-wrapper">
+        <div class="register-card">
+            <div class="register-header">
+                <h2>Create Account</h2>
+                <p>Join Nagri to start shopping</p>
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="post" action="{% url 'signup_submit' %}" class="register-form">
+                {% csrf_token %}
+
+                <div class="form-group">
+                    <label for="full_name" class="form-label">Full Name</label>
+                    <input 
+                        type="text" 
+                        class="form-control" 
+                        id="full_name" 
+                        name="full_name" 
+                        placeholder="Your full name"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="email" class="form-label">Email Address</label>
+                    <input 
+                        type="email" 
+                        class="form-control" 
+                        id="email" 
+                        name="email" 
+                        placeholder="your@email.com"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="phone" class="form-label">Phone Number</label>
+                    <input 
+                        type="tel" 
+                        class="form-control" 
+                        id="phone" 
+                        name="phone" 
+                        placeholder="+91 9876543210"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="password" class="form-label">Password</label>
+                    <input 
+                        type="password" 
+                        class="form-control" 
+                        id="password" 
+                        name="password" 
+                        placeholder="At least 8 characters"
+                        required
+                    >
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i> Password must be at least 8 characters
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirm_password" class="form-label">Confirm Password</label>
+                    <input 
+                        type="password" 
+                        class="form-control" 
+                        id="confirm_password" 
+                        name="confirm_password" 
+                        placeholder="Confirm password"
+                        required
+                    >
+                </div>
+
+                <div class="form-check terms">
+                    <input type="checkbox" class="form-check-input" id="terms" name="terms" required>
+                    <label class="form-check-label" for="terms">
+                        I agree to the <a href="{% url 'terms_conditions' %}">Terms & Conditions</a>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 btn-register">Create Account</button>
+            </form>
+
+            <div class="register-footer">
+                <p>
+                    Already have an account? 
+                    <a href="{% url 'login_page' %}" class="login-link">Sign In</a>
+                </p>
+            </div>
+        </div>
+
+        <div class="register-benefits">
+            <h3>Nagri Benefits</h3>
+            <div class="benefits-list">
+                <div class="benefit-item">
+                    <i class="fas fa-truck"></i>
+                    <div>
+                        <h4>Free Shipping</h4>
+                        <p>On orders over ₹500</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <i class="fas fa-undo"></i>
+                    <div>
+                        <h4>Easy Returns</h4>
+                        <p>30-day return policy</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <i class="fas fa-shield-alt"></i>
+                    <div>
+                        <h4>Secure Shopping</h4>
+                        <p>100% safe transactions</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <i class="fas fa-headset"></i>
+                    <div>
+                        <h4>24/7 Support</h4>
+                        <p>Always here to help</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

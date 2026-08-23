@@ -1,0 +1,218 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}{{ product.name }} - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/products/product_detail.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="container py-4">
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb-nav mb-4" aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'product_list' %}?category={{ product.category.id }}">{{ product.category.name }}</a></li>
+            <li class="breadcrumb-item active">{{ product.name|truncatechars:30 }}</li>
+        </ol>
+    </nav>
+
+    <div class="product-detail-container">
+        <!-- Product Images -->
+        <div class="product-images">
+            <div class="main-image">
+                {% if product.image %}
+                    <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid" id="mainProductImage">
+                {% else %}
+                    <div class="placeholder-image">
+                        <i class="fas fa-image"></i>
+                    </div>
+                {% endif %}
+                <div class="image-badges">
+                    {% if product.is_featured %}
+                        <span class="badge badge-featured">Featured</span>
+                    {% endif %}
+                    {% if product.is_bestseller %}
+                        <span class="badge badge-bestseller">Bestseller</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Product Information -->
+        <div class="product-details">
+            <!-- Product Header -->
+            <div class="product-header">
+                <h1>{{ product.name }}</h1>
+                <p class="product-category">{{ product.category.name }}</p>
+                {% if product.brand %}
+                    <p class="product-brand"><strong>Brand:</strong> {{ product.brand }}</p>
+                {% endif %}
+            </div>
+
+            <!-- Rating and Reviews -->
+            <div class="product-rating-section">
+                <div class="rating-display">
+                    <div class="stars">
+                        {% for i in "12345" %}
+                            {% if forloop.counter <= product.rating %}
+                                <i class="fas fa-star"></i>
+                            {% else %}
+                                <i class="far fa-star"></i>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    <span class="rating-text">{{ product.rating }} / 5.0</span>
+                    <a href="#reviews" class="review-link">(Read reviews)</a>
+                </div>
+            </div>
+
+            <!-- Pricing -->
+            <div class="product-pricing">
+                <div class="price-display">
+                    <span class="current-price">₹{{ product.price }}</span>
+                    {% if product.compare_price and product.compare_price > product.price %}
+                        <span class="original-price">₹{{ product.compare_price }}</span>
+                        {% with discount=product.compare_price|add:0 %}
+                            <span class="discount-badge">{{ discount }}% OFF</span>
+                        {% endwith %}
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Stock Status -->
+            <div class="stock-status">
+                {% if product.inventory.stock_quantity > 0 %}
+                    <span class="in-stock">
+                        <i class="fas fa-check-circle"></i> In Stock
+                        ({{ product.inventory.stock_quantity }} available)
+                    </span>
+                {% else %}
+                    <span class="out-of-stock">
+                        <i class="fas fa-times-circle"></i> Out of Stock
+                    </span>
+                {% endif %}
+            </div>
+
+            <!-- Description -->
+            {% if product.short_description %}
+            <div class="product-short-description">
+                <p>{{ product.short_description }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Add to Cart Section -->
+            {% if product.inventory.stock_quantity > 0 %}
+            <div class="product-actions">
+                <div class="quantity-selector">
+                    <label for="quantity">Quantity:</label>
+                    <div class="quantity-input">
+                        <button type="button" class="qty-btn qty-minus">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                        <input type="number" id="quantity" class="qty-value" value="1" min="1" max="{{ product.inventory.stock_quantity }}">
+                        <button type="button" class="qty-btn qty-plus">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-lg add-to-cart-btn" data-product-id="{{ product.id }}">
+                    <i class="fas fa-shopping-cart"></i> Add to Cart
+                </button>
+
+                <button class="btn btn-outline-primary btn-lg add-to-wishlist-btn" data-product-id="{{ product.id }}" title="Add to Wishlist">
+                    <i class="far fa-heart"></i>
+                </button>
+
+                <button class="btn btn-outline-success btn-lg buy-now-btn" data-product-id="{{ product.id }}">
+                    <i class="fas fa-bolt"></i> Buy Now
+                </button>
+            </div>
+            {% else %}
+            <div class="product-actions">
+                <button class="btn btn-secondary btn-lg" disabled>
+                    <i class="fas fa-ban"></i> Out of Stock
+                </button>
+                <button class="btn btn-outline-primary btn-lg add-to-wishlist-btn" data-product-id="{{ product.id }}" title="Add to Wishlist">
+                    <i class="far fa-heart"></i> Notify Me
+                </button>
+            </div>
+            {% endif %}
+
+            <!-- Product Features -->
+            <div class="product-features">
+                <div class="feature">
+                    <i class="fas fa-shipping-fast"></i>
+                    <div>
+                        <h5>Free Shipping</h5>
+                        <p>On orders over ₹500</p>
+                    </div>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-undo"></i>
+                    <div>
+                        <h5>Easy Returns</h5>
+                        <p>30-day return policy</p>
+                    </div>
+                </div>
+                <div class="feature">
+                    <i class="fas fa-lock"></i>
+                    <div>
+                        <h5>Secure Payment</h5>
+                        <p>100% secure checkout</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr class="my-5">
+
+    <!-- Detailed Description -->
+    {% if product.description %}
+    <div class="product-full-description">
+        <h3>Product Description</h3>
+        <div class="description-content">
+            {{ product.description|safe }}
+        </div>
+    </div>
+
+    <hr class="my-5">
+    {% endif %}
+
+    <!-- Related Products -->
+    <div class="related-products">
+        <h3>Related Products</h3>
+        <div class="products-grid">
+            {% for related in related_products %}
+            <div class="product-card">
+                <div class="product-image">
+                    {% if related.image %}
+                        <img src="{{ related.image.url }}" alt="{{ related.name }}">
+                    {% else %}
+                        <div class="placeholder-image">
+                            <i class="fas fa-image"></i>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="product-info">
+                    <h5><a href="{% url 'product_detail' pk=related.id %}">{{ related.name }}</a></h5>
+                    <div class="product-price">₹{{ related.price }}</div>
+                    <button class="btn btn-sm btn-primary" onclick="addToCart({{ related.id }})">
+                        Add to Cart
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/products/product_detail.js' %}"></script>
+{% endblock %}

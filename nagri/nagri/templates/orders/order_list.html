@@ -1,23 +1,122 @@
 {% extends 'base/base.html' %}
+{% load static %}
 
-{% block title %}Orders{% endblock %}
+{% block title %}My Orders - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/orders/order_list.css' %}">
+{% endblock %}
 
 {% block content %}
-<h2>Orders</h2>
-<p>Order listing page.</p>
 
-<button id="rzp-checkout-btn" type="button">Pay with Razorpay</button>
+<div class="container py-4">
+    <h1>My Orders</h1>
 
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    {% if orders %}
+    <div class="orders-container">
+        <div class="orders-list">
+            {% for order in orders %}
+            <div class="order-card">
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>Order #{{ order.order_number }}</h3>
+                        <p class="order-date">{{ order.created_at|date:"d M Y, H:i" }}</p>
+                    </div>
+                    <div class="order-status">
+                        <span class="status-badge status-{{ order.status|lower }}">
+                            {{ order.get_status_display }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="order-items">
+                    {% for item in order.items.all %}
+                    <div class="order-item">
+                        <div class="item-details">
+                            <p class="item-name">{{ item.product.name }}</p>
+                            <p class="item-sku">SKU: {{ item.product.id }}</p>
+                        </div>
+                        <div class="item-quantity">
+                            Qty: {{ item.quantity }}
+                        </div>
+                        <div class="item-price">
+                            ₹{{ item.price }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="order-footer">
+                    <div class="order-total">
+                        <strong>Total:</strong>
+                        <strong>₹{{ order.total_amount }}</strong>
+                    </div>
+                    <div class="order-actions">
+                        <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-eye"></i> View Details
+                        </a>
+                        {% if order.status == 'pending' %}
+                            <button class="btn btn-sm btn-warning" onclick="cancelOrder({{ order.id }})">
+                                <i class="fas fa-times"></i> Cancel
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Order Statistics -->
+        <aside class="order-stats">
+            <div class="stats-card">
+                <h3>Order Summary</h3>
+                <div class="stat">
+                    <span>Total Orders:</span>
+                    <strong>{{ orders.count }}</strong>
+                </div>
+                <div class="stat">
+                    <span>Completed:</span>
+                    <strong>{{ completed_count }}</strong>
+                </div>
+                <div class="stat">
+                    <span>Pending:</span>
+                    <strong>{{ pending_count }}</strong>
+                </div>
+                <div class="stat">
+                    <span>Cancelled:</span>
+                    <strong>{{ cancelled_count }}</strong>
+                </div>
+            </div>
+        </aside>
+    </div>
+    {% else %}
+
+    <div class="empty-orders">
+        <div class="empty-icon">
+            <i class="fas fa-box-open"></i>
+        </div>
+        <h2>No Orders Yet</h2>
+        <p>You haven't placed any orders yet. Start shopping now!</p>
+        <a href="{% url 'product_list' %}" class="btn btn-primary btn-lg">
+            <i class="fas fa-shopping-bag"></i> Start Shopping
+        </a>
+    </div>
+
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
 <script>
-  document.getElementById('rzp-checkout-btn').addEventListener('click', function () {
-    fetch('/orders/orders/create/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token }}'
-      },
-      body: JSON.stringify({
+    function cancelOrder(orderId) {
+        if (confirm('Are you sure you want to cancel this order?')) {
+            // Handle order cancellation
+            console.log('Cancelling order:', orderId);
+        }
+    }
+</script>
+{% endblock %}
         product_id: 1,
         quantity: 1
       })

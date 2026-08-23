@@ -1,0 +1,169 @@
+{% extends "base/base.html" %}
+{% load static %}
+
+{% block title %}Checkout - Nagri{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/checkout/checkout.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="checkout-container">
+    <!-- Main Content -->
+    <div class="checkout-main">
+        <!-- Header -->
+        <div class="checkout-header">
+            <h1 class="page-title">Checkout</h1>
+            <p class="page-subtitle">Review your items before proceeding</p>
+        </div>
+
+        <!-- Step Indicator -->
+        <div class="checkout-steps">
+            <div class="step step-active">
+                <div class="step-number">1</div>
+                <div class="step-label">Review</div>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-label">Address</div>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-label">Delivery</div>
+            </div>
+            <div class="step">
+                <div class="step-number">4</div>
+                <div class="step-label">Payment</div>
+            </div>
+            <div class="step">
+                <div class="step-number">5</div>
+                <div class="step-label">Review</div>
+            </div>
+        </div>
+
+        <!-- Cart Items -->
+        <div class="cart-items-section">
+            <h2 class="section-title">
+                <i class="fas fa-shopping-bag"></i>
+                Order Summary
+            </h2>
+
+            {% if items %}
+                <div class="items-list">
+                    {% for item in items %}
+                        <div class="cart-item">
+                            <div class="item-image">
+                                {% if item.product.image %}
+                                    <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
+                                {% else %}
+                                    <img src="https://via.placeholder.com/80" alt="No image">
+                                {% endif %}
+                            </div>
+                            
+                            <div class="item-details">
+                                <h3 class="item-name">
+                                    <a href="{% url 'product_detail' item.product.id %}">
+                                        {{ item.product.name }}
+                                    </a>
+                                </h3>
+                                <p class="item-category">{{ item.product.category.name }}</p>
+                                <div class="item-meta">
+                                    <span class="item-sku">SKU: {{ item.product.id }}</span>
+                                    <span class="item-quantity">Qty: <strong>{{ item.quantity }}</strong></span>
+                                </div>
+                            </div>
+                            
+                            <div class="item-pricing">
+                                <div class="price-per-unit">
+                                    <small>₹{{ item.product.price }} each</small>
+                                </div>
+                                <div class="price-total">
+                                    ₹{{ item.product.price|floatformat:2 }} × {{ item.quantity }} = <strong>₹{{ total_item|add:item.product.price|mul:item.quantity }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Continue Button -->
+                <div class="checkout-actions">
+                    <a href="{% url 'cart_detail' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-arrow-left"></i> Back to Cart
+                    </a>
+                    <a href="{% url 'checkout_address' %}" class="btn btn-primary">
+                        Continue to Address <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+            {% else %}
+                <div class="empty-cart">
+                    <div class="empty-icon">
+                        <i class="fas fa-shopping-cart"></i>
+                    </div>
+                    <p class="empty-text">Your cart is empty</p>
+                    <a href="{% url 'product_list' %}" class="btn btn-primary">Continue Shopping</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Sidebar Summary -->
+    <div class="checkout-sidebar">
+        <div class="summary-card">
+            <h3 class="summary-title">
+                <i class="fas fa-receipt"></i>
+                Price Breakdown
+            </h3>
+
+            <div class="summary-row">
+                <span class="label">Subtotal</span>
+                <span class="value">₹{{ subtotal|floatformat:2 }}</span>
+            </div>
+
+            <div class="summary-row">
+                <span class="label">Items</span>
+                <span class="value">{{ cart_count }} item{{ cart_count|pluralize }}</span>
+            </div>
+
+            <div class="summary-row info-row">
+                <small class="text-muted">Delivery charges will be calculated in next step</small>
+            </div>
+
+            <div class="summary-divider"></div>
+
+            <div class="summary-row total-row">
+                <span class="label">Order Total</span>
+                <span class="value">₹{{ subtotal|floatformat:2 }}</span>
+            </div>
+
+            <div class="benefits-list">
+                <div class="benefit-item">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Free returns within 30 days</span>
+                </div>
+                <div class="benefit-item">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Secure checkout with SSL encryption</span>
+                </div>
+                <div class="benefit-item">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Order tracking available</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Need Help -->
+        <div class="help-card">
+            <h4 class="help-title">
+                <i class="fas fa-question-circle"></i>
+                Need Help?
+            </h4>
+            <p class="help-text">Our customer support team is available 24/7 to help you.</p>
+            <a href="{% url 'contact_support' %}" class="help-link">Contact Support</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="{% static 'js/checkout/checkout.js' %}"></script>
+{% endblock %}

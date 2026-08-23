@@ -1,0 +1,623 @@
+/* ============================================
+   Checkout Page CSS
+   ============================================ */
+
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --info-color: #17a2b8;
+    --light-bg: #f8f9fa;
+    --border-color: #dee2e6;
+    --transition: all 0.3s ease;
+}
+
+.checkout-container {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 2rem;
+    max-width: 1400px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+/* ============================================
+   Header & Title
+   ============================================ */
+
+.checkout-header {
+    margin-bottom: 2.5rem;
+}
+
+.page-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #111;
+    margin: 0 0 0.5rem 0;
+}
+
+.page-subtitle {
+    font-size: 1rem;
+    color: var(--secondary-color);
+    margin: 0;
+}
+
+/* ============================================
+   Step Indicator
+   ============================================ */
+
+.checkout-steps {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2.5rem;
+    gap: 1rem;
+}
+
+.step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    opacity: 0.5;
+    transition: var(--transition);
+}
+
+.step.step-active {
+    opacity: 1;
+}
+
+.step-number {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: var(--light-bg);
+    border: 2px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.2rem;
+    color: var(--secondary-color);
+    margin-bottom: 0.5rem;
+    transition: var(--transition);
+}
+
+.step.step-active .step-number {
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-color);
+}
+
+.step-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--secondary-color);
+    text-align: center;
+}
+
+.step.step-active .step-label {
+    color: var(--primary-color);
+    font-weight: 700;
+}
+
+/* ============================================
+   Cart Items Section
+   ============================================ */
+
+.cart-items-section {
+    background: #fff;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.section-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #111;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+}
+
+.section-title i {
+    color: var(--primary-color);
+}
+
+/* ============================================
+   Items List
+   ============================================ */
+
+.items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.cart-item {
+    display: grid;
+    grid-template-columns: 80px 1fr 150px;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    background: var(--light-bg);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    transition: var(--transition);
+    align-items: center;
+}
+
+.cart-item:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    background: #fff;
+}
+
+.item-image {
+    width: 80px;
+    height: 80px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.item-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.item-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.item-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111;
+    margin: 0;
+}
+
+.item-name a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.item-name a:hover {
+    color: var(--primary-color);
+}
+
+.item-category {
+    font-size: 0.85rem;
+    color: var(--secondary-color);
+    margin: 0;
+}
+
+.item-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.85rem;
+    color: var(--secondary-color);
+}
+
+.item-sku {
+    display: flex;
+    align-items: center;
+}
+
+.item-quantity {
+    display: flex;
+    align-items: center;
+}
+
+.item-pricing {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    text-align: right;
+}
+
+.price-per-unit {
+    font-size: 0.85rem;
+    color: var(--secondary-color);
+}
+
+.price-per-unit small {
+    display: block;
+}
+
+.price-total {
+    font-size: 0.95rem;
+    color: #111;
+    font-weight: 600;
+}
+
+.price-total strong {
+    color: var(--primary-color);
+    font-size: 1.1rem;
+}
+
+/* ============================================
+   Empty Cart State
+   ============================================ */
+
+.empty-cart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    color: var(--secondary-color);
+    margin-bottom: 1.5rem;
+    opacity: 0.6;
+}
+
+.empty-text {
+    font-size: 1.2rem;
+    color: var(--secondary-color);
+    margin-bottom: 2rem;
+}
+
+/* ============================================
+   Checkout Actions
+   ============================================ */
+
+.checkout-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.checkout-actions .btn {
+    flex: 1;
+    padding: 0.875rem 1.5rem;
+    font-weight: 600;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: var(--transition);
+}
+
+.checkout-actions .btn-primary {
+    background: var(--primary-color);
+    color: #fff;
+    border: none;
+}
+
+.checkout-actions .btn-primary:hover {
+    background: #0056b3;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+}
+
+.checkout-actions .btn-outline-primary {
+    background: transparent;
+    color: var(--primary-color);
+    border: 2px solid var(--primary-color);
+}
+
+.checkout-actions .btn-outline-primary:hover {
+    background: var(--primary-color);
+    color: #fff;
+}
+
+/* ============================================
+   Sidebar
+   ============================================ */
+
+.checkout-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.summary-card,
+.help-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.summary-card {
+    position: sticky;
+    top: 100px;
+}
+
+.summary-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #111;
+    margin: 0 0 1.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.summary-title i {
+    color: var(--primary-color);
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.875rem 0;
+    font-size: 0.95rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.summary-row.info-row {
+    border: none;
+    padding: 0.5rem 0;
+}
+
+.summary-row .label {
+    color: var(--secondary-color);
+    font-weight: 500;
+}
+
+.summary-row .value {
+    color: #111;
+    font-weight: 600;
+}
+
+.summary-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 1rem 0;
+}
+
+.summary-row.total-row {
+    border: none;
+    padding: 1rem 0;
+    font-size: 1.1rem;
+    background: var(--light-bg);
+    padding: 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+}
+
+.summary-row.total-row .value {
+    color: var(--primary-color);
+    font-size: 1.3rem;
+}
+
+/* ============================================
+   Benefits List
+   ============================================ */
+
+.benefits-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.benefit-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--secondary-color);
+}
+
+.benefit-item i {
+    color: var(--success-color);
+    font-size: 1rem;
+}
+
+/* ============================================
+   Help Card
+   ============================================ */
+
+.help-card {
+    background: linear-gradient(135deg, var(--primary-color) 0%, #0056b3 100%);
+    color: #fff;
+}
+
+.help-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0 0 0.75rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.help-text {
+    font-size: 0.875rem;
+    margin: 0 0 1rem 0;
+    opacity: 0.95;
+}
+
+.help-link {
+    display: inline-block;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 600;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+    transition: var(--transition);
+    padding-bottom: 0.25rem;
+}
+
+.help-link:hover {
+    border-bottom-color: #fff;
+}
+
+/* ============================================
+   Text Utilities
+   ============================================ */
+
+.text-muted {
+    color: var(--secondary-color) !important;
+    font-size: 0.85rem;
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+
+/* Tablet (768px and below) */
+@media (max-width: 768px) {
+    .checkout-container {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+
+    .checkout-steps {
+        gap: 0.5rem;
+    }
+
+    .step-number {
+        width: 40px;
+        height: 40px;
+        font-size: 1rem;
+    }
+
+    .step-label {
+        font-size: 0.75rem;
+    }
+
+    .cart-item {
+        grid-template-columns: 70px 1fr;
+        gap: 1rem;
+    }
+
+    .item-image {
+        width: 70px;
+        height: 70px;
+    }
+
+    .item-pricing {
+        grid-column: 1 / -1;
+        margin-top: 0.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .summary-card {
+        position: static;
+    }
+
+    .checkout-actions {
+        flex-direction: column;
+    }
+
+    .checkout-actions .btn {
+        width: 100%;
+    }
+}
+
+/* Mobile (480px and below) */
+@media (max-width: 480px) {
+    .checkout-container {
+        padding: 0 0.75rem;
+        margin: 1rem auto;
+    }
+
+    .checkout-header {
+        margin-bottom: 1.5rem;
+    }
+
+    .page-title {
+        font-size: 1.8rem;
+    }
+
+    .checkout-steps {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .step {
+        flex: 0 1 calc(20% - 0.4rem);
+    }
+
+    .step-number {
+        width: 35px;
+        height: 35px;
+        font-size: 0.9rem;
+    }
+
+    .step-label {
+        font-size: 0.65rem;
+        display: none;
+    }
+
+    .step.step-active .step-label {
+        display: block;
+    }
+
+    .cart-items-section {
+        padding: 1rem;
+    }
+
+    .section-title {
+        font-size: 1.1rem;
+        margin-bottom: 1rem;
+    }
+
+    .cart-item {
+        grid-template-columns: 1fr;
+        padding: 1rem;
+        gap: 0.75rem;
+    }
+
+    .item-image {
+        width: 100%;
+        height: 150px;
+        order: -1;
+    }
+
+    .item-pricing {
+        grid-column: 1;
+        margin-top: 0;
+        padding-top: 0;
+        border: none;
+        text-align: left;
+    }
+
+    .checkout-actions {
+        flex-direction: column-reverse;
+        gap: 0.75rem;
+        padding-top: 1rem;
+    }
+
+    .summary-row {
+        font-size: 0.85rem;
+        padding: 0.65rem 0;
+    }
+
+    .summary-row.total-row {
+        font-size: 1rem;
+    }
+
+    .summary-row.total-row .value {
+        font-size: 1.1rem;
+    }
+
+    .benefits-list {
+        gap: 0.65rem;
+        margin-top: 1rem;
+    }
+
+    .benefit-item {
+        font-size: 0.8rem;
+    }
+}
