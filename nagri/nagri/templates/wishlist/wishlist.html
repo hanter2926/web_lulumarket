@@ -1,5 +1,6 @@
 {% extends 'base/base.html' %}
 {% load static %}
+{% load price_extras %}
 
 {% block title %}Wishlist - Nagri{% endblock %}
 
@@ -16,16 +17,20 @@
     <div class="wishlist-container">
         <div class="wishlist-grid">
             {% for item in wishlist_items %}
-            <div class="wishlist-card" data-product-id="{{ item.product.id }}">
+                <div class="wishlist-card" data-url="{% url 'product_detail' item.product.id %}" role="button" tabindex="0">
                 <div class="product-image">
-                    {% if item.product.image %}
-                        <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
-                    {% else %}
-                        <div class="placeholder-image">
-                            <i class="fas fa-image"></i>
-                        </div>
-                    {% endif %}
-                    <button class="btn-remove-wishlist" data-product-id="{{ item.product.id }}" title="Remove from wishlist">
+                    {% with first_image=item.product.images.all|first %}
+                        {% if first_image and first_image.image %}
+                            <img src="{{ first_image.image.url }}" alt="{{ item.product.name }}">
+                        {% elif item.product.image %}
+                            <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
+                        {% else %}
+                            <div class="placeholder-image">
+                                <i class="fas fa-image"></i>
+                            </div>
+                        {% endif %}
+                    {% endwith %}
+                    <button class="btn-remove-wishlist" data-product-id="{{ item.product.id }}" title="Remove from wishlist" onclick="event.stopPropagation();">
                         <i class="fas fa-heart"></i>
                     </button>
                 </div>
@@ -50,6 +55,7 @@
                         <span class="current">₹{{ item.product.price }}</span>
                         {% if item.product.compare_price and item.product.compare_price > item.product.price %}
                             <span class="original">₹{{ item.product.compare_price }}</span>
+                            <span class="discount">{{ item.product.price|discount_percent:item.product.compare_price }}% Off</span>
                         {% endif %}
                     </div>
 
@@ -63,7 +69,7 @@
 
                     <div class="actions">
                         {% if item.product.inventory.stock_quantity > 0 %}
-                            <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ item.product.id }}">
+                            <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ item.product.id }}" onclick="event.stopPropagation();">
                                 <i class="fas fa-shopping-cart"></i> Add to Cart
                             </button>
                         {% else %}

@@ -1,5 +1,6 @@
 {% extends 'base/base.html' %}
 {% load static %}
+{% load price_extras %}
 
 {% block title %}Products - Nagri{% endblock %}
 
@@ -84,15 +85,19 @@
             {% if products %}
                 <div class="products-grid">
                     {% for product in products %}
-                        <div class="product-card">
+                        <div class="product-card" data-url="{% url 'product_detail' product.id %}" role="button" tabindex="0">
                             <div class="product-card-image">
-                                {% if product.image %}
-                                    <img src="{{ product.image.url }}" alt="{{ product.name }}" loading="lazy" width="300" height="250" decoding="async">
-                                {% else %}
-                                    <div class="placeholder-image">
-                                        <i class="fas fa-image"></i>
-                                    </div>
-                                {% endif %}
+                                {% with first_image=product.images.all|first %}
+                                    {% if first_image and first_image.image %}
+                                        <img src="{{ first_image.image.url }}" alt="{{ product.name }}" loading="lazy" width="300" height="250" decoding="async">
+                                    {% elif product.image %}
+                                        <img src="{{ product.image.url }}" alt="{{ product.name }}" loading="lazy" width="300" height="250" decoding="async">
+                                    {% else %}
+                                        <div class="placeholder-image">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                    {% endif %}
+                                {% endwith %}
 
                                 {% if product.is_featured %}
                                     <div class="product-badge badge-featured">Featured</div>
@@ -119,6 +124,7 @@
                                     <span class="price-current">₹{{ product.price }}</span>
                                     {% if product.compare_price and product.compare_price > product.price %}
                                         <span class="price-original">₹{{ product.compare_price }}</span>
+                                        <span class="price-discount">{{ product.price|discount_percent:product.compare_price }}% Off</span>
                                     {% endif %}
                                 </div>
 
@@ -131,11 +137,11 @@
                                 </div>
 
                                 <div class="product-actions">
-                                    <a href="{% url 'product_detail' product.id %}" class="btn btn-primary btn-sm">
+                                    <a href="{% url 'product_detail' product.id %}" class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
                                         <i class="fas fa-eye"></i> View
                                     </a>
                                     {% if product.inventory.stock_quantity > 0 %}
-                                        <button class="btn btn-outline-primary btn-sm" onclick="addToCart({{ product.id }})">
+                                        <button class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation(); addToCart({{ product.id }})" data-product-id="{{ product.id }}">
                                             <i class="fas fa-shopping-cart"></i>
                                         </button>
                                     {% else %}
@@ -189,7 +195,38 @@
 
     function addToCart(productId) {
         console.log('Adding product', productId, 'to cart');
+        // keep existing behaviour via global addToCart in main.js when available
+        try {
+            if (typeof addToCart === 'function') {
+                // if global addToCart exists (main.js), call it
+                addToCart(productId);
+                return;
+            }
+        } catch (e) {
+            // fall back to simple alert
+        }
         alert('Product added to cart!');
     }
+</script>
+<script>
+    // Make product cards clickable but keep inner actions working
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.product-card').forEach(function (card) {
+            const url = card.dataset.url;
+            if (!url) return;
+            card.addEventListener('click', function (e) {
+                // if clicked element is an actionable control, ignore
+                const actionable = e.target.closest('a, button, input, select, label');
+                if (actionable) return;
+                window.location.href = url;
+            });
+            card.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    window.location.href = card.dataset.url;
+                }
+            });
+        });
+    });
 </script>
 {% endblock %}

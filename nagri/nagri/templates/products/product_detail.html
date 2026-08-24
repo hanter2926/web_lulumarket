@@ -1,5 +1,6 @@
 {% extends 'base/base.html' %}
 {% load static %}
+{% load price_extras %}
 
 {% block title %}{{ product.name }} - Nagri{% endblock %}
 
@@ -23,13 +24,18 @@
         <!-- Product Images -->
         <div class="product-images">
             <div class="main-image">
-                {% if product.image %}
-                    <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid" id="mainProductImage">
-                {% else %}
-                    <div class="placeholder-image">
-                        <i class="fas fa-image"></i>
-                    </div>
-                {% endif %}
+                {% with first_image=product.images.all|first %}
+                    {% if first_image and first_image.image %}
+                        <img src="{{ first_image.image.url }}" alt="{{ first_image.alt_text|default:product.name }}" class="img-fluid" id="mainProductImage">
+                    {% elif product.image %}
+                        <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid" id="mainProductImage">
+                    {% else %}
+                        <div class="placeholder-image">
+                            <i class="fas fa-image"></i>
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
                 <div class="image-badges">
                     {% if product.is_featured %}
                         <span class="badge badge-featured">Featured</span>
@@ -37,6 +43,19 @@
                     {% if product.is_bestseller %}
                         <span class="badge badge-bestseller">Bestseller</span>
                     {% endif %}
+                </div>
+                {% comment %} Gallery controls and thumbnails {% endcomment %}
+                <button class="btn btn-light gallery-prev" id="galleryPrev" aria-label="Previous image" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);z-index:5;">&#10094;</button>
+                <button class="btn btn-light gallery-next" id="galleryNext" aria-label="Next image" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:5;">&#10095;</button>
+
+                <div class="product-thumbnails mt-3 d-flex gap-2" id="productThumbnails">
+                    {% for img in product.images.all %}
+                        {% if img.image %}
+                            <img src="{{ img.image.url }}" alt="{{ img.alt_text|default:product.name }}" class="img-thumbnail product-thumb" data-src="{{ img.image.url }}" data-index="{{ forloop.counter0 }}" style="width:64px;height:64px;object-fit:cover;cursor:pointer;">
+                        {% endif %}
+                    {% empty %}
+                        {# no product.images - thumbnails empty #}
+                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -75,9 +94,7 @@
                     <span class="current-price">₹{{ product.price }}</span>
                     {% if product.compare_price and product.compare_price > product.price %}
                         <span class="original-price">₹{{ product.compare_price }}</span>
-                        {% with discount=product.compare_price|add:0 %}
-                            <span class="discount-badge">{{ discount }}% OFF</span>
-                        {% endwith %}
+                        <span class="discount-badge">{{ product.price|discount_percent:product.compare_price }}% OFF</span>
                     {% endif %}
                 </div>
             </div>
@@ -212,7 +229,7 @@
         <h3>Related Products</h3>
         <div class="products-grid">
             {% for related in related_products %}
-            <div class="product-card">
+            <div class="product-card" data-url="{% url 'product_detail' related.id %}" role="button" tabindex="0">
                 <div class="product-image">
                     {% if related.image %}
                         <img src="{{ related.image.url }}" alt="{{ related.name }}">
@@ -223,9 +240,9 @@
                     {% endif %}
                 </div>
                 <div class="product-info">
-                    <h5><a href="{% url 'product_detail' product_id=related.id %}">{{ related.name }}</a></h5>
+                    <h5><a href="{% url 'product_detail' product_id=related.id %}" onclick="event.stopPropagation();">{{ related.name }}</a></h5>
                     <div class="product-price">₹{{ related.price }}</div>
-                    <button class="btn btn-sm btn-primary" onclick="addToCart({{ related.id }})">
+                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); addToCart({{ related.id }})">
                         Add to Cart
                     </button>
                 </div>

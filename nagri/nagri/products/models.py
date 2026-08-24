@@ -61,6 +61,32 @@ class Product(models.Model):
         return self.name
 
 
+class ProductImage(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="images")
+    image = models.ImageField(upload_to="products/", blank=True, null=True)
+    alt_text = models.CharField(max_length=255, blank=True, null=True)
+    display_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["display_order", "-created_at"]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        # Enforce maximum 12 images per product.
+        # If the parent Product hasn't been saved yet (no PK), skip DB relationship checks
+        # because accessing product.images will raise ValueError when product.pk is None.
+        if not self.product or not getattr(self.product, 'pk', None):
+            return
+
+        if self.product.images.exclude(pk=self.pk).count() >= 12:
+            raise ValidationError("A product cannot have more than 12 images.")
+
+    def __str__(self):
+        return f"Image for {self.product.name} ({self.pk})"
+
+
 class Inventory(models.Model):
     product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="inventory")
     stock_quantity = models.PositiveIntegerField(default=0)

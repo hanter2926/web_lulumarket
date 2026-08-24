@@ -26,6 +26,7 @@ def _get_cached_categories():
 def product_list_view(request):
     queryset = (
         Product.objects.select_related("category", "subcategory", "inventory")
+        .prefetch_related('images')
         .filter(is_active=True)
         .order_by("-is_featured", "-is_bestseller", "-rating", "-created_at", "id")
     )
@@ -101,7 +102,7 @@ class SubCategoryViewSet(viewsets.ModelViewSet):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.select_related("category", "subcategory", "inventory").all().order_by("id")
+    queryset = Product.objects.select_related("category", "subcategory", "inventory").prefetch_related('images').all().order_by("id")
     serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
 
@@ -172,7 +173,7 @@ def product_detail_view(request, product_id):
     from django.shortcuts import get_object_or_404
 
     product= get_object_or_404(
-        Product.objects.select_related("category", "subcategory", "inventory"),
+        Product.objects.select_related("category", "subcategory", "inventory").prefetch_related('images'),
         id=product_id,
         is_active=True,
     )

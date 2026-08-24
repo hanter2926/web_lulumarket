@@ -1,0 +1,50 @@
+{% extends "base/base.html" %}
+
+{% block title %}Order Confirmation - {{ order.order_number }}{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="card">
+        <div class="card-body">
+          <h3 class="card-title">Thank you for your order!</h3>
+          <p class="lead">Your order <strong>{{ order.order_number }}</strong> has been received.</p>
+
+          <div class="mb-3">
+            <p><strong>Total:</strong> ₹{{ order.total_amount }}</p>
+            <p><strong>Status:</strong> {{ order.status|capfirst }}</p>
+          </div>
+
+          <h5>Shipping to</h5>
+          <p>
+            {{ order.shipping_address_name }}<br>
+            {{ order.shipping_address_line1 }}{% if order.shipping_address_line2 %}, {{ order.shipping_address_line2 }}{% endif %}<br>
+            {{ order.shipping_address_city }}, {{ order.shipping_address_state }} - {{ order.shipping_address_postal_code }}<br>
+            {{ order.shipping_address_country }}<br>
+            Phone: {{ order.shipping_address_phone }}
+          </p>
+
+          <h5>Items</h5>
+          <ul class="list-group mb-3">
+            {% for item in items %}
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                  <strong>{{ item.product.name }}</strong> &times; {{ item.quantity }}<br>
+                  <small class="text-muted">{{ item.product.short_description|default:item.product.name }}</small>
+                </div>
+                <span>₹{{ item.price }}</span>
+              </li>
+            {% empty %}
+              <li class="list-group-item">No items found for this order.</li>
+            {% endfor %}
+          </ul>
+
+          <a href="{% url 'home' %}" class="btn btn-primary">Continue Shopping</a>
+          <a href="{% url 'order_detail' order.id %}" class="btn btn-outline-secondary">View Order</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

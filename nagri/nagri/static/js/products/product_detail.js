@@ -98,4 +98,70 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    // Gallery thumbnail click -> update main image
+    const mainImage = document.getElementById('mainProductImage');
+    const thumbnailNodes = Array.from(document.querySelectorAll('.product-thumb'));
+    const galleryPrev = document.getElementById('galleryPrev');
+    const galleryNext = document.getElementById('galleryNext');
+
+    // Build images array in order from thumbnails. If none, fallback to main image src.
+    let images = thumbnailNodes.map((t) => t.dataset.src || t.getAttribute('src'));
+    if (!images.length && mainImage && mainImage.getAttribute('src')) {
+        images = [mainImage.getAttribute('src')];
+    }
+
+    let currentIndex = 0;
+
+    const setMainImage = (index) => {
+        if (!images.length) return;
+        index = (index + images.length) % images.length;
+        currentIndex = index;
+        const src = images[index];
+        if (mainImage && src) {
+            mainImage.setAttribute('src', src);
+        }
+        // Update active thumbnail
+        thumbnailNodes.forEach((t, i) => {
+            t.classList.toggle('active', i === index);
+        });
+    };
+
+    // Attach thumbnail click handlers
+    thumbnailNodes.forEach((thumb, idx) => {
+        thumb.addEventListener('click', function (e) {
+            e.preventDefault();
+            setMainImage(idx);
+        });
+    });
+
+    // Prev/Next handlers
+    if (galleryPrev) galleryPrev.addEventListener('click', function (e) { e.preventDefault(); setMainImage(currentIndex - 1); });
+    if (galleryNext) galleryNext.addEventListener('click', function (e) { e.preventDefault(); setMainImage(currentIndex + 1); });
+
+    // Advance on main image click/tap (respect single-image behavior)
+    // Use touch timing guard to avoid double-firing on some mobile browsers
+    let lastTouchTime = 0;
+    const advanceOnMain = function (e) {
+        if (!images || images.length <= 1) return; // nothing to do
+        // Prevent clicks originating from other actionable controls
+        const actionable = e.target.closest('a, button, input, select, label');
+        if (actionable) return;
+
+        // If this is a click and a touch occurred very recently, ignore to avoid double event
+        if (e.type === 'click' && (Date.now() - lastTouchTime) < 500) return;
+
+        e.preventDefault();
+        setMainImage(currentIndex + 1);
+    };
+
+    if (mainImage) {
+        mainImage.addEventListener('click', advanceOnMain);
+        mainImage.addEventListener('touchend', function (e) { lastTouchTime = Date.now(); advanceOnMain(e); });
+        // pointerup is also helpful for stylus/fancy devices
+        mainImage.addEventListener('pointerup', advanceOnMain);
+    }
+
+    // Initialize
+    setMainImage(0);
 });

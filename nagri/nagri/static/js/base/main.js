@@ -61,6 +61,14 @@ async function addToCart(productId, quantity = 1) {
         return payload;
     }
 
+    // Detect HTML/login redirect returned by the server for unauthenticated requests
+    if (payload && payload.detail && typeof payload.detail === 'string' && payload.detail.includes('<form')) {
+        // Redirect to login with next back to current page
+        const loginUrl = '/accounts/auth/';
+        window.location.href = loginUrl + '?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+        return;
+    }
+
     throw new Error(payload.detail || payload.error || 'Unable to add product to cart.');
 }
 
@@ -82,6 +90,13 @@ async function toggleWishlist(productId) {
     if (payload && payload.success) {
         await updateNavbarCounts();
         return payload;
+    }
+
+    // Handle login redirect returning HTML
+    if (payload && payload.detail && typeof payload.detail === 'string' && payload.detail.includes('<form')) {
+        const loginUrl = '/accounts/auth/';
+        window.location.href = loginUrl + '?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+        return;
     }
 
     throw new Error(payload.detail || payload.error || 'Unable to update wishlist.');
@@ -184,4 +199,22 @@ function bindGenericActionButtons() {
 document.addEventListener('DOMContentLoaded', function () {
     bindGenericActionButtons();
     updateNavbarCounts();
+    // Make any product-card with data-url clickable across the site
+    document.querySelectorAll('.product-card, .wishlist-card').forEach(function (card) {
+        const url = card.dataset.url;
+        if (!url) return;
+        if (card.dataset.linkBound === 'true') return;
+        card.dataset.linkBound = 'true';
+        card.addEventListener('click', function (e) {
+            const actionable = e.target.closest('a, button, input, select, label');
+            if (actionable) return;
+            window.location.href = url;
+        });
+        card.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                window.location.href = url;
+            }
+        });
+    });
 });

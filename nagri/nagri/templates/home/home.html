@@ -1,5 +1,6 @@
 {% extends 'base/base.html' %}
 {% load static %}
+{% load price_extras %}
 
 {% block title %}Home - Nagri Online Shopping{% endblock %}
 
@@ -55,15 +56,19 @@
         <h2 class="section-title">Featured Products</h2>
         <div class="products-grid">
             {% for product in featured_products %}
-            <div class="product-card">
+            <div class="product-card" data-url="{% url 'product_detail' product.id %}" role="button" tabindex="0">
                 <div class="product-image">
-                    {% if product.image %}
-                        <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid">
-                    {% else %}
-                        <div class="placeholder-image">
-                            <i class="fas fa-image"></i>
-                        </div>
-                    {% endif %}
+                    {% with first_image=product.images.all|first %}
+                        {% if first_image and first_image.image %}
+                            <img src="{{ first_image.image.url }}" alt="{{ product.name }}" class="img-fluid">
+                        {% elif product.image %}
+                            <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid">
+                        {% else %}
+                            <div class="placeholder-image">
+                                <i class="fas fa-image"></i>
+                            </div>
+                        {% endif %}
+                    {% endwith %}
                     <div class="product-badges">
                         {% if product.is_featured %}
                             <span class="badge badge-featured">Featured</span>
@@ -92,14 +97,14 @@
                         <span class="price">₹{{ product.price }}</span>
                         {% if product.compare_price and product.compare_price > product.price %}
                             <span class="original-price">₹{{ product.compare_price }}</span>
-                            <span class="discount">{{ discount_percent }}% Off</span>
+                            <span class="discount">{{ product.price|discount_percent:product.compare_price }}% Off</span>
                         {% endif %}
                     </div>
                     <div class="product-actions">
-                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}">
+                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
                             <i class="fas fa-shopping-cart"></i> Add to Cart
                         </button>
-                        <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}">
+                        <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
                             <i class="fas fa-heart"></i>
                         </button>
                     </div>
@@ -121,7 +126,7 @@
         <h2 class="section-title">Bestsellers</h2>
         <div class="products-grid">
             {% for product in bestseller_products %}
-            <div class="product-card">
+            <div class="product-card" data-url="{% url 'product_detail' product.id %}" role="button" tabindex="0">
                 <div class="product-image">
                     {% if product.image %}
                         <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid">
@@ -158,10 +163,10 @@
                         {% endif %}
                     </div>
                     <div class="product-actions">
-                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}">
+                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
                             <i class="fas fa-shopping-cart"></i> Add to Cart
                         </button>
-                        <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}">
+                        <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
                             <i class="fas fa-heart"></i>
                         </button>
                     </div>
@@ -183,7 +188,7 @@
         <h2 class="section-title">New Arrivals</h2>
         <div class="products-grid">
             {% for product in new_arrivals %}
-            <div class="product-card">
+            <div class="product-card" data-url="{% url 'product_detail' product.id %}" role="button" tabindex="0">
                 <div class="product-image">
                     {% if product.image %}
                         <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid">
@@ -218,10 +223,10 @@
                         {% endif %}
                     </div>
                     <div class="product-actions">
-                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}">
+                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
                             <i class="fas fa-shopping-cart"></i> Add to Cart
                         </button>
-                        <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}">
+                        <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
                             <i class="fas fa-heart"></i>
                         </button>
                     </div>
@@ -279,7 +284,7 @@
         <h2 class="section-title">Top Rated Products</h2>
         <div class="products-grid">
             {% for product in top_rated_products %}
-            <div class="product-card">
+            <div class="product-card" data-url="{% url 'product_detail' product.id %}" role="button" tabindex="0">
                 <div class="product-image">
                     {% if product.image %}
                         <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid">
@@ -311,10 +316,10 @@
                         {% endif %}
                     </div>
                     <div class="product-actions">
-                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}">
+                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
                             <i class="fas fa-shopping-cart"></i> Add to Cart
                         </button>
-                        <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}">
+                        <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
                             <i class="fas fa-heart"></i>
                         </button>
                     </div>
