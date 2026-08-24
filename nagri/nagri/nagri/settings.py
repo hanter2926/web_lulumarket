@@ -20,12 +20,15 @@ SECRET_KEY = os.environ.get(
     "django-insecure-change-this-secret-key"
 )
 
-DEBUG = True
+DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
 ALLOWED_HOSTS = [
+    "web-lulumarket.onrender.com",
+    ".onrender.com",
     "127.0.0.1",
     "localhost",
     "testserver",
+    "*",
 ]
 
 
@@ -65,20 +68,16 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-
+    # WhiteNoise for Static Files Deployment
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     # CORS
     "corsheaders.middleware.CorsMiddleware",
 
     "django.contrib.sessions.middleware.SessionMiddleware",
-
     "django.middleware.common.CommonMiddleware",
-
     "django.middleware.csrf.CsrfViewMiddleware",
-
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-
     "django.contrib.messages.middleware.MessageMiddleware",
-
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -87,7 +86,7 @@ MIDDLEWARE = [
 # URL CONFIGURATION
 # ============================================================
 
-ROOT_URLCONF = "nagri.urls"  # Fixed ('project' ko 'nagri' kiya)
+ROOT_URLCONF = "nagri.urls"
 
 
 # ============================================================
@@ -97,19 +96,14 @@ ROOT_URLCONF = "nagri.urls"  # Fixed ('project' ko 'nagri' kiya)
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-
         "DIRS": [
             BASE_DIR / "templates",
         ],
-
         "APP_DIRS": True,
-
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
-
                 "django.contrib.auth.context_processors.auth",
-
                 "django.contrib.messages.context_processors.messages",
             ],
         },
@@ -121,9 +115,9 @@ TEMPLATES = [
 # WSGI & ASGI
 # ============================================================
 
-WSGI_APPLICATION = "nagri.wsgi.application"  # Fixed
+WSGI_APPLICATION = "nagri.wsgi.application"
 
-ASGI_APPLICATION = "nagri.asgi.application"  # Fixed
+ASGI_APPLICATION = "nagri.asgi.application"
 
 
 # ============================================================
@@ -216,6 +210,9 @@ STATICFILES_DIRS = [
 ]
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# WhiteNoise storage configuration
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 
 # ============================================================
@@ -319,23 +316,17 @@ CHANNEL_LAYERS = {
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
-EMAIL_HOST = "smtp.gmail.com"
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() == "true"
 
-EMAIL_PORT = 587
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 
-EMAIL_USE_TLS = True
-
-EMAIL_HOST_USER = os.environ.get(
-    "EMAIL_HOST_USER",
-    "vikrampal803302@gmail.com"
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL",
+    EMAIL_HOST_USER
 )
-
-EMAIL_HOST_PASSWORD = os.environ.get(
-    "EMAIL_HOST_PASSWORD",
-    "sabj wilx clta xfhk"
-)
-
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 
 # ============================================================
@@ -353,15 +344,12 @@ SESSION_COOKIE_SECURE = False
 
 LOGGING = {
     "version": 1,
-
     "disable_existing_loggers": False,
-
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
         },
     },
-
     "root": {
         "handlers": ["console"],
         "level": "INFO",
@@ -369,36 +357,9 @@ LOGGING = {
 }
 
 
-# ============================================================
-# RAZORPAY
-# ============================================================
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 
-RAZORPAY_KEY_ID = os.environ.get(
-    "RAZORPAY_KEY_ID",
-    "rzp_test_TSuVIc3zMaESBx"
-)
-
-RAZORPAY_KEY_SECRET = os.environ.get(
-    "RAZORPAY_KEY_SECRET",
-    "bm7qaqI9RyaCnrXnuYLyOpaj"
-)
-
-
-# ============================================================
-# CLOUDINARY
-# ============================================================
-
-CLOUDINARY_CLOUD_NAME = os.environ.get(
-    "CLOUDINARY_CLOUD_NAME",
-    "hpa1bkx2"
-)
-
-CLOUDINARY_API_KEY = os.environ.get(
-    "CLOUDINARY_API_KEY",
-    "944387858449979"
-)
-
-CLOUDINARY_API_SECRET = os.environ.get(
-    "CLOUDINARY_API_SECRET",
-    "dB0NbXd1FEdmw-dVL43yv6LvuCk"
-)  # Fixed (Extra text remove kar diya gaya)
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
