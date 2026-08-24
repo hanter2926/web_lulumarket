@@ -12,6 +12,11 @@ function getCsrfHeaders(extraHeaders = {}) {
     };
 }
 
+// Navigate to checkout page
+function checkout() {
+    window.location.href = '/orders/checkout/';
+}
+
 async function fetchJson(url, options = {}) {
     const response = await fetch(url, {
         ...options,

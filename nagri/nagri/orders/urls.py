@@ -20,6 +20,9 @@ urlpatterns = [
     path("checkout/payment/", checkout_payment_view, name="checkout_payment"),
     path("checkout/review/", checkout_review_view, name="checkout_review"),
     path("checkout/confirmation/<int:order_id>/", order_confirmation_view, name="order_confirmation"),
+    path("payment/<int:order_id>/", views.payment_page_view, name="payment_page"),
+    path("payment/success/<int:order_id>/", views.payment_success_view, name="payment_success"),
+    path("payment/failed/<int:order_id>/", views.payment_failed_view, name="payment_failed"),
     
     # Order management
     path("", order_list_view, name="order_list"),

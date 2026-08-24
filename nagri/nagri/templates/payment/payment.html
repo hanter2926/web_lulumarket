@@ -36,20 +36,55 @@
         document.addEventListener('DOMContentLoaded', function () {
             const payButton = document.getElementById('payNowBtn');
             if (!payButton) return;
+
+            // If gateway error was flagged by the view, disable the pay button and inform user
+            const gatewayError = {{ gateway_error|default:False|yesno:'true,false' }};
+            const razorpayKey = '{{ razorpay_key|default:"" }}';
+            const razorpayOrderId = '{{ order.razorpay_order_id|default:"" }}';
+            const amountPaise = {{ amount_paise|default:0 }};
+
+            if (gatewayError || !razorpayKey || !razorpayOrderId) {
+                payButton.disabled = true;
+                payButton.textContent = 'Payment unavailable';
+                return;
+            }
+
             payButton.addEventListener('click', function () {
-                fetch('{% url "verify_payment" %}', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
-                    body: JSON.stringify({
-                        razorpay_order_id: '{{ order.razorpay_order_id|default:"" }}',
-                        razorpay_payment_id: '{{ order.razorpay_payment_id|default:"" }}',
-                        razorpay_signature: '{{ order.razorpay_signature|default:"" }}'
-                    })
-                }).then(r => r.json()).then(() => {
-                    window.location.href = '{% url "payment_success" order.id %}';
-                }).catch(() => {
-                    window.location.href = '{% url "payment_failed" order.id %}';
-                });
+                const options = {
+                    key: razorpayKey,
+                    amount: amountPaise,
+                    currency: 'INR',
+                    name: 'Nagri',
+                    description: 'Order Payment',
+                    order_id: razorpayOrderId,
+                    handler: function (response) {
+                        // Verify payment on server
+                        fetch('{% url "verify_payment" %}', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': getCookie('csrftoken')
+                            },
+                            body: JSON.stringify({
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature
+                            })
+                        }).then(resp => resp.json()).then(() => {
+                            window.location.href = '{% url "payment_success" order.id %}';
+                        }).catch(() => {
+                            window.location.href = '{% url "payment_failed" order.id %}';
+                        });
+                    },
+                    prefill: {
+                        name: '{{ request.user.get_full_name|default:request.user.email }}',
+                        email: '{{ request.user.email }}'
+                    },
+                    theme: { color: '#0d6efd' }
+                };
+
+                const rzp = new Razorpay(options);
+                rzp.open();
             });
         });
     </script>

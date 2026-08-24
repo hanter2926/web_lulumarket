@@ -20,6 +20,7 @@ from accounts.models import Address
 
 from .models import Order, OrderItem
 from .serializers import OrderItemSerializer, OrderSerializer
+from django.urls import reverse
 
 
 @login_required(login_url='login_page')
@@ -317,6 +318,55 @@ def get_delivery_charge(delivery_method):
         'overnight': Decimal(100),
     }
     return charges.get(delivery_method, Decimal(0))
+
+
+@login_required(login_url='login_page')
+def payment_page_view(request, order_id):
+    """Render payment page for an order. For online payments create a Razorpay order id if missing."""
+    order = get_object_or_404(Order, id=order_id, user=request.user)
+
+    # If COD, render page (template handles display)
+    if order.payment_method == 'cod':
+        context = {'order': order}
+        return render(request, 'payment/payment.html', context)
+
+    # For other payment methods, ensure we have a razorpay_order_id (if Razorpay is configured)
+    try:
+        # Create razorpay order if missing
+        if not order.razorpay_order_id:
+            client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+            razorpay_order = client.order.create({
+                'amount': int(order.total_amount * 100),
+                'currency': 'INR',
+                'receipt': order.order_number,
+                'notes': {'order_id': str(order.id), 'user_id': str(order.user.id)},
+            })
+            order.razorpay_order_id = razorpay_order.get('id')
+            order.save(update_fields=['razorpay_order_id', 'updated_at'])
+    except Exception:
+        # If gateway not configured or creation failed, do not fake payment - show a friendly message
+        context = {'order': order, 'gateway_error': True}
+        return render(request, 'payment/payment.html', context)
+
+    context = {
+        'order': order,
+        'razorpay_key': settings.RAZORPAY_KEY_ID,
+        'amount_paise': int(order.total_amount * 100),
+    }
+    return render(request, 'payment/payment.html', context)
+
+
+@login_required(login_url='login_page')
+def payment_success_view(request, order_id):
+    order = get_object_or_404(Order, id=order_id, user=request.user)
+    items = order.items.all().select_related('product')
+    return render(request, 'payment/payment_success.html', {'order': order, 'items': items})
+
+
+@login_required(login_url='login_page')
+def payment_failed_view(request, order_id):
+    order = get_object_or_404(Order, id=order_id, user=request.user)
+    return render(request, 'payment/payment_failed.html', {'order': order})
 
 
 def verify_razorpay_signature(order_id, payment_id, razorpay_signature, secret):
