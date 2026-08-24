@@ -1,13 +1,66 @@
 import os
-import random
+import re
+import secrets
+
+OTP_TTL_MINUTES = 5
+OTP_RESEND_COOLDOWN_SECONDS = 30
+
+
+def normalize_phone_number(phone):
+    if phone is None:
+        return ""
+
+    raw = re.sub(r"[\s\-()]", "", str(phone).strip())
+    if not raw:
+        return ""
+
+    digits = re.sub(r"\D", "", raw)
+    if not digits:
+        return ""
+
+    if raw.startswith("+"):
+        digits = re.sub(r"\D", "", raw)
+        if len(digits) == 12 and digits.startswith("91"):
+            return f"+{digits}"
+        if len(digits) == 10:
+            return f"+91{digits}"
+        return ""
+
+    if len(digits) == 10:
+        return f"+91{digits}"
+    if len(digits) == 11 and digits.startswith("0"):
+        return f"+91{digits[1:]}"
+    if len(digits) == 12 and digits.startswith("91"):
+        return f"+{digits}"
+
+    return ""
+
+
+def get_phone_variants(phone):
+    normalized = normalize_phone_number(phone)
+    variants = {normalized} if normalized else set()
+    digits = re.sub(r"\D", "", str(phone or ""))
+
+    if digits:
+        variants.add(digits)
+        if len(digits) == 10:
+            variants.add(f"91{digits}")
+            variants.add(f"+91{digits}")
+        elif len(digits) == 11 and digits.startswith("0"):
+            variants.add(digits[1:])
+            variants.add(f"91{digits[1:]}")
+            variants.add(f"+91{digits[1:]}")
+        elif len(digits) == 12 and digits.startswith("91"):
+            variants.add(digits[2:])
+            variants.add(f"+{digits}")
+
+    return {variant for variant in variants if variant}
 
 
 def generate_otp(length=6):
     if length <= 0:
         return "000000"
-    start = 10 ** (length - 1)
-    end = (10 ** length) - 1
-    return str(random.randint(start, end))
+    return str(secrets.randbelow(10 ** length)).zfill(length)
 
 
 def send_otp_via_console(phone_number, otp):

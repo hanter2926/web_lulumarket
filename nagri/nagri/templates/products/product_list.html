@@ -87,7 +87,7 @@
                         <div class="product-card">
                             <div class="product-card-image">
                                 {% if product.image %}
-                                    <img src="{{ product.image.url }}" alt="{{ product.name }}">
+                                    <img src="{{ product.image.url }}" alt="{{ product.name }}" loading="lazy" width="300" height="250" decoding="async">
                                 {% else %}
                                     <div class="placeholder-image">
                                         <i class="fas fa-image"></i>

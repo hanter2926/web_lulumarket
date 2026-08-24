@@ -13,13 +13,34 @@ from orders.models import Order
 
 from .models import Address, CustomUser, PaymentMethod, UserProfile
 from .serializers import AddressSerializer, PaymentMethodSerializer, UserProfileSerializer, UserSerializer
-from .utils import generate_otp, send_otp_to_phone
+from .utils import (
+    OTP_RESEND_COOLDOWN_SECONDS,
+    OTP_TTL_MINUTES,
+    generate_otp,
+    get_phone_variants,
+    normalize_phone_number,
+    send_otp_to_phone,
+)
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         user = getattr(request, "user", None)
         return bool(user and user.is_authenticated and (user == getattr(obj, "user", None) or user.is_staff or user == obj))
+
+
+def find_user_by_phone(phone):
+    variants = get_phone_variants(phone)
+    for variant in variants:
+        user = CustomUser.objects.filter(phone__iexact=variant).first()
+        if user:
+            return user
+
+        profile = UserProfile.objects.filter(phone__iexact=variant).select_related("user").first()
+        if profile and profile.user:
+            return profile.user
+
+    return None
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -85,15 +106,20 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
     def phone_login(self, request):
-        phone = (request.data.get("phone") or "").strip()
+        raw_phone = (request.data.get("phone") or "").strip()
+        phone = normalize_phone_number(raw_phone)
         otp = (request.data.get("otp") or "").strip()
 
-        if not phone or not otp:
+        if not raw_phone:
+            return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not phone:
+            return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
+        if not otp:
             return Response({"detail": "Phone number and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = CustomUser.objects.filter(phone__iexact=phone).first()
+        user = find_user_by_phone(phone)
         if not user:
-            return Response({"detail": "No account found for this phone number."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
         profile = UserProfile.objects.filter(user=user).first()
         if not profile or not profile.otp or profile.otp != otp:
@@ -177,27 +203,27 @@ class PaymentMethodViewSet(viewsets.ModelViewSet):
 @permission_classes([permissions.AllowAny])
 def request_otp(request):
     payload = getattr(request, "data", request.POST)
-    phone = (payload.get("phone") or "").strip()
-    email = (payload.get("email") or "").strip()
+    raw_phone = (payload.get("phone") or "").strip()
+    phone = normalize_phone_number(raw_phone)
 
-    if not phone:
+    if not raw_phone:
         return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not phone:
+        return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = None
-    if email:
-        user = CustomUser.objects.filter(email__iexact=email).first()
-    elif request.user.is_authenticated:
-        user = request.user
-
+    user = find_user_by_phone(phone)
     if not user:
-        return Response({"detail": "User not found. Please register or provide an email."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
+    if profile.last_otp_sent_at and timezone.now() - profile.last_otp_sent_at < timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS):
+        return Response({"detail": f"Please wait {OTP_RESEND_COOLDOWN_SECONDS} seconds before requesting another OTP."}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
     profile.phone = phone
     profile.is_phone_verified = False
     otp_code = generate_otp()
     profile.otp = otp_code
-    profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
+    profile.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MINUTES)
     profile.last_otp_sent_at = timezone.now()
     profile.save(update_fields=["phone", "is_phone_verified", "otp", "otp_expires_at", "last_otp_sent_at", "updated_at"])
 
@@ -214,14 +240,19 @@ def signup_submit(request):
     payload = getattr(request, "data", request.POST)
     email = (payload.get("email") or "").strip()
     password = payload.get("password") or ""
-    phone = (payload.get("phone") or "").strip()
+    raw_phone = (payload.get("phone") or "").strip()
     full_name = (payload.get("full_name") or "").strip()
+    phone = normalize_phone_number(raw_phone)
 
-    if not email or not password or not phone:
+    if not email or not password or not raw_phone:
         return Response({"detail": "Email, password, and phone number are required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not phone:
+        return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
 
     if CustomUser.objects.filter(email__iexact=email).exists():
         return Response({"detail": "An account with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+    if find_user_by_phone(phone):
+        return Response({"detail": "An account with this phone number already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
     user = CustomUser.objects.create_user(
         email=email,
@@ -237,7 +268,7 @@ def signup_submit(request):
     profile.phone = phone
     profile.is_phone_verified = False
     profile.otp = generate_otp()
-    profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
+    profile.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MINUTES)
     profile.last_otp_sent_at = timezone.now()
     profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "last_otp_sent_at", "updated_at"])
     send_otp_to_phone(phone, profile.otp)
@@ -253,18 +284,23 @@ def signup_submit(request):
 @permission_classes([permissions.AllowAny])
 def verify_otp(request):
     payload = getattr(request, "data", request.POST)
-    phone = (payload.get("phone") or "").strip()
+    raw_phone = (payload.get("phone") or "").strip()
+    phone = normalize_phone_number(raw_phone)
     otp = (payload.get("otp") or "").strip()
 
-    if not phone or not otp:
+    if not raw_phone:
+        return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if not phone:
+        return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
+    if not otp:
         return Response({"detail": "Phone number and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = CustomUser.objects.filter(phone__iexact=phone).first()
+    user = find_user_by_phone(phone)
     if not user:
-        return Response({"detail": "No user found for the provided phone number."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
     profile = UserProfile.objects.filter(user=user).first()
-    if not profile or profile.otp != otp:
+    if not profile or not profile.otp or profile.otp != otp:
         return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
     if profile.otp_expires_at and timezone.now() > profile.otp_expires_at:
@@ -301,6 +337,11 @@ def email_login_view(request):
         return redirect("dashboard_page")
 
     return render(request, "accounts/auth.html", {"active_tab": "login"})
+
+
+def logout_view(request):
+    auth_logout(request)
+    return redirect("home")
 
 
 def signup_form_view(request):

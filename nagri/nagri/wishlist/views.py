@@ -23,7 +23,7 @@ class WishlistViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def wishlist_list_view(request):
     """Display user's wishlist"""
     wishlist_items = Wishlist.objects.filter(user=request.user).select_related('product')

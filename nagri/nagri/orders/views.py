@@ -22,7 +22,7 @@ from .models import Order, OrderItem
 from .serializers import OrderItemSerializer, OrderSerializer
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def order_list_view(request):
     """Display user's orders with statistics"""
     orders = Order.objects.filter(user=request.user).prefetch_related('items__product').order_by('-created_at')
@@ -42,7 +42,7 @@ def order_list_view(request):
     return render(request, 'orders/order_list.html', context)
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def order_detail_view(request, order_id):
     """Display detailed information about a specific order"""
     order = get_object_or_404(Order, id=order_id, user=request.user)
@@ -55,7 +55,7 @@ def order_detail_view(request, order_id):
     return render(request, 'orders/order_detail.html', context)
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def checkout_view(request):
     """First step of checkout - review cart items"""
     cart, _ = Cart.objects.get_or_create(user=request.user)
@@ -79,7 +79,7 @@ def checkout_view(request):
     return render(request, 'checkout/checkout.html', context)
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def checkout_address_view(request):
     """Second step - select/enter shipping address"""
     from .forms import CheckoutAddressForm
@@ -120,7 +120,7 @@ def checkout_address_view(request):
     return render(request, 'checkout/address.html', context)
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def checkout_delivery_view(request):
     """Third step - select delivery method"""
     from .forms import DeliveryMethodForm
@@ -148,7 +148,7 @@ def checkout_delivery_view(request):
     return render(request, 'checkout/delivery.html', context)
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def checkout_payment_view(request):
     """Fourth step - select payment method"""
     from .forms import PaymentMethodForm, CouponForm
@@ -203,7 +203,7 @@ def checkout_payment_view(request):
     return render(request, 'checkout/payment.html', context)
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def checkout_review_view(request):
     """Fifth step - review order before placing"""
     user = request.user

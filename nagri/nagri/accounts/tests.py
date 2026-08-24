@@ -1,7 +1,7 @@
 from django.test import TestCase
 
 from .models import Address, CustomUser, UserProfile
-from .utils import generate_otp
+from .utils import generate_otp, normalize_phone_number
 
 
 class AccountTests(TestCase):
@@ -60,3 +60,27 @@ class AccountTests(TestCase):
 
         self.assertEqual(profile.otp, "123456")
         self.assertFalse(profile.is_phone_verified)
+
+    def test_normalize_phone_number_standardizes_indian_formats(self):
+        self.assertEqual(normalize_phone_number("9876543210"), "+919876543210")
+        self.assertEqual(normalize_phone_number("+91 98765 43210"), "+919876543210")
+        self.assertEqual(normalize_phone_number("919876543210"), "+919876543210")
+        self.assertEqual(normalize_phone_number("09876543210"), "+919876543210")
+
+    def test_request_otp_requires_phone_without_email_and_finds_existing_user(self):
+        user = CustomUser.objects.create_user(
+            email="phone-login@example.com",
+            username="phone-login-user",
+            password="StrongPass123",
+            phone="+919876543210",
+        )
+        UserProfile.objects.get_or_create(user=user, defaults={"full_name": user.get_full_name() or user.email})
+
+        response = self.client.post("/accounts/request-otp/", {"phone": "9876543210"}, content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("OTP sent successfully", response.json()["detail"])
+
+    def test_request_otp_for_unregistered_phone_returns_clear_error(self):
+        response = self.client.post("/accounts/request-otp/", {"phone": "9999999999"}, content_type="application/json")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("No account found with this phone number. Please register first.", response.json()["detail"])

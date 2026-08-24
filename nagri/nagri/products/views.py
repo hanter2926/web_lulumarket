@@ -1,6 +1,6 @@
 from django.core.cache import cache
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.shortcuts import render
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
@@ -14,7 +14,11 @@ def _get_cached_categories():
     cache_key = "nagri_categories"
     categories = cache.get(cache_key)
     if categories is None:
-        categories = list(Category.objects.only("id", "name").order_by("name"))
+        categories = list(
+            Category.objects.annotate(product_count=Count("products", distinct=True))
+            .order_by("name")
+            .values("id", "name", "product_count")
+        )
         cache.set(cache_key, categories, 600)
     return categories
 
@@ -167,7 +171,7 @@ def product_detail_view(request, product_id):
     """Display detailed information about a specific product"""
     from django.shortcuts import get_object_or_404
 
-    product = get_object_or_404(
+    product= get_object_or_404(
         Product.objects.select_related("category", "subcategory", "inventory"),
         id=product_id,
         is_active=True,

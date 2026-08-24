@@ -29,7 +29,7 @@
                     <i class="fas fa-tag"></i>
                 </div>
                 <h4>{{ category.name }}</h4>
-                <span class="category-count">{{ category.products.count }} items</span>
+                <span class="category-count">{{ category.product_count|default:0 }} items</span>
             </a>
             {% endfor %}
         </div>

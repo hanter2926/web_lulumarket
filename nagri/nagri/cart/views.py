@@ -53,7 +53,7 @@ class CartItemViewSet(viewsets.ModelViewSet):
         serializer.save(cart=cart)
 
 
-@login_required(login_url='login')
+@login_required(login_url='login_page')
 def cart_detail_view(request):
     """Display shopping cart for the user"""
     cart, _ = Cart.objects.get_or_create(user=request.user)

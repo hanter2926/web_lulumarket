@@ -28,23 +28,30 @@ class SubCategory(models.Model):
 
 
 class Product(models.Model):
-    name = models.CharField(max_length=200)
-    slug = models.SlugField(unique=True)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="products")
-    subcategory = models.ForeignKey(SubCategory, on_delete=models.SET_NULL, related_name="products", null=True, blank=True)
+    name = models.CharField(max_length=200, db_index=True)
+    slug = models.SlugField(unique=True, db_index=True)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="products", db_index=True)
+    subcategory = models.ForeignKey(SubCategory, on_delete=models.SET_NULL, related_name="products", null=True, blank=True, db_index=True)
     short_description = models.TextField(blank=True, null=True)
     description = models.TextField(blank=True, null=True)
-    brand = models.CharField(max_length=100, blank=True, null=True)
+    brand = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     tags = models.CharField(max_length=255, blank=True, null=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(max_digits=10, decimal_places=2, db_index=True)
     compare_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.00)
+    rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.00, db_index=True)
     image = models.ImageField(upload_to="products/", blank=True, null=True)
-    is_featured = models.BooleanField(default=False)
-    is_bestseller = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    is_featured = models.BooleanField(default=False, db_index=True)
+    is_bestseller = models.BooleanField(default=False, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["is_active", "is_featured", "is_bestseller", "created_at"]),
+            models.Index(fields=["category", "is_active", "created_at"]),
+            models.Index(fields=["price", "is_active"]),
+        ]
 
     @property
     def in_stock(self):
