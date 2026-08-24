@@ -1,0 +1,11 @@
+/* Minimal dashboard styles to match Bootstrap layout */
+.account-dashboard .card-flat { border: 1px solid #e9ecef; border-radius: 8px; }
+.avatar-img { width:64px; height:64px; border-radius:50%; object-fit:cover; }
+.avatar-placeholder { width:64px; height:64px; display:flex; align-items:center; justify-content:center; background:#f1f3f5; border-radius:50%; color:#6c757d; }
+.address-card { background:#fff; border:1px solid #f1f1f1; border-radius:6px; }
+.order-row { background:#fff; border:1px solid #f1f1f1; border-radius:6px; }
+.card-title { margin-bottom:0.5rem; }
+.profile-avatar .avatar-img, .profile-avatar .avatar-placeholder { box-shadow:0 1px 4px rgba(0,0,0,0.06); }
+@media (max-width: 767px) {
+  .account-dashboard .dashboard-header { flex-direction:column; gap:12px; align-items:flex-start; }
+}
