@@ -18,6 +18,9 @@
             <div style="margin-bottom: 14px;">
                 <label for="login_password">Password</label><br>
                 <input id="login_password" name="password" type="password" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                <div style="margin-top:8px; text-align: right;">
+                    <a href="{% url 'password_reset' %}" style="font-size:0.95rem; color:#2563eb;">Forgot Password?</a>
+                </div>
             </div>
             <button type="submit" style="width: 100%; padding: 11px; background: #111827; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Login</button>
         </form>

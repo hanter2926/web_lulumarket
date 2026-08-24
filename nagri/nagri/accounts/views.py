@@ -21,6 +21,8 @@ from .utils import (
     normalize_phone_number,
     send_otp_to_phone,
 )
+from django.contrib.auth import views as auth_views
+from django.urls import reverse_lazy
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -148,6 +150,27 @@ class UserViewSet(viewsets.ModelViewSet):
     def logout(self, request):
         auth_logout(request)
         return Response({"detail": "Logged out successfully."}, status=status.HTTP_200_OK)
+
+
+# Simple view wrappers to use Django's built-in auth views with project templates
+class PasswordResetView(auth_views.PasswordResetView):
+    template_name = 'registration/password_reset_form.html'
+    email_template_name = 'registration/password_reset_email.html'
+    subject_template_name = 'registration/password_reset_subject.txt'
+    success_url = reverse_lazy('password_reset_done')
+
+
+class PasswordResetDoneView(auth_views.PasswordResetDoneView):
+    template_name = 'registration/password_reset_done.html'
+
+
+class PasswordResetConfirmView(auth_views.PasswordResetConfirmView):
+    template_name = 'registration/password_reset_confirm.html'
+    success_url = reverse_lazy('password_reset_complete')
+
+
+class PasswordResetCompleteView(auth_views.PasswordResetCompleteView):
+    template_name = 'registration/password_reset_complete.html'
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):

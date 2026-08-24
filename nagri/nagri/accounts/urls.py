@@ -22,5 +22,10 @@ urlpatterns = [
     path("request-otp/", views.request_otp, name="request_otp"),
     path("verify-otp/", views.verify_otp, name="verify_otp"),
     path("otp-login/", views.otp_login_page, name="otp_login_page"),
+    # Password reset using Django auth views
+    path('password-reset/', views.PasswordResetView.as_view(), name='password_reset'),
+    path('password-reset/done/', views.PasswordResetDoneView.as_view(), name='password_reset_done'),
+    path('reset/<uidb64>/<token>/', views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('reset/done/', views.PasswordResetCompleteView.as_view(), name='password_reset_complete'),
     *router.urls,
 ]

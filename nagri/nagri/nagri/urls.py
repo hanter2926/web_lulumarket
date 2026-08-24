@@ -9,6 +9,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("unyan.urls")),
     path("accounts/", include("accounts.urls")),
+    # Include Django's built-in authentication URLs (login/logout/password reset)
+    path("accounts/", include("django.contrib.auth.urls")),
     path("products/", include("products.urls")),
     path("orders/", include("orders.urls")),
     path("cart/", include("cart.urls")),
