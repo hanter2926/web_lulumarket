@@ -163,6 +163,7 @@ if DATABASE_URL:
     }
 else:
     # Local computer SQLite
+    
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
