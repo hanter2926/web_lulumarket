@@ -2,6 +2,8 @@ from datetime import timedelta
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+#hosting
+import dj_database_url
 
 # ============================================================
 # BASE DIRECTORY
@@ -140,17 +142,33 @@ USE_SQLITE = os.environ.get("USE_SQLITE", "True").strip().lower() in {
 #         }
 #     }
 # else:
-DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.mysql",
-            "NAME": os.environ.get("DB_NAME", "unyan"),
-            "USER": os.environ.get("DB_USER", "root"),
-            "PASSWORD": os.environ.get("DB_PASSWORD", "Vikram12345"),
-            "HOST": os.environ.get("DB_HOST", "localhost"),
-            "PORT": os.environ.get("DB_PORT", "3306"),
-        }
-}
+# DATABASES = {
+#         "default": {
+#             "ENGINE": "django.db.backends.mysql",
+#             "NAME": os.environ.get("DB_NAME", "unyan"),
+#             "USER": os.environ.get("DB_USER", "root"),
+#             "PASSWORD": os.environ.get("DB_PASSWORD", "Vikram12345"),
+#             "HOST": os.environ.get("DB_HOST", "localhost"),
+#             "PORT": os.environ.get("DB_PORT", "3306"),
+#         }
+# }
 
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    # Render PostgreSQL
+    DATABASES = {
+        "default": dj_database_url.parse(DATABASE_URL)
+    }
+else:
+    # Local computer SQLite
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # ============================================================
 # PASSWORD VALIDATION
