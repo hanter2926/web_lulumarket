@@ -7,6 +7,8 @@ from django.conf.urls.static import static
 from nagri import views as site_views
 
 urlpatterns = [
+    # Service worker must be served at the site root for proper scope
+    path('service-worker.js', site_views.service_worker),
     path("admin/", admin.site.urls),
     path("", include("unyan.urls")),
     path("accounts/", include("accounts.urls")),
