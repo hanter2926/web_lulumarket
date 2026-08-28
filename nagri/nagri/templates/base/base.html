@@ -35,7 +35,6 @@
             <a class="navbar-brand" href="{% url 'home' %}">
                 <i class="fas fa-shopping-bag"></i> <strong>NAGRI</strong>
             </a>
-            <button id="installBtn" class="btn btn-sm btn-outline-primary ms-2 d-none">Install NAGRI App</button>
             
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -96,16 +95,19 @@
                             </ul>
                         </li>
                     {% else %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'login_page' %}">
-                                <i class="fas fa-sign-in-alt"></i> Login
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{% url 'signup_form' %}">
-                                <i class="fas fa-user-plus"></i> Register
-                            </a>
-                        </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{% url 'login_page' %}">
+                                    <i class="fas fa-sign-in-alt"></i> Login
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{% url 'signup_form' %}">
+                                    <i class="fas fa-user-plus"></i> Register
+                                </a>
+                            </li>
+                            <li class="nav-item d-flex align-items-center">
+                                <button id="installBtn" class="btn btn-sm btn-outline-primary ms-2 d-none" aria-hidden="true">📱 Install NAGRI App</button>
+                            </li>
                     {% endif %}
                 </ul>
             </div>
