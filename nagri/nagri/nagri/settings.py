@@ -62,6 +62,8 @@ INSTALLED_APPS = [
     "orders",
     "cart",
     "wishlist",
+    'cloudinary',
+    'cloudinary_storage',
 ]
 
 
@@ -386,3 +388,29 @@ RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
+
+# Cloudinary storage configuration: use Cloudinary if all credentials present
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': CLOUDINARY_CLOUD_NAME,
+    'API_KEY': CLOUDINARY_API_KEY,
+    'API_SECRET': CLOUDINARY_API_SECRET,
+}
+
+HAS_CLOUDINARY_CONFIG = all(CLOUDINARY_STORAGE.values())
+
+STORAGES = {
+    'default': {
+        'BACKEND': (
+            'cloudinary_storage.storage.MediaCloudinaryStorage'
+            if HAS_CLOUDINARY_CONFIG
+            else 'django.core.files.storage.FileSystemStorage'
+        ),
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
+
+# Use Cloudinary as Django's default file storage when credentials are present
+if HAS_CLOUDINARY_CONFIG:
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
