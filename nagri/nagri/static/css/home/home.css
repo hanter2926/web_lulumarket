@@ -418,6 +418,42 @@
     margin-bottom: 15px;
 }
 
+/* Mobile: force exactly 3 product columns and make images responsive */
+@media (max-width: 767px) {
+    .products-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+    }
+
+    /* Make product images square and scale to column width */
+    .product-image {
+        height: auto;
+    }
+
+    .product-image img {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+    }
+
+    /* Tidy up product text/buttons for small columns */
+    .product-name {
+        white-space: normal;
+        overflow: visible;
+        font-size: 0.95rem;
+    }
+
+    .product-info {
+        padding: 10px;
+    }
+
+    .product-actions .btn {
+        font-size: 0.8rem;
+        padding: 6px 8px;
+    }
+}
+
 .benefit-card h4 {
     font-size: 1.2rem;
     margin-bottom: 8px;
