@@ -43,8 +43,24 @@
                                     <label class="delivery-option">
                                         {{ radio.tag }}
                                         <div class="option-content">
-                                            <div>
-                                                <span class="option-title">{{ radio.choice_label }}</span>
+                                            <div class="option-main">
+                                                <div class="option-left">
+                                                    <span class="option-title">{{ radio.choice_label }}</span>
+                                                </div>
+                                                <div class="option-right">
+                                                    {% if radio.choice_value == 'standard' %}
+                                                        <span class="option-time">5-7 days</span>
+                                                        <span class="option-price">FREE</span>
+                                                    {% elif radio.choice_value == 'express' %}
+                                                        <span class="option-time">2-3 days</span>
+                                                        <span class="option-price">₹50</span>
+                                                    {% elif radio.choice_value == 'overnight' %}
+                                                        <span class="option-time">Overnight</span>
+                                                        <span class="option-price">₹100</span>
+                                                    {% else %}
+                                                        <span class="option-price"></span>
+                                                    {% endif %}
+                                                </div>
                                             </div>
                                         </div>
                                     </label>

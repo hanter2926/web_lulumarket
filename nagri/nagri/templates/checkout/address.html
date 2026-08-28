@@ -57,8 +57,8 @@
                         {% for address in saved_addresses %}
                             <label class="address-card address-selectable">
                                 <input type="radio" name="address_id" value="{{ address.id }}" 
-                                    {% if default_address.id == address.id %}checked{% endif %}
-                                    class="address-radio">
+                                    {% if default_address and default_address.id == address.id %}checked{% endif %}
+                                    class="address-radio" required>
                                 
                                 <div class="address-content">
                                     <div class="address-header">

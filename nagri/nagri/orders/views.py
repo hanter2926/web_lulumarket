@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import razorpay
 from django.conf import settings
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -94,7 +94,24 @@ def checkout_address_view(request):
         
         if action == 'select_saved':
             address_id = request.POST.get('address_id')
-            address = get_object_or_404(Address, id=address_id, user=user)
+            # If no address_id submitted, show friendly validation message
+            if not address_id:
+                messages.error(request, 'Please select an address before continuing.')
+                form = CheckoutAddressForm()
+                context = {
+                    'saved_addresses': saved_addresses,
+                    'default_address': default_address,
+                    'form': form,
+                }
+                return render(request, 'checkout/address.html', context)
+
+            # Ensure the address exists and belongs to the current user
+            try:
+                address = get_object_or_404(Address, id=address_id, user=user)
+            except Http404:
+                messages.error(request, 'Selected address was not found. Please choose a different address.')
+                return redirect('checkout_address')
+
             request.session['checkout_address_id'] = address.id
             request.session['checkout_step'] = 'delivery'
             messages.success(request, 'Address selected successfully.')

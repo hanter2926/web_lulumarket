@@ -1,0 +1,31 @@
+/* Checkout payment cards - Bootstrap-compatible */
+.payment-options{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+.payment-option{
+    display: block;
+    cursor: pointer;
+}
+.payment-option .option-content{
+    border: 1px solid #e6e6e6;
+    border-radius: 10px;
+    padding: 12px 14px;
+    transition: all 0.12s ease-in-out;
+}
+.payment-option:hover .option-content{
+    border-color: #9ec5ff;
+    transform: translateY(-2px);
+}
+.payment-option input[type="radio"]{ display:none; }
+.payment-option input[type="radio"]:checked + .option-content{
+    border-color: #0d6efd;
+    background:#eef6ff;
+    box-shadow: 0 0 0 4px rgba(13,110,253,0.06);
+}
+.option-title{ font-weight:600; font-size:1rem; }
+
+@media (max-width:575.98px){
+    .payment-options{ grid-template-columns: 1fr; }
+}
