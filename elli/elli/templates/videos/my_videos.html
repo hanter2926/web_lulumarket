@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>My Videos</h2>
+<a class="btn btn-success mb-3" href="{% url 'videos:upload' %}">Upload New</a>
+<ul class="list-group">
+  {% for v in videos %}
+    <li class="list-group-item">
+      <a href="{% url 'videos:detail' v.id %}">{{ v.title }}</a>
+      <small class="text-muted"> - {{ v.status }}</small>
+    </li>
+  {% empty %}
+    <li class="list-group-item">No videos yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

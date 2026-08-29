@@ -1,0 +1,20 @@
+django
+python-dotenv
+celery
+redis
+ffmpeg-python
+pydub
+# ASR / Transcription
+openai-whisper
+openai
+# Translation
+deep-translator
+# TTS
+azure-cognitiveservices-speech
+gTTS
+python-magic
+# Whisper/ASR and translation packages are provider-specific and optional
+# openai-whisper
+# whisperx
+# deep-translator or googletrans
+# For TTS providers: azure-cognitiveservices-speech or google-cloud-texttospeech

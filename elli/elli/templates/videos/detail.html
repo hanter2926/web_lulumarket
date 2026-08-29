@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>{{ video.title }}</h2>
+<p>Status: {{ video.status }} | Progress: {{ video.progress }}%</p>
+{% if video.processed_video %}
+  <video width="640" controls>
+    <source src="{{ video.processed_video.url }}" type="video/mp4">
+  </video>
+{% else %}
+  <p>No processed video yet.</p>
+{% endif %}
+{% if video.subtitle_file %}
+  <p><a href="{{ video.subtitle_file.url }}">Download subtitles</a></p>
+{% endif %}
+{% endblock %}

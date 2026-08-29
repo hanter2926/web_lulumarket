@@ -371,8 +371,47 @@ FFMPEG_PATH = os.environ.get(
 
 WHISPER_MODEL = os.environ.get(
     "WHISPER_MODEL",
-    "base"
+    "small"
 )
+
+
+# =========================================================
+# TRANSLATION / TTS PROVIDERS
+# =========================================================
+
+TRANSLATION_PROVIDER = os.environ.get(
+    "TRANSLATION_PROVIDER",
+    "openai"
+)
+
+OPENAI_API_KEY = os.environ.get(
+    "OPENAI_API_KEY",
+    ""
+)
+
+
+TTS_PROVIDER = os.environ.get(
+    "TTS_PROVIDER",
+    "azure"
+)
+
+TTS_API_KEY = os.environ.get(
+    "TTS_API_KEY",
+    ""
+)
+
+TTS_REGION = os.environ.get(
+    "TTS_REGION",
+    ""
+)
+
+TTS_VOICE = os.environ.get(
+    "TTS_VOICE",
+    "hi-IN-NeerjaNeural"
+)
+
+# Max upload size (MB)
+MAX_UPLOAD_SIZE_MB = int(os.environ.get('MAX_UPLOAD_SIZE_MB', 500))
 
 
 # =========================================================

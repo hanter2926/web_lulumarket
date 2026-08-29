@@ -4,6 +4,7 @@ from django.contrib import messages
 
 from .forms import VideoUploadForm
 from .models import Video
+from .tasks import process_video
 
 
 @login_required
@@ -15,6 +16,12 @@ def video_upload(request):
             video.user = request.user
             video.status = Video.STATUS_UPLOADED
             video.save()
+            # enqueue background processing
+            try:
+                process_video.delay(video.id)
+            except Exception:
+                # if Celery isn't running, leave the video queued
+                pass
             messages.success(request, 'Video uploaded and queued for processing.')
             return redirect('videos:my_videos')
     else:
