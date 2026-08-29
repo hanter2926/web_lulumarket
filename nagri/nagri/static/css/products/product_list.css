@@ -367,8 +367,9 @@
 @media (max-width: 480px) {
     /* Force exactly 3 columns on common mobile sizes while keeping other responsive rules for larger breakpoints */
     .products-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
+        box-sizing: border-box;
     }
 
     .products-sidebar {
@@ -396,6 +397,39 @@
 
     .product-card-image {
         height: 120px;
+    }
+
+    /* Make images responsive and occupy full card width */
+    .product-card-image img {
+        width: 100%;
+        height: auto;
+        object-fit: cover;
+    }
+
+    /* Reduce spacing and font sizes so 3 cards fit without overflow */
+    .product-info {
+        padding: 0.4rem;
+    }
+
+    .product-card h3 {
+        font-size: 0.75rem;
+    }
+
+    .product-category {
+        font-size: 0.72rem;
+    }
+
+    .price-current {
+        font-size: 0.95rem;
+    }
+
+    .product-actions .btn {
+        font-size: 0.72rem;
+        padding: 0.25rem 0.35rem;
+    }
+
+    .product-card {
+        border-radius: 6px;
     }
 
     .product-card-image img {
