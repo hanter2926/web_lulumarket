@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.forms.models import BaseInlineFormSet
 from django.core.exceptions import ValidationError
 
-from .models import Category, Product, ProductImage
+from .models import Category, Product, ProductImage, Inventory
+ 
 
 
 class ProductImageInlineFormset(BaseInlineFormSet):
@@ -29,6 +30,15 @@ class ProductAdmin(admin.ModelAdmin):
 	list_display = ('id', 'name', 'category', 'price', 'is_active')
 	inlines = [ProductImageInline]
 
+
+@admin.register(Inventory)
+class InventoryAdmin(admin.ModelAdmin):
+    list_display = (
+        'product',
+        'stock_quantity',
+        'low_stock_threshold',
+        'last_updated',
+    )
 
 admin.site.register(Category)
 try:

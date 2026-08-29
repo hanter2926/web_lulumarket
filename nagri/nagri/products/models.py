@@ -93,5 +93,9 @@ class Inventory(models.Model):
     low_stock_threshold = models.PositiveIntegerField(default=5)
     last_updated = models.DateTimeField(auto_now=True)
 
+ 
+
+    stock_quantity = models.PositiveIntegerField(default=0)
+
     def __str__(self):
         return f"{self.product.name} inventory"

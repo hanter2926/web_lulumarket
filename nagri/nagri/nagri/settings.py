@@ -58,7 +58,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     # Custom Apps
     "accounts",
-    "products",
+    "products.apps.ProductsConfig",
     "orders",
     "cart",
     "wishlist",
