@@ -1,0 +1,57 @@
+C10_PATH: C:\Users\Vikram\Documents\Repositories\web\elli\.venv313\Lib\site-packages\torch\lib\c10.dll
+EXISTS: True
+IMPORTS_COUNT: 15
+ADVAPI32.dll
+KERNEL32.dll
+MSVCP140.dll
+dbghelp.dll
+VCRUNTIME140.dll
+VCRUNTIME140_1.dll
+api-ms-win-crt-runtime-l1-1-0.dll
+api-ms-win-crt-convert-l1-1-0.dll
+api-ms-win-crt-string-l1-1-0.dll
+api-ms-win-crt-math-l1-1-0.dll
+api-ms-win-crt-heap-l1-1-0.dll
+api-ms-win-crt-stdio-l1-1-0.dll
+api-ms-win-crt-time-l1-1-0.dll
+api-ms-win-crt-environment-l1-1-0.dll
+api-ms-win-crt-locale-l1-1-0.dll
+
+--- PATH check ---
+ADVAPI32.dll FOUND
+  C:\Windows\system32\ADVAPI32.dll
+KERNEL32.dll FOUND
+  C:\Windows\system32\KERNEL32.dll
+MSVCP140.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\MSVCP140.dll
+  C:\Windows\system32\MSVCP140.dll
+dbghelp.dll FOUND
+  C:\Windows\system32\dbghelp.dll
+VCRUNTIME140.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\VCRUNTIME140.dll
+  C:\Windows\system32\VCRUNTIME140.dll
+  C:\Program Files\PyManager\VCRUNTIME140.dll
+  C:\Users\Vikram\AppData\Local\Programs\Python\Python314\VCRUNTIME140.dll
+VCRUNTIME140_1.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\VCRUNTIME140_1.dll
+  C:\Windows\system32\VCRUNTIME140_1.dll
+  C:\Program Files\PyManager\VCRUNTIME140_1.dll
+  C:\Users\Vikram\AppData\Local\Programs\Python\Python314\VCRUNTIME140_1.dll
+api-ms-win-crt-runtime-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-runtime-l1-1-0.dll
+api-ms-win-crt-convert-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-convert-l1-1-0.dll
+api-ms-win-crt-string-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-string-l1-1-0.dll
+api-ms-win-crt-math-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-math-l1-1-0.dll
+api-ms-win-crt-heap-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-heap-l1-1-0.dll
+api-ms-win-crt-stdio-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-stdio-l1-1-0.dll
+api-ms-win-crt-time-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-time-l1-1-0.dll
+api-ms-win-crt-environment-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-environment-l1-1-0.dll
+api-ms-win-crt-locale-l1-1-0.dll FOUND
+  C:\Program Files\Eclipse Adoptium\jdk-25.0.4.7-hotspot\bin\api-ms-win-crt-locale-l1-1-0.dll

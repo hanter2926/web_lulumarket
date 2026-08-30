@@ -1,7 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-
 from .forms import VideoUploadForm
 from .models import Video
 from .tasks import process_video
@@ -40,3 +39,8 @@ def my_videos(request):
 def video_detail(request, pk):
     video = get_object_or_404(Video, pk=pk, user=request.user)
     return render(request, 'videos/detail.html', {'video': video})
+
+
+
+def home(request):
+    return render(request, 'videos/home.html')
