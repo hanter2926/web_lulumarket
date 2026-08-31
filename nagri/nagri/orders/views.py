@@ -559,6 +559,20 @@ class OrderViewSet(viewsets.ModelViewSet):
         response["Content-Disposition"] = f'attachment; filename="invoice-{order.order_number}.txt"'
         return response
 
+    @action(detail=True, methods=["patch"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        """Cancel an order if it is in a cancellable state (pending/processing)."""
+        order = self.get_object()
+        # Allow cancellation only for pending or processing orders
+        if order.status not in ["pending", "processing"]:
+            return Response({"detail": "Only pending or processing orders can be cancelled."}, status=status.HTTP_400_BAD_REQUEST)
+
+        order.status = "cancelled"
+        order.save(update_fields=["status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=["post"], url_path="create")
     def create_order(self, request):
         user = request.user

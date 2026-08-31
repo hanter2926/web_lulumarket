@@ -16,7 +16,7 @@
     <div class="orders-container">
         <div class="orders-list">
             {% for order in orders %}
-            <div class="order-card">
+            <div class="order-card" data-order-id="{{ order.id }}">
                 <div class="order-header">
                     <div class="order-info">
                         <h3>Order #{{ order.order_number }}</h3>
@@ -56,7 +56,7 @@
                             <i class="fas fa-eye"></i> View Details
                         </a>
                         {% if order.status == 'pending' %}
-                            <button class="btn btn-sm btn-warning" onclick="cancelOrder({{ order.id }})">
+                            <button class="btn btn-sm btn-warning" onclick="cancelOrder(event, {{ order.id }})">
                                 <i class="fas fa-times"></i> Cancel
                             </button>
                         {% endif %}
@@ -72,19 +72,19 @@
                 <h3>Order Summary</h3>
                 <div class="stat">
                     <span>Total Orders:</span>
-                    <strong>{{ orders.count }}</strong>
+                    <strong id="total-orders-count">{{ orders.count }}</strong>
                 </div>
                 <div class="stat">
                     <span>Completed:</span>
-                    <strong>{{ completed_count }}</strong>
+                    <strong id="completed-count">{{ completed_count }}</strong>
                 </div>
                 <div class="stat">
                     <span>Pending:</span>
-                    <strong>{{ pending_count }}</strong>
+                    <strong id="pending-count">{{ pending_count }}</strong>
                 </div>
                 <div class="stat">
                     <span>Cancelled:</span>
-                    <strong>{{ cancelled_count }}</strong>
+                    <strong id="cancelled-count">{{ cancelled_count }}</strong>
                 </div>
             </div>
         </aside>
@@ -109,10 +109,62 @@
 
 {% block extra_js %}
 <script>
-    function cancelOrder(orderId) {
-        if (confirm('Are you sure you want to cancel this order?')) {
-            // Handle order cancellation
-            console.log('Cancelling order:', orderId);
+    function getCookie(name) {
+        const cookie = document.cookie.split('; ').find((row) => row.startsWith(name + '='));
+        return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+    }
+
+    async function cancelOrder(event, orderId) {
+        event.preventDefault();
+        if (!confirm('Are you sure you want to cancel this order?')) return;
+
+        const url = `/orders/orders/${orderId}/cancel/`;
+        const csrftoken = getCookie('csrftoken');
+
+        try {
+            const resp = await fetch(url, {
+                method: 'PATCH',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRFToken': csrftoken || '',
+                    'Accept': 'application/json',
+                },
+            });
+
+            if (!resp.ok) {
+                const txt = await resp.text();
+                let err = txt;
+                try { err = JSON.parse(txt).detail || txt; } catch (e) {}
+                alert('Unable to cancel order: ' + err);
+                return;
+            }
+
+            const data = await resp.json();
+
+            // Update the order card UI
+            const card = document.querySelector(`[data-order-id="${orderId}"]`);
+            if (card) {
+                const badge = card.querySelector('.status-badge');
+                if (badge) {
+                    const statusText = (data.status || 'cancelled').replace(/_/g, ' ');
+                    badge.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
+                    badge.className = 'status-badge status-cancelled';
+                }
+
+                // Remove cancel button
+                const btn = card.querySelector('button');
+                if (btn && btn.textContent.trim().toLowerCase().includes('cancel')) btn.remove();
+            }
+
+            // Update summary counts
+            const cancelledNode = document.getElementById('cancelled-count');
+            const pendingNode = document.getElementById('pending-count');
+            if (cancelledNode) cancelledNode.textContent = Number(cancelledNode.textContent || 0) + 1;
+            if (pendingNode) pendingNode.textContent = Math.max(0, Number(pendingNode.textContent || 0) - 1);
+
+        } catch (err) {
+            console.error('Cancel order failed', err);
+            alert('An error occurred while cancelling the order. Please try again.');
         }
     }
 </script>
