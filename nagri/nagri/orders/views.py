@@ -14,6 +14,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 import logging
+from django.db import DatabaseError
 
 from cart.models import Cart
 from products.models import Product
@@ -87,8 +88,15 @@ def checkout_address_view(request):
     from .forms import CheckoutAddressForm
     
     user = request.user
-    saved_addresses = Address.objects.filter(user=user)
-    default_address = saved_addresses.filter(is_default=True).first()
+    try:
+        saved_addresses = Address.objects.filter(user=user)
+        default_address = saved_addresses.filter(is_default=True).first()
+    except DatabaseError:
+        logging.exception("Database error while fetching addresses for user %s", getattr(user, 'id', None))
+        # Show a friendly message instead of raising 500
+        messages.error(request, 'There was a problem retrieving your saved addresses. Please try again later.')
+        saved_addresses = Address.objects.none()
+        default_address = None
     
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -121,9 +129,15 @@ def checkout_address_view(request):
         elif action == 'new_address':
             form = CheckoutAddressForm(request.POST)
             if form.is_valid():
-                address = form.save(commit=False)
-                address.user = user
-                address.save()
+                try:
+                    address = form.save(commit=False)
+                    address.user = user
+                    address.save()
+                except DatabaseError:
+                    logging.exception("Database error while saving address for user %s", getattr(user, 'id', None))
+                    messages.error(request, 'Unable to save address right now. Please try again later.')
+                    return redirect('checkout_address')
+
                 request.session['checkout_address_id'] = address.id
                 request.session['checkout_step'] = 'delivery'
                 messages.success(request, 'Address saved successfully.')
