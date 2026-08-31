@@ -158,11 +158,17 @@ USE_SQLITE = os.environ.get("USE_SQLITE", "True").strip().lower() in {
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-
 if DATABASE_URL:
-    # Render PostgreSQL
+    # Parse the DATABASE_URL (e.g. postgres://user:pass@host:port/dbname)
+    # Use sensible defaults for production: persistent connections and SSL when not in DEBUG
+    db_config = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    # Enforce ssl when not debugging (Render provides SSL-enabled Postgres)
+    if not DEBUG:
+        # Some engines expect sslmode in OPTIONS
+        db_config.setdefault('OPTIONS', {})
+        db_config['OPTIONS'].setdefault('sslmode', 'require')
     DATABASES = {
-        "default": dj_database_url.parse(DATABASE_URL)
+        'default': db_config
     }
 else:
     # Local computer SQLite
