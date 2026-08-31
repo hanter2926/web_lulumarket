@@ -218,34 +218,48 @@ def checkout_payment_view(request):
         payment_form = PaymentMethodForm()
         coupon_form = CouponForm()
     
-    # Calculate totals
-    # Prefer the server-side session subtotal set during the checkout flow
-    # but fall back to computing from the current cart to avoid stale/missing session data.
-    session_sub = request.session.get('checkout_subtotal')
-    if session_sub:
-        try:
-            subtotal = Decimal(session_sub)
-        except Exception:
-            subtotal = Decimal(0)
-    else:
-        # Recompute subtotal from the cart as a safe fallback
-        try:
-            cart, _ = Cart.objects.get_or_create(user=request.user)
-            items = cart.items.select_related('product').all()
-            subtotal = sum((item.product.price or Decimal(0)) * item.quantity for item in items)
-        except Exception:
-            subtotal = Decimal(0)
+    # Recompute subtotals from the cart as the authoritative source.
+    try:
+        cart, _ = Cart.objects.get_or_create(user=request.user)
+        items = cart.items.select_related('product').all()
+        # discounted subtotal uses product.price
+        discounted_subtotal = sum((item.product.price or Decimal(0)) * item.quantity for item in items)
+        # original subtotal uses compare_price when it's greater than price
+        original_subtotal = Decimal(0)
+        for item in items:
+            p = item.product
+            try:
+                orig_price = p.compare_price if (p.compare_price and p.compare_price > p.price) else p.price
+            except Exception:
+                orig_price = p.price
+            original_subtotal += (orig_price or Decimal(0)) * item.quantity
+    except Exception:
+        discounted_subtotal = Decimal(0)
+        original_subtotal = Decimal(0)
 
     delivery_charge = Decimal(get_delivery_charge(delivery_method))
-    discount_amount = Decimal(0)
-    total = subtotal + delivery_charge - discount_amount
+
+    # Compute discount amount/percent from the two subtotals
+    discount_amount = (original_subtotal - discounted_subtotal) if original_subtotal > discounted_subtotal else Decimal(0)
+    if original_subtotal and original_subtotal > 0:
+        try:
+            discount_percent = (discount_amount / original_subtotal) * Decimal(100)
+        except Exception:
+            discount_percent = Decimal(0)
+    else:
+        discount_percent = Decimal(0)
+
+    # Final payable is discounted subtotal plus delivery
+    total = discounted_subtotal + delivery_charge
     
     context = {
         'payment_form': payment_form,
         'coupon_form': coupon_form,
-        'subtotal': subtotal,
+        'original_subtotal': original_subtotal,
+        'discounted_subtotal': discounted_subtotal,
         'delivery_charge': delivery_charge,
         'discount_amount': discount_amount,
+        'discount_percent': discount_percent,
         'total': total,
         'delivery_method': delivery_method,
     }
@@ -276,11 +290,20 @@ def checkout_review_view(request):
         messages.warning(request, 'Your cart is empty.')
         return redirect('cart_detail')
     
-    # Calculate totals
-    subtotal = sum(item.product.price * item.quantity for item in cart_items)
+    # Calculate totals: use product.compare_price as original where applicable
+    discounted_subtotal = sum(item.product.price * item.quantity for item in cart_items)
+    original_subtotal = Decimal(0)
+    for item in cart_items:
+        p = item.product
+        try:
+            orig_price = p.compare_price if (p.compare_price and p.compare_price > p.price) else p.price
+        except Exception:
+            orig_price = p.price
+        original_subtotal += (orig_price or Decimal(0)) * item.quantity
+
     delivery_charge = get_delivery_charge(delivery_method)
-    discount_amount = Decimal(0)
-    total = subtotal + delivery_charge - discount_amount
+    discount_amount = (original_subtotal - discounted_subtotal) if original_subtotal > discounted_subtotal else Decimal(0)
+    total = discounted_subtotal + delivery_charge
     
     if request.method == 'POST':
         # Create order
@@ -288,7 +311,7 @@ def checkout_review_view(request):
         order = Order.objects.create(
             user=user,
             order_number=order_number,
-            subtotal=subtotal,
+            subtotal=original_subtotal,
             discount_amount=discount_amount,
             delivery_charge=delivery_charge,
             total_amount=total,
@@ -326,18 +349,17 @@ def checkout_review_view(request):
                 del request.session[key]
         
         # Redirect based on payment method
-        if payment_method == 'cod':
-            messages.success(request, f'Order placed successfully! Order #: {order_number}')
-            return redirect('order_confirmation', order_id=order.id)
-        else:
-            return redirect('payment_page', order_id=order.id)
+        # For offline methods (including COD) show the payment/instruction page
+        # and keep order in pending state until payment is verified by admin.
+        return redirect('payment_page', order_id=order.id)
     
     context = {
         'cart_items': cart_items,
         'address': address,
         'delivery_method': delivery_method,
         'payment_method': payment_method,
-        'subtotal': subtotal,
+        'original_subtotal': original_subtotal,
+        'discounted_subtotal': discounted_subtotal,
         'delivery_charge': delivery_charge,
         'discount_amount': discount_amount,
         'total': total,
@@ -586,25 +608,49 @@ class OrderViewSet(viewsets.ModelViewSet):
             if not cart_items.exists():
                 return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
             order_items = []
-            total_amount = Decimal("0.00")
+            discounted_subtotal = Decimal("0.00")
+            original_subtotal = Decimal("0.00")
             for item in cart_items:
                 order_items.append({
                     "product": item.product,
                     "quantity": item.quantity,
                     "price": item.product.price,
                 })
-                total_amount += Decimal(str(item.product.price)) * item.quantity
+                discounted_subtotal += (item.product.price or Decimal(0)) * item.quantity
+                try:
+                    orig_price = item.product.compare_price if (item.product.compare_price and item.product.compare_price > item.product.price) else item.product.price
+                except Exception:
+                    orig_price = item.product.price
+                original_subtotal += (orig_price or Decimal(0)) * item.quantity
+            # final payable for cart path
+            total_amount = discounted_subtotal
         else:
             if not product_id:
                 return Response({"detail": "product_id is required."}, status=status.HTTP_400_BAD_REQUEST)
             product = get_object_or_404(Product, id=product_id)
-            total_amount = Decimal(str(product.price)) * quantity
+            discounted_subtotal = Decimal(str(product.price)) * quantity
+            try:
+                orig_price = product.compare_price if (product.compare_price and product.compare_price > product.price) else product.price
+            except Exception:
+                orig_price = product.price
+            original_subtotal = (orig_price or Decimal(0)) * quantity
+            total_amount = discounted_subtotal
             order_items = [{"product": product, "quantity": quantity, "price": product.price}]
 
         order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
+        # Use computed original_subtotal and discounted total_amount
+        try:
+            _orig = original_subtotal
+        except NameError:
+            _orig = discounted_subtotal if 'discounted_subtotal' in locals() else Decimal(0)
+        discount_amount = (_orig - total_amount) if _orig and _orig > total_amount else Decimal(0)
+
         order = Order.objects.create(
             user=user,
             order_number=order_number,
+            subtotal=_orig,
+            discount_amount=discount_amount,
+            delivery_charge=Decimal(0),
             total_amount=total_amount,
             status="pending",
             payment_provider="razorpay",
