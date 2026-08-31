@@ -376,7 +376,8 @@ def payment_page_view(request, order_id):
             order.razorpay_order_id = razorpay_order.get('id')
             order.save(update_fields=['razorpay_order_id', 'updated_at'])
     except Exception:
-        # If gateway not configured or creation failed, do not fake payment - show a friendly message
+        # If gateway not configured or creation failed, log the exception and show a friendly message
+        logging.exception("Razorpay order creation failed for order %s", getattr(order, 'id', None))
         context = {'order': order, 'gateway_error': True}
         return render(request, 'payment/payment.html', context)
 

@@ -20,7 +20,7 @@
                 <a href="{% url 'order_confirmation' order.id %}" class="btn btn-primary">Continue to confirmation</a>
             {% else %}
                 <div class="payment-actions">
-                    <button class="btn btn-primary" id="payNowBtn">Pay Now</button>
+                    <button class="btn btn-primary" id="payNowBtn" type="button">Pay Now</button>
                     <button class="btn btn-secondary" id="payUpiQrBtn" type="button">Pay using UPI QR</button>
                     <a href="{% url 'cart_detail' %}" class="btn btn-outline-secondary">Back to cart</a>
                 </div>
@@ -108,12 +108,16 @@
                     // UPI/QR flows can be handled by Razorpay Checkout automatically.
                     handler: function (response) {
                         // Verify payment on server; ensure we inspect HTTP status
+                        const headers = { 'Content-Type': 'application/json' };
+                        if (typeof getCookie === 'function') {
+                            const csrftoken = getCookie('csrftoken');
+                            if (csrftoken) headers['X-CSRFToken'] = csrftoken;
+                        }
+
                         fetch('{% url "verify_payment" %}', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRFToken': (typeof getCookie === 'function' ? getCookie('csrftoken') : null)
-                            },
+                            credentials: 'same-origin',
+                            headers: headers,
                             body: JSON.stringify({
                                 razorpay_order_id: response.razorpay_order_id,
                                 razorpay_payment_id: response.razorpay_payment_id,
