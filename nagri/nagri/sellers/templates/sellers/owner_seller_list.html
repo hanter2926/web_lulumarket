@@ -1,0 +1,64 @@
+{% extends 'base/base.html' %}
+{% block title %}Owner Seller List{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Seller List</h2>
+
+    <form method="get" class="row g-2 mb-4">
+        <div class="col-md-4">
+            <input type="text" name="q" class="form-control" value="{{ search }}" placeholder="Search name, email, seller ID">
+        </div>
+        <div class="col-md-3">
+            <select name="status" class="form-select">
+                <option value="">All statuses</option>
+                <option value="pending_review" {% if status_filter == 'pending_review' %}selected{% endif %}>Pending</option>
+                <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+                <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+                <option value="suspended" {% if status_filter == 'suspended' %}selected{% endif %}>Suspended</option>
+            </select>
+        </div>
+        <div class="col-md-2"><button class="btn btn-primary" type="submit">Filter</button></div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Seller</th>
+                    <th>Email</th>
+                    <th>Seller ID</th>
+                    <th>Status</th>
+                    <th>Activated</th>
+                    <th>Products</th>
+                    <th>Units</th>
+                    <th>Gross</th>
+                    <th>Online</th>
+                    <th>COD</th>
+                    <th>Pending</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr>
+                    <td>{{ entry.application.user.get_full_name|default:entry.application.user.username }}</td>
+                    <td>{{ entry.application.user.email }}</td>
+                    <td>{{ entry.application.seller_id|default:'-' }}</td>
+                    <td>{{ entry.application.status }}</td>
+                    <td>{% if entry.application.user.is_vendor %}Yes{% else %}No{% endif %}</td>
+                    <td>{{ entry.metrics.total_products }}</td>
+                    <td>{{ entry.metrics.units_sold }}</td>
+                    <td>₹{{ entry.metrics.gross_sales }}</td>
+                    <td>₹{{ entry.metrics.online_paid }}</td>
+                    <td>₹{{ entry.metrics.cod_amount }}</td>
+                    <td>₹{{ entry.metrics.pending_amount }}</td>
+                    <td><a href="{% url 'sellers:owner_seller_detail' entry.application.user_id %}" class="btn btn-sm btn-outline-primary">View</a></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="12">No sellers found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

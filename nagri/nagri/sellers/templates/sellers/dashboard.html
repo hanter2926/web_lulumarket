@@ -1,0 +1,29 @@
+{% extends 'base/base.html' %}
+{% block title %}Seller Dashboard{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Seller Dashboard</h2>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3"><div class="card p-3"><strong>Total Products</strong><div>{{ metrics.total_products }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Active Products</strong><div>{{ metrics.active_products }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Inactive Products</strong><div>{{ metrics.inactive_products }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total Units Sold</strong><div>{{ metrics.total_units_sold }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total Seller Sales</strong><div>₹{{ metrics.total_seller_sales|floatformat:2 }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Online Payment Amount</strong><div>₹{{ metrics.online_paid_amount|floatformat:2 }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>COD Amount</strong><div>₹{{ metrics.cod_amount|floatformat:2 }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Pending/Unpaid Amount</strong><div>₹{{ metrics.pending_unpaid_amount|floatformat:2 }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Pending Orders</strong><div>{{ metrics.pending_orders }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Processing Orders</strong><div>{{ metrics.processing_orders }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Shipped Orders</strong><div>{{ metrics.shipped_orders }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Delivered Orders</strong><div>{{ metrics.delivered_orders }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Cancelled Orders</strong><div>{{ metrics.cancelled_orders }}</div></div></div>
+    </div>
+
+    <div class="d-flex gap-2 mb-3">
+        <a href="{% url 'sellers:orders_list' %}" class="btn btn-primary">Orders</a>
+        <a href="{% url 'sellers:reports' %}" class="btn btn-outline-primary">Reports</a>
+        <a href="{% url 'sellers:product_performance' %}" class="btn btn-outline-primary">Product Performance</a>
+    </div>
+</div>
+{% endblock %}

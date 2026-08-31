@@ -1,5 +1,10 @@
+from datetime import timedelta
+
 from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 
 class CustomUser(AbstractUser):
@@ -8,6 +13,7 @@ class CustomUser(AbstractUser):
     avatar = models.ImageField(upload_to="profiles/", blank=True, null=True)
     is_vendor = models.BooleanField(default=False)
     is_customer = models.BooleanField(default=True)
+    is_owner = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -16,6 +22,43 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return self.email or self.username
+
+    def can_change_password(self):
+        from sellers.models import SellerPasswordChangeEvent
+
+        all_events = SellerPasswordChangeEvent.objects.filter(
+            user=self,
+            event_type="manual_change",
+        ).order_by("changed_at")
+
+        recent_events = all_events.filter(changed_at__gte=timezone.now() - timedelta(days=30))
+
+        if recent_events.count() < 3:
+            next_available = all_events[0].changed_at + timedelta(days=30) if all_events.exists() else None
+            return True, next_available
+
+        oldest_recent = recent_events[0]
+        next_available = oldest_recent.changed_at + timedelta(days=30)
+        return False, next_available
+
+    def change_password(self, current_password, new_password):
+        from sellers.models import SellerPasswordChangeEvent
+
+        allowed, next_available = self.can_change_password()
+        if not allowed:
+            if next_available:
+                return False, f"You have reached the maximum password change limit of 3 password changes within 30 days. Next change available on {next_available.strftime('%Y-%m-%d')}."
+            return False, "You have reached the maximum password change limit of 3 password changes within 30 days."
+
+        try:
+            validate_password(new_password, self)
+        except ValidationError as exc:
+            return False, exc.messages[0]
+
+        self.set_password(new_password)
+        self.save(update_fields=["password", "updated_at"])
+        SellerPasswordChangeEvent.objects.create(user=self, event_type="manual_change")
+        return True, "success"
 
 
 class UserProfile(models.Model):

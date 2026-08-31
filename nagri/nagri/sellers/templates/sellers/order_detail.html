@@ -1,0 +1,30 @@
+{% extends 'base/base.html' %}
+{% block title %}Seller Order Detail{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Order Item Detail</h2>
+
+    <div class="card p-4 mb-4">
+        <p><strong>Order:</strong> {{ item.order.order_number }}</p>
+        <p><strong>Product:</strong> {{ item.product.name }}</p>
+        <p><strong>Quantity:</strong> {{ item.quantity }}</p>
+        <p><strong>Price:</strong> ₹{{ item.price }}</p>
+        <p><strong>Subtotal:</strong> ₹{{ item.get_subtotal }}</p>
+        <p><strong>Payment Method:</strong> {{ item.order.get_payment_method_display|default:item.order.payment_method }}</p>
+        <p><strong>Payment Status:</strong> {% if item.order.is_paid %}Paid{% else %}Pending{% endif %}</p>
+        <p><strong>Order Status:</strong> {{ item.order.get_status_display }}</p>
+        <p><strong>Fulfillment Status:</strong> {{ item.get_fulfillment_status_display }}</p>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <label for="fulfillment_status">Update fulfillment status</label>
+        <select name="fulfillment_status" id="fulfillment_status" class="form-select my-2">
+            {% for value, label in item.FULFILLMENT_STATUS_CHOICES %}
+                <option value="{{ value }}" {% if item.fulfillment_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">Update</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends 'base/base.html' %}
+{% block title %}Seller Orders{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Seller Orders</h2>
+
+    <form method="get" class="row g-2 mb-4">
+        <div class="col-md-3"><input type="date" name="start_date" class="form-control" value="{{ filters.start_date }}"></div>
+        <div class="col-md-3"><input type="date" name="end_date" class="form-control" value="{{ filters.end_date }}"></div>
+        <div class="col-md-2">
+            <select name="payment_method" class="form-select">
+                <option value="">All payment methods</option>
+                <option value="razorpay" {% if filters.payment_method == 'razorpay' %}selected{% endif %}>Razorpay</option>
+                <option value="upi" {% if filters.payment_method == 'upi' %}selected{% endif %}>UPI</option>
+                <option value="cod" {% if filters.payment_method == 'cod' %}selected{% endif %}>COD</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="order_status" class="form-select">
+                <option value="">All order statuses</option>
+                <option value="pending" {% if filters.order_status == 'pending' %}selected{% endif %}>Pending</option>
+                <option value="paid" {% if filters.order_status == 'paid' %}selected{% endif %}>Paid</option>
+                <option value="shipped" {% if filters.order_status == 'shipped' %}selected{% endif %}>Shipped</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="payment_status" class="form-select">
+                <option value="">All payment states</option>
+                <option value="paid" {% if filters.payment_status == 'paid' %}selected{% endif %}>Paid</option>
+                <option value="cod" {% if filters.payment_status == 'cod' %}selected{% endif %}>COD</option>
+                <option value="pending" {% if filters.payment_status == 'pending' %}selected{% endif %}>Pending</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="fulfillment_status" class="form-select">
+                <option value="">All fulfillment</option>
+                <option value="pending" {% if filters.fulfillment_status == 'pending' %}selected{% endif %}>Pending</option>
+                <option value="processing" {% if filters.fulfillment_status == 'processing' %}selected{% endif %}>Processing</option>
+                <option value="shipped" {% if filters.fulfillment_status == 'shipped' %}selected{% endif %}>Shipped</option>
+                <option value="delivered" {% if filters.fulfillment_status == 'delivered' %}selected{% endif %}>Delivered</option>
+            </select>
+        </div>
+        <div class="col-md-1"><button class="btn btn-primary" type="submit">Filter</button></div>
+    </form>
+
+    {% if items %}
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Order</th>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Total</th>
+                    <th>Payment</th>
+                    <th>Payment Status</th>
+                    <th>Order Status</th>
+                    <th>Fulfillment</th>
+                    <th>Order Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td><a href="{% url 'sellers:order_item_detail' item.pk %}">{{ item.order.order_number }}</a></td>
+                    <td>{{ item.product.name }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>₹{{ item.price }}</td>
+                    <td>₹{{ item.get_subtotal }}</td>
+                    <td>{{ item.order.get_payment_method_display|default:item.order.payment_method }}</td>
+                    <td>{% if item.order.is_paid %}Paid{% else %}Pending{% endif %}</td>
+                    <td>{{ item.order.get_status_display }}</td>
+                    <td>{{ item.get_fulfillment_status_display }}</td>
+                    <td>{{ item.order.created_at|date:'Y-m-d' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <div class="alert alert-light">No order items found for your products.</div>
+    {% endif %}
+</div>
+{% endblock %}

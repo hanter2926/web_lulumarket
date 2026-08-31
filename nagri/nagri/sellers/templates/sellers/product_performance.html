@@ -1,0 +1,50 @@
+{% extends 'base/base.html' %}
+{% block title %}Product Performance{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Product Performance</h2>
+
+    <form method="get" class="mb-3">
+        <label for="sort">Sort by</label>
+        <select name="sort" id="sort" class="form-select" onchange="this.form.submit()">
+            <option value="most_sold" {% if sort == 'most_sold' %}selected{% endif %}>Most sold</option>
+            <option value="highest_revenue" {% if sort == 'highest_revenue' %}selected{% endif %}>Highest revenue</option>
+            <option value="lowest_stock" {% if sort == 'lowest_stock' %}selected{% endif %}>Lowest stock</option>
+            <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Newest</option>
+        </select>
+    </form>
+
+    {% if performance %}
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th>Units Sold</th>
+                    <th>Sales</th>
+                    <th>Online</th>
+                    <th>COD</th>
+                    <th>Pending</th>
+                    <th>Current Stock</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in performance %}
+                <tr>
+                    <td>{{ row.product.name }}</td>
+                    <td>{{ row.units_sold }}</td>
+                    <td>₹{{ row.total_sales|floatformat:2 }}</td>
+                    <td>₹{{ row.online_paid_amount|floatformat:2 }}</td>
+                    <td>₹{{ row.cod_amount|floatformat:2 }}</td>
+                    <td>₹{{ row.pending_amount|floatformat:2 }}</td>
+                    <td>{{ row.current_stock }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <div class="alert alert-light">No performance data yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

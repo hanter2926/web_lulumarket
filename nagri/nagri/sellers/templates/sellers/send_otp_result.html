@@ -1,0 +1,12 @@
+{% extends 'base/base.html' %}
+{% block title %}OTP Sent{% endblock %}
+{% block content %}
+<div class="container py-5">
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% else %}
+    <div class="alert alert-success">OTP has been sent to your email.</div>
+    <a href="{% url 'sellers:verify_email' %}" class="btn btn-primary">Enter OTP</a>
+  {% endif %}
+</div>
+{% endblock %}

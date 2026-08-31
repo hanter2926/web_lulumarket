@@ -1,0 +1,64 @@
+{% extends 'base/base.html' %}
+{% block title %}Seller Detail{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Seller Detail</h2>
+
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card p-4 mb-3">
+                <h4>Seller Profile</h4>
+                <p><strong>Name:</strong> {{ seller.get_full_name|default:seller.username }}</p>
+                <p><strong>Email:</strong> {{ seller.email }}</p>
+                <p><strong>Phone:</strong> {{ seller.phone|default:'-' }}</p>
+                <p><strong>Seller ID:</strong> {{ application.seller_id|default:'-' }}</p>
+                <p><strong>Application status:</strong> {{ application.status }}</p>
+                <p><strong>Activation status:</strong> {% if seller.is_vendor %}Activated{% else %}Not activated{% endif %}</p>
+                <p><strong>Selected categories:</strong> {% for category in application.selected_categories.all %}{{ category.name }}{% if not forloop.last %}, {% endif %}{% empty %}No categories{% endfor %}</p>
+                <p><strong>Application date:</strong> {{ application.created_at|date:'Y-m-d' }}</p>
+                <p><strong>Approval date:</strong> {{ application.reviewed_at|date:'Y-m-d'|default:'-' }}</p>
+            </div>
+
+            <div class="card p-4">
+                <h4>Owner Actions</h4>
+                <form method="post" action="{% url 'sellers:owner_seller_action' seller.pk %}" class="d-flex flex-wrap gap-2">
+                    {% csrf_token %}
+                    <button type="submit" name="action" value="approve" class="btn btn-success">Approve</button>
+                    <button type="submit" name="action" value="reject" class="btn btn-danger">Reject</button>
+                    <button type="submit" name="action" value="suspend" class="btn btn-warning">Suspend</button>
+                    <button type="submit" name="action" value="reactivate" class="btn btn-primary">Reactivate</button>
+                    <button type="submit" name="action" value="resend_activation" class="btn btn-outline-dark">Resend activation</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card p-4 mb-3">
+                <h4>Product Data</h4>
+                <p><strong>Total products:</strong> {{ products|length }}</p>
+                <p><strong>Active products:</strong> {{ products|length }}</p>
+                <p><strong>Inactive products:</strong> 0</p>
+            </div>
+
+            <div class="card p-4">
+                <h4>Sales Data</h4>
+                <p><strong>Units sold:</strong> {{ metrics.total_units }}</p>
+                <p><strong>Gross sales:</strong> ₹{{ metrics.gross_sales }}</p>
+                <p><strong>Online paid:</strong> ₹{{ metrics.online_paid }}</p>
+                <p><strong>UPI/manual:</strong> ₹{{ metrics.upi_manual }}</p>
+                <p><strong>COD:</strong> ₹{{ metrics.cod_amount }}</p>
+                <p><strong>Pending/unpaid:</strong> ₹{{ metrics.pending_amount }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-4 mt-4">
+        <h4>Order Data</h4>
+        <p><strong>Pending items:</strong> {{ metrics.pending_items }}</p>
+        <p><strong>Processing items:</strong> {{ metrics.processing_items }}</p>
+        <p><strong>Shipped items:</strong> {{ metrics.shipped_items }}</p>
+        <p><strong>Delivered items:</strong> {{ metrics.delivered_items }}</p>
+        <p><strong>Cancelled items:</strong> {{ metrics.cancelled_items }}</p>
+    </div>
+</div>
+{% endblock %}

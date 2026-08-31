@@ -15,6 +15,7 @@ urlpatterns = [
     # Include Django's built-in authentication URLs (login/logout/password reset)
     path("accounts/", include("django.contrib.auth.urls")),
     path("products/", include("products.urls")),
+    path("sellers/", include(("sellers.urls", "sellers"), namespace="sellers")),
     path("orders/", include("orders.urls")),
     path("cart/", include("cart.urls")),
     path("wishlist/", include("wishlist.urls")),

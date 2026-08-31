@@ -23,6 +23,8 @@ SECRET_KEY = os.environ.get(
     "django-insecure-change-this-secret-key"
 )
 
+SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
+
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
 ALLOWED_HOSTS = [
@@ -58,6 +60,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     # Custom Apps
     "accounts",
+    "sellers",
     "products.apps.ProductsConfig",
     "orders",
     "cart",

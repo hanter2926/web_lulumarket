@@ -1,0 +1,8 @@
+{% extends 'base/base.html' %}
+{% block title %}Application Submitted{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <div class="alert alert-info">Your seller application has been submitted and is under review. We aim to respond within 24 hours.</div>
+  <a href="{% url 'sellers:status' %}" class="btn btn-secondary">View Status</a>
+</div>
+{% endblock %}

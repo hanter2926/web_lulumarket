@@ -1,0 +1,14 @@
+{% extends 'base/base.html' %}
+{% block title %}Verify Email{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <h3>Enter the OTP sent to {{ application.email }}</h3>
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+  <form method="post">{% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn btn-primary">Verify</button>
+  </form>
+</div>
+{% endblock %}

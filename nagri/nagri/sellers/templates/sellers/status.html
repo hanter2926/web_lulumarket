@@ -1,0 +1,16 @@
+{% extends 'base/base.html' %}
+{% block title %}Application Status{% endblock %}
+{% block content %}
+<div class="container py-5">
+  {% if application %}
+    <h3>Application Status: {{ application.get_status_display }}</h3>
+    <p>Submitted: {{ application.submitted_at }}</p>
+    <p>Current status: {{ application.status }}</p>
+    {% if application.status == 'pending_review' %}
+      <div class="alert alert-info">Your seller application is under review. We aim to respond within 24 hours.</div>
+    {% endif %}
+  {% else %}
+    <p>You have not started a seller application yet. <a href="{% url 'sellers:apply_start' %}">Start now</a></p>
+  {% endif %}
+</div>
+{% endblock %}

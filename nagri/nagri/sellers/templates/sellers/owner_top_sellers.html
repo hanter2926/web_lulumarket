@@ -1,0 +1,46 @@
+{% extends 'base/base.html' %}
+{% block title %}Top Sellers{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Top Sellers</h2>
+    <form method="get" class="mb-3">
+        <select name="sort" class="form-select" onchange="this.form.submit()">
+            <option value="highest_revenue" {% if sort == 'highest_revenue' %}selected{% endif %}>Highest Revenue</option>
+            <option value="most_units_sold" {% if sort == 'most_units_sold' %}selected{% endif %}>Most Units Sold</option>
+            <option value="most_orders" {% if sort == 'most_orders' %}selected{% endif %}>Most Orders</option>
+            <option value="most_active_products" {% if sort == 'most_active_products' %}selected{% endif %}>Most Active Products</option>
+        </select>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Seller</th>
+                    <th>Products</th>
+                    <th>Units</th>
+                    <th>Gross Sales</th>
+                    <th>Online</th>
+                    <th>COD</th>
+                    <th>Pending</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in sellers %}
+                <tr>
+                    <td>{{ row.seller_display_name }}</td>
+                    <td>{{ row.metrics.total_products }}</td>
+                    <td>{{ row.metrics.units_sold }}</td>
+                    <td>₹{{ row.metrics.gross_sales|floatformat:2 }}</td>
+                    <td>₹{{ row.metrics.online_paid|floatformat:2 }}</td>
+                    <td>₹{{ row.metrics.cod_amount|floatformat:2 }}</td>
+                    <td>₹{{ row.metrics.pending_amount|floatformat:2 }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7">No sellers found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

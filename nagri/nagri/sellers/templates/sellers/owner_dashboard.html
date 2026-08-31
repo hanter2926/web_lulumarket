@@ -1,0 +1,31 @@
+{% extends 'base/base.html' %}
+{% block title %}Marketplace Owner Dashboard{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Marketplace Owner Dashboard</h2>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3"><div class="card p-3"><strong>Total Seller Applications</strong><div>{{ summary.total_seller_applications }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Pending</strong><div>{{ summary.pending_seller_applications }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Approved Sellers</strong><div>{{ summary.approved_sellers }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Activated Sellers</strong><div>{{ summary.activated_sellers }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Rejected</strong><div>{{ summary.rejected_sellers }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Suspended</strong><div>{{ summary.suspended_sellers }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total Seller Products</strong><div>{{ summary.total_seller_products }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Active Products</strong><div>{{ summary.active_seller_products }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Inactive Products</strong><div>{{ summary.inactive_seller_products }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total Marketplace Orders</strong><div>{{ summary.total_marketplace_orders }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total Units Sold</strong><div>{{ summary.total_units_sold }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total Gross Sales</strong><div>₹{{ summary.total_marketplace_gross_sales|floatformat:2 }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total Online Paid</strong><div>₹{{ summary.total_online_paid|floatformat:2 }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total UPI/Manual</strong><div>₹{{ summary.total_upi_manual|floatformat:2 }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total COD</strong><div>₹{{ summary.total_cod_amount|floatformat:2 }}</div></div></div>
+        <div class="col-md-3"><div class="card p-3"><strong>Total Pending/Unpaid</strong><div>₹{{ summary.total_pending_unpaid_amount|floatformat:2 }}</div></div></div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a href="{% url 'sellers:owner_seller_list' %}" class="btn btn-primary">Seller List</a>
+        <a href="{% url 'sellers:owner_top_sellers' %}" class="btn btn-outline-primary">Top Sellers</a>
+    </div>
+</div>
+{% endblock %}

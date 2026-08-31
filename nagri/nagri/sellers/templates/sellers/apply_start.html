@@ -1,0 +1,16 @@
+{% extends 'base/base.html' %}
+{% block title %}Become a Seller{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <h2>Become a Seller</h2>
+  <p>Use your existing account email: <strong>{{ request.user.email }}</strong></p>
+  {% if application and application.email_verified %}
+    <p>Email verified. <a href="{% url 'sellers:documents' %}">Upload documents</a></p>
+  {% else %}
+    <form method="post" action="{% url 'sellers:send_otp' %}">{% csrf_token %}
+      <button class="btn btn-primary">Send verification OTP to my email</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

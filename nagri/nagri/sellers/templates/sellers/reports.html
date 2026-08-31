@@ -1,0 +1,23 @@
+{% extends 'base/base.html' %}
+{% block title %}Seller Reports{% endblock %}
+{% block content %}
+<div class="container py-5">
+    <h2>Seller Reports</h2>
+
+    <div class="row g-3">
+        {% for period_name, data in summary.items %}
+        <div class="col-md-6">
+            <div class="card p-3">
+                <h4>{{ period_name|title }}</h4>
+                <p><strong>Total orders:</strong> {{ data.total_orders }}</p>
+                <p><strong>Total units sold:</strong> {{ data.total_units_sold }}</p>
+                <p><strong>Gross sales:</strong> ₹{{ data.gross_sales }}</p>
+                <p><strong>Online paid:</strong> ₹{{ data.online_paid }}</p>
+                <p><strong>COD:</strong> ₹{{ data.cod }}</p>
+                <p><strong>Pending:</strong> ₹{{ data.pending_amount }}</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
