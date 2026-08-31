@@ -73,6 +73,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "nagri.middleware.AdminSafetyMiddleware",
     # WhiteNoise for Static Files Deployment
     "whitenoise.middleware.WhiteNoiseMiddleware",
     # CORS
