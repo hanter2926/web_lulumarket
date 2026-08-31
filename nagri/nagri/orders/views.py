@@ -219,7 +219,23 @@ def checkout_payment_view(request):
         coupon_form = CouponForm()
     
     # Calculate totals
-    subtotal = Decimal(request.session.get('checkout_subtotal', 0))
+    # Prefer the server-side session subtotal set during the checkout flow
+    # but fall back to computing from the current cart to avoid stale/missing session data.
+    session_sub = request.session.get('checkout_subtotal')
+    if session_sub:
+        try:
+            subtotal = Decimal(session_sub)
+        except Exception:
+            subtotal = Decimal(0)
+    else:
+        # Recompute subtotal from the cart as a safe fallback
+        try:
+            cart, _ = Cart.objects.get_or_create(user=request.user)
+            items = cart.items.select_related('product').all()
+            subtotal = sum((item.product.price or Decimal(0)) * item.quantity for item in items)
+        except Exception:
+            subtotal = Decimal(0)
+
     delivery_charge = Decimal(get_delivery_charge(delivery_method))
     discount_amount = Decimal(0)
     total = subtotal + delivery_charge - discount_amount

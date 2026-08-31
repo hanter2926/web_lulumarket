@@ -21,7 +21,7 @@
             {% else %}
                 <div class="payment-actions">
                     <button class="btn btn-primary" id="payNowBtn" type="button">Pay Now</button>
-                    <button class="btn btn-secondary" id="payUpiQrBtn" type="button">Pay using UPI QR</button>
+                    <button class="btn btn-secondary" id="payUpiQrBtn" type="button" onclick="toggleUpiSection(event)">Pay using UPI QR</button>
                     <a href="{% url 'cart_detail' %}" class="btn btn-outline-secondary">Back to cart</a>
                 </div>
 
@@ -66,6 +66,21 @@
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script src="{% static 'js/checkout/checkout.js' %}"></script>
     <script>
+        // Provide a safe global toggle function so inline onclick works even when other scripts fail
+        function toggleUpiSection(event) {
+            try {
+                if (event) event.preventDefault();
+            } catch (e) {}
+            var upiSection = document.getElementById('upiQrSection');
+            if (!upiSection) return;
+            if (upiSection.style.display === 'none' || upiSection.style.display === '') {
+                upiSection.style.display = 'block';
+                try { window.scrollTo({ top: upiSection.offsetTop - 80, behavior: 'smooth' }); } catch (e) {}
+            } else {
+                upiSection.style.display = 'none';
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             const payButton = document.getElementById('payNowBtn');
             if (!payButton) return;
@@ -158,13 +173,9 @@
             const upiBtn = document.getElementById('payUpiQrBtn');
             const upiSection = document.getElementById('upiQrSection');
             if (upiBtn && upiSection) {
+                // keep existing event binding as well
                 upiBtn.addEventListener('click', function () {
-                    if (upiSection.style.display === 'none' || upiSection.style.display === '') {
-                        upiSection.style.display = 'block';
-                        window.scrollTo({ top: upiSection.offsetTop - 80, behavior: 'smooth' });
-                    } else {
-                        upiSection.style.display = 'none';
-                    }
+                    toggleUpiSection();
                 });
             }
         });
