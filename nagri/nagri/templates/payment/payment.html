@@ -72,12 +72,14 @@
 
             // If gateway error was flagged by the view, disable the pay button and inform user
             const gatewayError = {{ gateway_error|default:False|yesno:'true,false' }};
-            const razorpayKey = '{{ razorpay_key|default:"" }}';
-            const razorpayOrderId = '{{ order.razorpay_order_id|default:"" }}';
+            const razorpayKey = "{{ razorpay_key|default:''|escapejs }}";
+            const razorpayOrderId = "{{ order.razorpay_order_id|default:''|escapejs }}";
             const amountPaise = {{ amount_paise|default:0 }};
 
             if (gatewayError || !razorpayKey || !razorpayOrderId) {
                 payButton.disabled = true;
+                payButton.setAttribute('aria-disabled', 'true');
+                payButton.title = 'Online payments are currently unavailable. Please try UPI QR or contact support.';
                 payButton.textContent = 'Payment unavailable';
                 return;
             }
@@ -110,7 +112,7 @@
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'X-CSRFToken': getCookie('csrftoken')
+                                'X-CSRFToken': (typeof getCookie === 'function' ? getCookie('csrftoken') : null)
                             },
                             body: JSON.stringify({
                                 razorpay_order_id: response.razorpay_order_id,
@@ -129,8 +131,8 @@
                         });
                     },
                     prefill: {
-                        name: '{{ request.user.get_full_name|default:request.user.email }}',
-                        email: '{{ request.user.email }}'
+                        name: "{{ request.user.get_full_name|default:request.user.email|escapejs }}",
+                        email: "{{ request.user.email|escapejs }}"
                     },
                     theme: { color: '#0d6efd' }
                 };
