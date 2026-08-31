@@ -13,12 +13,13 @@ from django.db.models import Q, Count
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+import logging
 
 from cart.models import Cart
 from products.models import Product
 from accounts.models import Address
 
-from .models import Order, OrderItem
+from .models import Order, OrderItem, UpiPaymentSubmission
 from .serializers import OrderItemSerializer, OrderSerializer
 from django.urls import reverse
 
@@ -369,8 +370,45 @@ def payment_page_view(request, order_id):
         'order': order,
         'razorpay_key': settings.RAZORPAY_KEY_ID,
         'amount_paise': int(order.total_amount * 100),
+        'manual_upi_id': settings.MANUAL_UPI_ID,
     }
     return render(request, 'payment/payment.html', context)
+
+
+@login_required(login_url='login_page')
+def upi_submit_view(request, order_id):
+    order = get_object_or_404(Order, id=order_id, user=request.user)
+
+    if request.method != 'POST':
+        return redirect('payment_page', order_id=order.id)
+
+    utr = request.POST.get('utr', '').strip()
+    upi_id = settings.MANUAL_UPI_ID or request.POST.get('upi_id', '').strip()
+    receipt = request.FILES.get('receipt')
+
+    if not upi_id:
+        messages.error(request, 'UPI ID not configured. Contact the site administrator.')
+        return redirect('payment_page', order_id=order.id)
+
+    # Use server-side amount to avoid manipulation
+    amount = order.total_amount
+
+    submission = UpiPaymentSubmission.objects.create(
+        order=order,
+        upi_id=upi_id,
+        amount=amount,
+        utr=utr or None,
+        receipt=receipt or None,
+        status='pending',
+    )
+
+    # Mark order status to pending_verification and set provider
+    order.status = 'pending_verification'
+    order.payment_provider = 'manual_upi'
+    order.save(update_fields=['status', 'payment_provider', 'updated_at'])
+
+    messages.success(request, 'UPI payment submitted. It will be verified by admin shortly.')
+    return redirect('order_detail', order_id=order.id)
 
 
 @login_required(login_url='login_page')
@@ -404,25 +442,37 @@ def verify_payment(request):
 
     if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature]):
         return Response({"detail": "Missing payment verification data."}, status=status.HTTP_400_BAD_REQUEST)
-
     order = get_object_or_404(Order, razorpay_order_id=razorpay_order_id, user=request.user)
 
-    if not verify_razorpay_signature(
-        razorpay_order_id,
-        razorpay_payment_id,
-        razorpay_signature,
-        settings.RAZORPAY_KEY_SECRET,
-    ):
+    # Idempotent: if already marked paid, return success
+    if order.is_paid and order.razorpay_payment_id == razorpay_payment_id:
+        return Response({"detail": "Payment already verified.", "order_id": order.id}, status=status.HTTP_200_OK)
+
+    try:
+        valid = verify_razorpay_signature(
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+            settings.RAZORPAY_KEY_SECRET,
+        )
+    except Exception as exc:
+        logging.exception("Error while verifying razorpay signature")
+        return Response({"detail": "Internal error verifying payment."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    if not valid:
+        # Do not mark as paid; allow user to retry or check webhook
         order.status = "cancelled"
-        order.save(update_fields=["status", "updated_at"])
+        order.save(update_fields=["status", "updated_at"]) 
         return Response({"detail": "Payment verification failed."}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Mark order as paid in a single safe write
     order.razorpay_payment_id = razorpay_payment_id
     order.razorpay_signature = razorpay_signature
     order.is_paid = True
     order.status = "paid"
     order.save(update_fields=["razorpay_payment_id", "razorpay_signature", "is_paid", "status", "updated_at"])
-    return Response({"detail": "Payment verified and order marked as paid.", "order_id": order.id})
+
+    return Response({"detail": "Payment verified and order marked as paid.", "order_id": order.id}, status=status.HTTP_200_OK)
 
 
 @api_view(["POST"])

@@ -8,6 +8,7 @@ from accounts.models import Address
 class Order(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
+        ("pending_verification", "Pending Verification"),
         ("paid", "Paid"),
         ("shipped", "Shipped"),
         ("completed", "Completed"),
@@ -108,3 +109,28 @@ class OrderItem(models.Model):
     
     def get_subtotal(self):
         return self.price * self.quantity
+
+
+class UpiPaymentSubmission(models.Model):
+    STATUS = [
+        ("pending", "Pending Verification"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    ]
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="upi_submissions")
+    upi_id = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    utr = models.CharField(max_length=255, blank=True, null=True)
+    receipt = models.FileField(upload_to="upi_receipts/", blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS, default="pending")
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="upi_reviews")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    admin_notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-submitted_at"]
+
+    def __str__(self):
+        return f"UPI submission for {self.order.order_number} ({self.status})"

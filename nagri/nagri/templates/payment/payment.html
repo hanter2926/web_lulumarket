@@ -21,7 +21,40 @@
             {% else %}
                 <div class="payment-actions">
                     <button class="btn btn-primary" id="payNowBtn">Pay Now</button>
+                    <button class="btn btn-secondary" id="payUpiQrBtn" type="button">Pay using UPI QR</button>
                     <a href="{% url 'cart_detail' %}" class="btn btn-outline-secondary">Back to cart</a>
+                </div>
+
+                <div id="upiQrSection" class="mt-4" style="display:none;">
+                    <div class="card p-3">
+                        <h4>Pay using UPI QR</h4>
+                        {% if manual_upi_id %}
+                            <p>Scan the QR with Google Pay / PhonePe / Paytm or enter UPI ID: <strong>{{ manual_upi_id }}</strong></p>
+                        {% else %}
+                            <div class="alert alert-warning">UPI ID not configured. Contact site administrator.</div>
+                        {% endif %}
+
+                        <div class="row">
+                            <div class="col-md-4">
+                                <img src="{% static 'images/manual_upi_qr.png' %}" alt="UPI QR" class="img-fluid" />
+                            </div>
+                            <div class="col-md-8">
+                                <p>Amount: <strong>₹{{ order.total_amount }}</strong></p>
+                                <form action="{% url 'upi_submit' order.id %}" method="post" enctype="multipart/form-data">
+                                    {% csrf_token %}
+                                    <div class="mb-2">
+                                        <label for="utr">Transaction UTR / Transaction ID</label>
+                                        <input id="utr" name="utr" class="form-control" placeholder="Enter UTR or transaction reference" required />
+                                    </div>
+                                    <div class="mb-2">
+                                        <label for="receipt">Optional: Upload screenshot/receipt</label>
+                                        <input id="receipt" name="receipt" type="file" class="form-control" accept="image/*,application/pdf" />
+                                    </div>
+                                    <button class="btn btn-success" type="submit">Submit for verification</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             {% endif %}
         </div>
@@ -49,7 +82,13 @@
                 return;
             }
 
+            let paymentInProgress = false;
+
             payButton.addEventListener('click', function () {
+                if (paymentInProgress) return;
+                paymentInProgress = true;
+                payButton.disabled = true;
+
                 const options = {
                     key: razorpayKey,
                     amount: amountPaise,
@@ -57,8 +96,16 @@
                     name: 'Nagri',
                     description: 'Order Payment',
                     order_id: razorpayOrderId,
+                    // Explicitly enable common payment methods including UPI
+                    method: {
+                        card: true,
+                        netbanking: true,
+                        upi: true,
+                        wallet: true
+                    },
+                    // UPI/QR flows can be handled by Razorpay Checkout automatically.
                     handler: function (response) {
-                        // Verify payment on server
+                        // Verify payment on server; ensure we inspect HTTP status
                         fetch('{% url "verify_payment" %}', {
                             method: 'POST',
                             headers: {
@@ -70,10 +117,15 @@
                                 razorpay_payment_id: response.razorpay_payment_id,
                                 razorpay_signature: response.razorpay_signature
                             })
-                        }).then(resp => resp.json()).then(() => {
+                        }).then(resp => {
+                            if (resp.ok) return resp.json();
+                            throw resp;
+                        }).then(() => {
                             window.location.href = '{% url "payment_success" order.id %}';
                         }).catch(() => {
                             window.location.href = '{% url "payment_failed" order.id %}';
+                        }).finally(() => {
+                            paymentInProgress = false;
                         });
                     },
                     prefill: {
@@ -83,9 +135,32 @@
                     theme: { color: '#0d6efd' }
                 };
 
-                const rzp = new Razorpay(options);
-                rzp.open();
+                // Open Razorpay Checkout
+                try {
+                    const rzp = new Razorpay(options);
+                    rzp.open();
+                } catch (err) {
+                    // If opening fails, allow retry
+                    paymentInProgress = false;
+                    payButton.disabled = false;
+                    console.error('Razorpay checkout failed to open', err);
+                    window.location.href = '{% url "payment_failed" order.id %}';
+                }
             });
+
+            // UPI QR toggle
+            const upiBtn = document.getElementById('payUpiQrBtn');
+            const upiSection = document.getElementById('upiQrSection');
+            if (upiBtn && upiSection) {
+                upiBtn.addEventListener('click', function () {
+                    if (upiSection.style.display === 'none' || upiSection.style.display === '') {
+                        upiSection.style.display = 'block';
+                        window.scrollTo({ top: upiSection.offsetTop - 80, behavior: 'smooth' });
+                    } else {
+                        upiSection.style.display = 'none';
+                    }
+                });
+            }
         });
     </script>
 {% endblock %}
