@@ -1,0 +1,5 @@
+/* Minimal styles for order review checkout page */
+.order-review-container { padding: 24px; background: #fff; border-radius: 6px; }
+.order-items-list { margin-bottom: 16px; }
+.order-summary { background: #f8f9fa; padding: 16px; border-radius: 4px; }
+.order-review-actions { margin-top: 18px; }
