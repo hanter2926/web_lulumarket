@@ -342,15 +342,18 @@ def checkout_review_view(request):
         
         # Clear cart
         cart.items.all().delete()
-        
+
         # Clear session
         for key in list(request.session.keys()):
             if key.startswith('checkout_'):
                 del request.session[key]
-        
+
         # Redirect based on payment method
-        # For offline methods (including COD) show the payment/instruction page
-        # and keep order in pending state until payment is verified by admin.
+        # For COD, show order success (order placed) page immediately.
+        if order.payment_method == 'cod':
+            return redirect('payment_success', order_id=order.id)
+
+        # For online methods redirect to payment page where gateway flows happen.
         return redirect('payment_page', order_id=order.id)
     
     context = {
@@ -467,8 +470,11 @@ def upi_submit_view(request, order_id):
 @login_required(login_url='login_page')
 def payment_success_view(request, order_id):
     order = get_object_or_404(Order, id=order_id, user=request.user)
-    # Protect success page: only show if the order is actually paid.
-    if not order.is_paid:
+    # Allow viewing success/order page for one of:
+    # - actually paid orders
+    # - Cash on Delivery orders (order placed but unpaid)
+    # - orders pending manual verification (e.g., manual UPI submissions)
+    if not (order.is_paid or order.payment_method == 'cod' or order.status == 'pending_verification'):
         messages.error(request, 'Payment not completed for this order. Please complete payment first.')
         return redirect('payment_page', order_id=order.id)
 

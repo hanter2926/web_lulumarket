@@ -8,17 +8,48 @@
 {% endblock %}
 
 {% block content %}
-<div class="status-page success">
+<div class="status-page">
     <div class="container py-5">
         <div class="status-card">
             <div class="status-icon"><i class="fas fa-check-circle"></i></div>
-            <h1>Payment successful</h1>
-            <p>Your order has been confirmed successfully.</p>
-            <div class="info-grid">
-                <div><span>Order ID</span><strong>#{{ order.order_number }}</strong></div>
-                <div><span>Amount</span><strong>₹{{ order.total_amount }}</strong></div>
+            {% if order.is_paid %}
+                <h1>Payment Successful</h1>
+                <p>Your payment and order have been confirmed.</p>
+            {% elif order.payment_method == 'cod' %}
+                <h1>Order Successfully Placed</h1>
+                <p>Cash on Delivery selected. Payment will be collected on delivery.</p>
+            {% elif order.status == 'pending_verification' %}
+                <h1>Order Submitted</h1>
+                <p>Payment verification is pending. We will notify you after review.</p>
+            {% else %}
+                <h1>Payment Pending</h1>
+                <p>Payment has not been completed yet. Please complete payment to confirm your order.</p>
+            {% endif %}
+
+            <div class="info-grid mt-3">
+                <div><span>Order Number</span><strong>#{{ order.order_number }}</strong></div>
+                <div><span>Payment Method</span><strong>{{ order.get_payment_method_display }}</strong></div>
+                <div><span>Total Amount</span><strong>₹{{ order.total_amount }}</strong></div>
+                <div><span>Paid Amount</span><strong>₹{% if order.is_paid %}{{ order.total_amount }}{% else %}0.00{% endif %}</strong></div>
+                <div><span>Pending Amount</span><strong>₹{% if order.is_paid %}0.00{% else %}{{ order.total_amount }}{% endif %}</strong></div>
+                <div><span>Order Status</span><strong>{{ order.get_status_display }}</strong></div>
             </div>
-            <div class="actions">
+
+            <div class="mt-3">
+                <h4>Delivery Address</h4>
+                <p>{{ order.shipping_address_name }}<br>{{ order.shipping_address_line1 }}{% if order.shipping_address_line2 %}, {{ order.shipping_address_line2 }}{% endif %}<br>{{ order.shipping_address_city }}, {{ order.shipping_address_state }} - {{ order.shipping_address_postal_code }}</p>
+            </div>
+
+            <div class="mt-3">
+                <h4>Ordered Items</h4>
+                <ul>
+                    {% for item in order.items.all %}
+                        <li>{{ item.product.name }} x {{ item.quantity }} — ₹{{ item.price }} each</li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <div class="actions mt-3">
                 <a href="{% url 'product_list' %}" class="btn btn-primary">Continue Shopping</a>
                 <a href="{% url 'order_detail' order.id %}" class="btn btn-outline-primary">View Order</a>
             </div>

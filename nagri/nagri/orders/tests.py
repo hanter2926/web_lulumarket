@@ -36,6 +36,16 @@ class OrderTests(TestCase):
         order.refresh_from_db()
         self.assertFalse(order.is_paid)
 
+    def test_cod_shows_order_placed_but_not_paid(self):
+        order = Order.objects.create(user=self.user, order_number='ORD-COD-1', total_amount=Decimal('150.00'), status='confirmed', payment_method='cod', is_paid=False)
+        self.client.login(email='test@example.com', password='pass')
+        resp = self.client.get(reverse('payment_success', args=[order.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Order Successfully Placed')
+        self.assertContains(resp, 'Payment will be collected on delivery')
+        self.assertContains(resp, 'Paid Amount')
+        self.assertContains(resp, '0.00')
+
     def test_payment_success_view_blocked_for_unpaid(self):
         order = Order.objects.create(user=self.user, order_number='ORD-TEST-2', total_amount=Decimal('50.00'), status='pending', payment_method='razorpay', is_paid=False)
         self.client.login(email='test@example.com', password='pass')
