@@ -357,6 +357,11 @@ def email_login_view(request):
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password."})
 
         auth_login(request, user)
+        # Redirect users by role: owner -> owner dashboard, vendor -> seller dashboard, else customer dashboard
+        if getattr(user, "is_owner", False):
+            return redirect("sellers:owner_dashboard")
+        if getattr(user, "is_vendor", False):
+            return redirect("sellers:dashboard")
         return redirect("dashboard_page")
 
     return render(request, "accounts/auth.html", {"active_tab": "login"})
