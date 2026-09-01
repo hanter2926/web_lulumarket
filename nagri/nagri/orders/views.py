@@ -467,6 +467,11 @@ def upi_submit_view(request, order_id):
 @login_required(login_url='login_page')
 def payment_success_view(request, order_id):
     order = get_object_or_404(Order, id=order_id, user=request.user)
+    # Protect success page: only show if the order is actually paid.
+    if not order.is_paid:
+        messages.error(request, 'Payment not completed for this order. Please complete payment first.')
+        return redirect('payment_page', order_id=order.id)
+
     items = order.items.all().select_related('product')
     return render(request, 'payment/payment_success.html', {'order': order, 'items': items})
 
@@ -513,8 +518,8 @@ def verify_payment(request):
         return Response({"detail": "Internal error verifying payment."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     if not valid:
-        # Do not mark as paid; allow user to retry or check webhook
-        order.status = "cancelled"
+        # Do not mark as paid; keep order pending so customer can retry.
+        order.status = "pending"
         order.save(update_fields=["status", "updated_at"]) 
         return Response({"detail": "Payment verification failed."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -541,6 +546,24 @@ def payment_webhook(request):
     signature = payment_entity.get("signature")
     if not all([order_id, payment_id]):
         return Response({"detail": "Missing webhook payment payload."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Verify webhook authenticity using configured webhook secret
+    webhook_secret = getattr(settings, 'RAZORPAY_WEBHOOK_SECRET', None)
+    signature_header = request.META.get('HTTP_X_RAZORPAY_SIGNATURE') or request.headers.get('X-Razorpay-Signature', '')
+    if not webhook_secret:
+        logging.warning('Razorpay webhook secret not configured; rejecting webhook.')
+        return Response({"detail": "Webhook not configured."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        # request.body is the raw payload bytes
+        import hmac as _hmac
+        generated = _hmac.new(webhook_secret.encode(), request.body, hashlib.sha256).hexdigest()
+        if not _hmac.compare_digest(generated, signature_header or ''):
+            logging.warning('Invalid razorpay webhook signature for order %s', order_id)
+            return Response({"detail": "Invalid webhook signature."}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception:
+        logging.exception('Error while verifying razorpay webhook signature')
+        return Response({"detail": "Webhook verification error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     order = get_object_or_404(Order, razorpay_order_id=order_id)
     order.razorpay_payment_id = payment_id

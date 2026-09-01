@@ -2,7 +2,11 @@ import hashlib
 import hmac
 
 from django.test import TestCase
+from django.urls import reverse
+from django.contrib.auth import get_user_model
+from decimal import Decimal
 
+from .models import Order
 from .views import verify_razorpay_signature
 
 
@@ -19,3 +23,44 @@ class OrderTests(TestCase):
 
         self.assertTrue(verify_razorpay_signature(order_id, payment_id, generated, secret))
         self.assertFalse(verify_razorpay_signature(order_id, payment_id, "bad_signature", secret))
+
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username='testuser', email='test@example.com', password='pass')
+
+    def test_online_order_starts_unpaid_and_payment_page_does_not_mark_paid(self):
+        order = Order.objects.create(user=self.user, order_number='ORD-TEST-1', total_amount=Decimal('100.00'), status='pending', payment_method='razorpay', is_paid=False)
+        self.client.login(email='test@example.com', password='pass')
+        resp = self.client.get(reverse('payment_page', args=[order.id]))
+        self.assertEqual(resp.status_code, 200)
+        order.refresh_from_db()
+        self.assertFalse(order.is_paid)
+
+    def test_payment_success_view_blocked_for_unpaid(self):
+        order = Order.objects.create(user=self.user, order_number='ORD-TEST-2', total_amount=Decimal('50.00'), status='pending', payment_method='razorpay', is_paid=False)
+        self.client.login(email='test@example.com', password='pass')
+        resp = self.client.get(reverse('payment_success', args=[order.id]))
+        # Should redirect back to payment page
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse('payment_page', args=[order.id]), resp['Location'])
+
+    def test_order_created_unpaid(self):
+        order = Order.objects.create(user=self.user, order_number='ORD-T1', total_amount=Decimal('100.00'), status='pending', is_paid=False)
+        self.assertFalse(order.is_paid)
+        self.assertEqual(order.status, 'pending')
+
+    def test_opening_payment_page_does_not_mark_paid(self):
+        order = Order.objects.create(user=self.user, order_number='ORD-T2', total_amount=Decimal('200.00'), status='pending', is_paid=False)
+        self.client.login(email='test@example.com', password='pass')
+        resp = self.client.get(reverse('payment_page', args=[order.id]))
+        order.refresh_from_db()
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(order.is_paid)
+
+    def test_payment_success_view_requires_paid(self):
+        order = Order.objects.create(user=self.user, order_number='ORD-T3', total_amount=Decimal('300.00'), status='pending', is_paid=False)
+        self.client.login(email='test@example.com', password='pass')
+        resp = self.client.get(reverse('payment_success', args=[order.id]))
+        # Should redirect to payment page
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse('payment_page', args=[order.id]), resp.url)
