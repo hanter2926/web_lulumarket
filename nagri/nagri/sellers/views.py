@@ -53,16 +53,23 @@ def send_email_otp(request):
     def send_callable(to_email, otp):
         subject = "Your NAGRI Seller Verification OTP"
         message = f"Your verification OTP is: {otp}\nIt will expire soon."
-        sender = settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER or "noreply@localhost"
-        logger.info("Attempting to send seller OTP email to %s", to_email)
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=sender,
-            recipient_list=[to_email],
-            fail_silently=False,
-        )
-        logger.info("Seller OTP email sent successfully to %s", to_email)
+        # Use DEFAULT_FROM_EMAIL from settings for consistency with other sends
+        try:
+            logger.info("Attempting to send seller OTP email to %s", to_email)
+            # use positional args to match expected call-site in requirements
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [to_email],
+                fail_silently=False,
+            )
+            logger.info("Seller OTP email sent successfully to %s", to_email)
+        except Exception:
+            # Log full exception (stack trace) to development / Render logs
+            logger.exception("Failed to send seller OTP email for user_id=%s", request.user.id if getattr(request, 'user', None) else None)
+            # Re-raise so outer handler can decide flow (and to avoid double-success messages)
+            raise
 
     try:
         app.generate_and_send_otp(send_callable)
@@ -71,8 +78,9 @@ def send_email_otp(request):
         logger.warning("Seller OTP cooldown/validation error for recipient=%s: %s", app.email, message)
         messages.error(request, message)
         return redirect("sellers:verify_email")
-    except Exception as exc:
-        logger.exception("Seller OTP email failed for recipient=%s. Error=%s", app.email, type(exc).__name__)
+    except Exception:
+        # The inner send_callable already logged the exception; ensure it's captured here too
+        logger.exception("Failed to send seller OTP email for user_id=%s", request.user.id if getattr(request, 'user', None) else None)
         messages.error(request, "Unable to send OTP right now. Please try again later.")
         return redirect("sellers:verify_email")
 

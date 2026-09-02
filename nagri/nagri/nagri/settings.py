@@ -368,6 +368,24 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER).strip()
 # Add explicit timeout to prevent Gunicorn thread locks on SMTP hanging
 EMAIL_TIMEOUT = 10
 
+import logging
+logger = logging.getLogger(__name__)
+
+# Log whether email configuration appears to be present (do NOT log passwords)
+try:
+    logger.info(
+        "Email configuration loaded: host=%s port=%s tls=%s user_configured=%s password_configured=%s from_email=%s",
+        EMAIL_HOST,
+        EMAIL_PORT,
+        EMAIL_USE_TLS,
+        bool(EMAIL_HOST_USER),
+        bool(EMAIL_HOST_PASSWORD),
+        bool(DEFAULT_FROM_EMAIL),
+    )
+except Exception:
+    # Don't surface configuration errors during import; they are handled by runtime checks/tests
+    logger.exception("Error while logging email configuration state")
+
 
 # ============================================================
 # SECURITY - DEVELOPMENT

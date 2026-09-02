@@ -17,8 +17,8 @@ class Command(BaseCommand):
 
         try:
             sent = send_mail(
-                "NAGRI SMTP test email",
-                "This is a Django SMTP test email from NAGRI.",
+                "NAGRI Email Test",
+                "This is a test email from the NAGRI Django application.",
                 settings.DEFAULT_FROM_EMAIL,
                 [recipient],
                 fail_silently=False,
@@ -28,6 +28,6 @@ class Command(BaseCommand):
                 return
             self.stdout.write(self.style.WARNING(f"SMTP send_mail returned 0 for {recipient}; check server logs."))
         except Exception:
-            # Log full exception to logs (development / Render) but raise a generic message to the console
-            logger.exception("Failed to send test email")
+            # Log details to application logs (render/dev) but raise a generic error to console
+            logger.exception("Failed to send test email for recipient=%s", recipient)
             raise CommandError("SMTP test email failed; check application logs for details")

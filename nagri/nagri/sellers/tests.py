@@ -74,9 +74,11 @@ class SellerFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(mock_send.called)
-        self.assertEqual(mock_send.call_args.kwargs['recipient_list'], [self.user.email])
-        self.assertEqual(mock_send.call_args.kwargs['from_email'], 'vikrampal803302@gmail.com')
-        otp_match = re.search(r"(\d{6})", mock_send.call_args.kwargs['message'])
+        # send_mail is called with positional args: subject, message, from_email, recipient_list
+        called_args = mock_send.call_args[0]
+        self.assertEqual(called_args[3], [self.user.email])
+        self.assertEqual(called_args[2], 'vikrampal803302@gmail.com')
+        otp_match = re.search(r"(\d{6})", called_args[1])
         self.assertIsNotNone(otp_match)
         log_output = '\n'.join(captured.output)
         self.assertIn(self.user.email, log_output)
@@ -92,6 +94,19 @@ class SellerFlowTests(TestCase):
         app = SellerApplication.objects.get(user=self.user)
         self.assertIsNone(app.otp_last_sent_at)
         self.assertFalse(app.otp_hash)
+
+    @patch('sellers.views.send_mail')
+    def test_failed_send_logs_exception_and_shows_generic_message(self, mock_send):
+        # Simulate SMTP authentication error
+        mock_send.side_effect = smtplib.SMTPAuthenticationError(535, b'Authentication failed')
+
+        with self.assertLogs('sellers.views', level='ERROR') as cm:
+            resp = self.client.post(reverse('sellers:send_otp'), follow=True)
+
+        log_output = '\n'.join(cm.output)
+        self.assertIn('Failed to send seller OTP email', log_output)
+        # User should see a generic error message (no exception details)
+        self.assertContains(resp, 'Unable to send OTP right now. Please try again later.')
 
     def test_resend_requires_full_60_seconds(self):
         self.client.post(reverse('sellers:send_otp'))
