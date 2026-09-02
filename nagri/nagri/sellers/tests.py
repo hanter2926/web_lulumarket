@@ -1,8 +1,10 @@
 import smtplib
 from decimal import Decimal
 from unittest.mock import patch
+import re
 
 from django.test import TestCase, Client
+from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.core import mail
@@ -14,6 +16,7 @@ from products.models import Category, Product
 from orders.models import Order, OrderItem
 
 
+@override_settings(STATICFILES_STORAGE='django.contrib.staticfiles.storage.StaticFilesStorage')
 class SellerFlowTests(TestCase):
     def setUp(self):
         self.user = CustomUser.objects.create_user(email='u@example.com', username='u', password='pass')
