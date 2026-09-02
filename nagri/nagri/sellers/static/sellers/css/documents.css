@@ -1,0 +1,15 @@
+.seller-documents-page .seller-form-card,
+.seller-documents-page form {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.seller-documents-page input,
+.seller-documents-page select,
+.seller-documents-page textarea {
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    padding: 0.7rem 0.9rem;
+}

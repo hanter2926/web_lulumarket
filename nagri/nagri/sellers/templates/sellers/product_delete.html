@@ -1,13 +1,20 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}Delete Product{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/product_delete.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
+<div class="container py-5 seller-page-shell seller-product-delete-page">
     <h2>Delete Product</h2>
-    <p>Are you sure you want to delete <strong>{{ product.name }}</strong>?</p>
-    <form method="post">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-danger">Delete</button>
-        <a href="{% url 'sellers:product_list' %}" class="btn btn-outline-secondary">Cancel</a>
-    </form>
+    <div class="seller-delete-card">
+        <p>Are you sure you want to delete <strong>{{ product.name }}</strong>?</p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Delete</button>
+            <a href="{% url 'sellers:product_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        </form>
+    </div>
 </div>
 {% endblock %}

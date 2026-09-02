@@ -1,7 +1,12 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}Seller Order Detail{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/order_detail.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
+<div class="container py-5 seller-page-shell seller-order-detail-page">
     <h2>Order Item Detail</h2>
 
     <div class="card p-4 mb-4">

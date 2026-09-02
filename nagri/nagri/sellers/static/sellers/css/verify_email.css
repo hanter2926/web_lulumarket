@@ -1,0 +1,17 @@
+.seller-verify-email-page .seller-verify-card,
+.seller-verify-email-page form {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.seller-verify-email-page #otpCountdown {
+    margin-top: 1rem;
+    font-size: 0.95rem;
+    color: #6b7280;
+}
+
+.seller-verify-email-page #resendOtpBtn {
+    margin-top: 0.75rem;
+}

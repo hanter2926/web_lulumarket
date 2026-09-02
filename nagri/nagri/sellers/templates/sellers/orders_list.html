@@ -1,10 +1,15 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}Seller Orders{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/orders_list.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
+<div class="container py-5 seller-page-shell seller-orders-page">
     <h2>Seller Orders</h2>
 
-    <form method="get" class="row g-2 mb-4">
+    <form method="get" class="row g-2 mb-4 seller-filter-form">
         <div class="col-md-3"><input type="date" name="start_date" class="form-control" value="{{ filters.start_date }}"></div>
         <div class="col-md-3"><input type="date" name="end_date" class="form-control" value="{{ filters.end_date }}"></div>
         <div class="col-md-2">

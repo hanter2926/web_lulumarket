@@ -1,0 +1,11 @@
+.seller-product-delete-page {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.seller-product-delete-page .seller-delete-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+}

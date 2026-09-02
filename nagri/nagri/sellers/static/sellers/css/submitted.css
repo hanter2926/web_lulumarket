@@ -1,0 +1,12 @@
+.seller-submitted-page {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.seller-submitted-page .seller-alert {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    color: #1d4ed8;
+}

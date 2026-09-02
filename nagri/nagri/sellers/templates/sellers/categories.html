@@ -1,7 +1,12 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}Select Categories{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/categories.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
+<div class="container py-5 seller-page-shell seller-categories-page">
   <h3>Select Categories you want to sell in</h3>
   <form method="post">{% csrf_token %}
     {{ form.as_p }}

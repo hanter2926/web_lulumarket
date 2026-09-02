@@ -1,7 +1,12 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}Owner Seller List{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/owner_seller_list.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
+<div class="container py-5 seller-page-shell seller-owner-seller-list-page">
     <h2>Seller List</h2>
 
     <form method="get" class="row g-2 mb-4">

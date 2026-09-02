@@ -1,0 +1,17 @@
+.seller-apply-page {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.seller-apply-page .seller-apply-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.seller-apply-page .seller-apply-note {
+    margin-bottom: 1rem;
+    font-size: 1.05rem;
+}

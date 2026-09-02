@@ -1,0 +1,18 @@
+.seller-owner-seller-detail-page .seller-panel,
+.seller-owner-seller-detail-page .seller-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.seller-owner-seller-detail-page .seller-card p,
+.seller-owner-seller-detail-page .seller-panel p {
+    margin-bottom: 0.5rem;
+}
+
+.seller-owner-seller-detail-page .seller-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}

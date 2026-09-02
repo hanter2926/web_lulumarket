@@ -1,7 +1,12 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}Application Status{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/status.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
+<div class="container py-5 seller-page-shell seller-status-page">
   {% if application %}
     <h3>Application Status: {{ application.get_status_display }}</h3>
     <p>Submitted: {{ application.submitted_at }}</p>

@@ -1,8 +1,13 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}Application Submitted{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/submitted.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
-  <div class="alert alert-info">Your seller application has been submitted and is under review. We aim to respond within 24 hours.</div>
+<div class="container py-5 seller-page-shell seller-submitted-page">
+  <div class="alert alert-info seller-alert">Your seller application has been submitted and is under review. We aim to respond within 24 hours.</div>
   <a href="{% url 'sellers:status' %}" class="btn btn-secondary">View Status</a>
 </div>
 {% endblock %}

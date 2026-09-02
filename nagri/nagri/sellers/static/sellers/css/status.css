@@ -1,0 +1,10 @@
+.seller-status-page .seller-status-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.seller-status-page .seller-status-card p {
+    margin-bottom: 0.5rem;
+}

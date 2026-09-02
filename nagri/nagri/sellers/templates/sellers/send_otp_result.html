@@ -1,11 +1,16 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}OTP Sent{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/send_otp_result.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
+<div class="container py-5 seller-page-shell seller-send-otp-result-page">
   {% if error %}
-    <div class="alert alert-danger">{{ error }}</div>
+    <div class="alert alert-danger seller-alert">{{ error }}</div>
   {% else %}
-    <div class="alert alert-success">OTP has been sent to your email.</div>
+    <div class="alert alert-success seller-alert">OTP has been sent to your email.</div>
     <a href="{% url 'sellers:verify_email' %}" class="btn btn-primary">Enter OTP</a>
   {% endif %}
 </div>

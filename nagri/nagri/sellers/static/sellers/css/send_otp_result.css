@@ -1,0 +1,10 @@
+.seller-send-otp-result-page {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.seller-send-otp-result-page .seller-alert {
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}

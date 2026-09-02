@@ -1,0 +1,15 @@
+.seller-categories-page .seller-form-card,
+.seller-categories-page form {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.seller-categories-page input,
+.seller-categories-page select,
+.seller-categories-page textarea {
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    padding: 0.7rem 0.9rem;
+}

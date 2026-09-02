@@ -1,10 +1,15 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}Seller Dashboard{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sellers/css/seller_base.css' %}">
+<link rel="stylesheet" href="{% static 'sellers/css/dashboard.css' %}">
+{% endblock %}
 {% block content %}
-<div class="container py-5">
+<div class="container py-5 seller-page-shell seller-dashboard-page">
     <h2>Seller Dashboard</h2>
 
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-4 seller-summary-grid">
         <div class="col-md-3"><div class="card p-3"><strong>Total Products</strong><div>{{ metrics.total_products }}</div></div></div>
         <div class="col-md-3"><div class="card p-3"><strong>Active Products</strong><div>{{ metrics.active_products }}</div></div></div>
         <div class="col-md-3"><div class="card p-3"><strong>Inactive Products</strong><div>{{ metrics.inactive_products }}</div></div></div>

@@ -1,0 +1,25 @@
+.seller-product-form-page .seller-form-card,
+.seller-product-form-page form {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
+}
+
+.seller-product-form-page .form-label {
+    font-weight: 600;
+    color: #374151;
+}
+
+.seller-product-form-page input,
+.seller-product-form-page select,
+.seller-product-form-page textarea {
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    padding: 0.7rem 0.9rem;
+}
+
+.seller-product-form-page .text-danger {
+    margin-top: 0.35rem;
+    font-size: 0.9rem;
+}
