@@ -1,7 +1,6 @@
 import smtplib
 from decimal import Decimal
 from unittest.mock import patch
-import re
 
 from django.test import TestCase, Client
 from django.test.utils import override_settings

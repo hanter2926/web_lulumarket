@@ -1,0 +1,6 @@
+/* Seller products */
+
+.seller-products-grid{ display:grid; grid-template-columns: repeat(3,1fr); gap:1rem }
+.seller-product-card{ background:white; padding:10px; border-radius:8px }
+
+@media (max-width:900px){ .seller-products-grid{ grid-template-columns: repeat(2,1fr) } }

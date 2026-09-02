@@ -1,0 +1,5 @@
+/* Additional seller responsive helpers */
+
+@media (max-width:768px){
+    .seller-products-grid{ grid-template-columns: repeat(1,1fr) }
+}

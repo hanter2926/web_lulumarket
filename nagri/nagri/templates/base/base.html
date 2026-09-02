@@ -29,109 +29,113 @@
     
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light navbar-sticky">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'home' %}">
-                <i class="fas fa-shopping-bag"></i> <strong>NAGRI</strong>
-            </a>
-            
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'home' %}">Home</a>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="categoriesDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            Categories
-                        </a>
-                        <ul class="dropdown-menu" aria-labelledby="categoriesDropdown">
-                            {% for category in categories %}
-                                <li><a class="dropdown-item" href="{% url 'product_list' %}?category={{ category.id }}">{{ category.name }}</a></li>
-                            {% endfor %}
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{% url 'product_list' %}">All Products</a></li>
-                        </ul>
-                    </li>
-                </ul>
-                
-                <!-- Search Bar -->
-                <form class="d-flex mx-auto search-form" method="get" action="{% url 'product_list' %}">
-                    <input class="form-control search-input" type="search" name="search" placeholder="Search products..." value="{{ search_query|default:'' }}">
-                    <button class="btn btn-primary" type="submit">
-                        <i class="fas fa-search"></i>
-                    </button>
+    <!-- Top Navigation (Premium) -->
+    <nav class="nagri-topnav navbar-sticky">
+        <div class="topnav-inner container-fluid">
+            <div class="topnav-left">
+                <button class="btn icon-btn menu-grid d-lg-none" id="mobileMenuBtn" aria-label="Open menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+
+                <a class="brand" href="{% url 'home' %}">
+                    <img src="{% static 'images/logo.png' %}" alt="NAGRI" class="brand-logo" onerror="this.style.display='inline-block'; this.previousElementSibling && (this.previousElementSibling.style.display='inline-block')">
+                    <i class="fas fa-shopping-bag fallback-logo d-none"></i>
+                    <span class="brand-text">NAGRI</span>
+                </a>
+
+                <div class="topnav-links d-none d-lg-flex">
+                    <a class="btn btn-link" href="{% url 'home' %}">Main Page</a>
+                    <a class="btn btn-link" href="{% url 'dashboard_page' %}">Dashboard</a>
+                </div>
+            </div>
+
+            <div class="topnav-center">
+                <form class="search-bar" method="get" action="{% url 'product_list' %}">
+                    <input type="search" name="search" placeholder="Search for products, brands and categories" value="{{ search_query|default:'' }}" aria-label="Search">
+                    <button class="search-btn" type="submit"><i class="fas fa-search"></i></button>
                 </form>
-                
-                <ul class="navbar-nav ms-auto">
+            </div>
+
+            <div class="topnav-right">
+                <div class="topnav-actions">
+                    <div class="language-select d-none d-md-inline">
+                        <select class="form-select form-select-sm" aria-label="Language select">
+                            <option value="en" selected>EN</option>
+                            <option value="hi">हिं</option>
+                        </select>
+                    </div>
+
+                    <a class="icon-btn position-relative" href="{% url 'wishlist_list' %}" title="Wishlist">
+                        <i class="fas fa-heart"></i>
+                        <span class="badge badge-count wishlist-count">0</span>
+                    </a>
+
+                    <a class="icon-btn position-relative" href="{% url 'cart_detail' %}" title="Cart">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span class="badge badge-count cart-count">0</span>
+                    </a>
+
                     {% if user.is_authenticated %}
-                        <li class="nav-item">
-                            <a class="nav-link position-relative" href="{% url 'wishlist_list' %}">
-                                <i class="fas fa-heart"></i>
-                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger wishlist-count">0</span>
+                        <div class="account-dropdown dropdown">
+                            <a class="icon-btn" href="#" id="accountToggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-user-circle"></i>
                             </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link position-relative" href="{% url 'cart_detail' %}">
-                                <i class="fas fa-shopping-cart"></i>
-                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger cart-count">0</span>
-                            </a>
-                        </li>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" id="accountDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="fas fa-user-circle"></i> {{ user.email|truncatechars:20 }}
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountDropdown">
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountToggle">
+                                <li class="dropdown-header">Signed in as <strong>{{ user.email|truncatechars:20 }}</strong></li>
+                                <li><hr class="dropdown-divider"></li>
                                 {% if request.user.is_owner %}
                                     <li><a class="dropdown-item" href="{% url 'sellers:owner_dashboard' %}"><i class="fas fa-tools"></i> Owner Dashboard</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'sellers:owner_seller_list' %}"><i class="fas fa-users"></i> All Sellers</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'sellers:owner_seller_list' %}?status=pending_review"><i class="fas fa-user-check"></i> Seller Applications</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'order_list' %}"><i class="fas fa-box"></i> All Orders</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'sellers:product_list' %}"><i class="fas fa-boxes"></i> All Products</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'sellers:owner_top_sellers' %}"><i class="fas fa-trophy"></i> Top Sellers</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'dashboard_page' %}"><i class="fas fa-cog"></i> Settings</a></li>
                                 {% elif request.user.is_vendor %}
                                     <li><a class="dropdown-item" href="{% url 'sellers:dashboard' %}"><i class="fas fa-tachometer-alt"></i> Seller Dashboard</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'order_list' %}"><i class="fas fa-box"></i> My Orders</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'wishlist_list' %}"><i class="fas fa-heart"></i> Wishlist</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'sellers:product_list' %}"><i class="fas fa-boxes"></i> My Products</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'sellers:product_create' %}"><i class="fas fa-plus"></i> Add Product</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'sellers:reports' %}"><i class="fas fa-chart-line"></i> Reports</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'dashboard_page' %}"><i class="fas fa-cog"></i> Settings</a></li>
                                 {% else %}
                                     <li><a class="dropdown-item" href="{% url 'dashboard_page' %}"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'order_list' %}"><i class="fas fa-box"></i> My Orders</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'wishlist_list' %}"><i class="fas fa-heart"></i> Wishlist</a></li>
-                                    <li><a class="dropdown-item" href="{% url 'dashboard_page' %}"><i class="fas fa-cog"></i> Settings</a></li>
-                                    {% if not request.user.is_vendor and not request.user.is_owner %}
-                                        <li><a class="dropdown-item" href="{% url 'sellers:apply_start' %}"><i class="fas fa-store"></i> Become a Seller</a></li>
-                                    {% endif %}
                                 {% endif %}
-                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="{% url 'order_list' %}"><i class="fas fa-box"></i> Orders</a></li>
+                                <li><a class="dropdown-item" href="{% url 'wishlist_list' %}"><i class="fas fa-heart"></i> Wishlist</a></li>
                                 <li><a class="dropdown-item" href="{% url 'logout_page' %}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                             </ul>
-                        </li>
+                        </div>
                     {% else %}
-                            <li class="nav-item">
-                                <a class="nav-link" href="{% url 'login_page' %}">
-                                    <i class="fas fa-sign-in-alt"></i> Login
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="{% url 'signup_form' %}">
-                                    <i class="fas fa-user-plus"></i> Register
-                                </a>
-                            </li>
-                            <li class="nav-item d-flex align-items-center">
-                                <button id="installBtn" class="btn btn-sm btn-outline-primary ms-2 d-none" aria-hidden="true">📱 Install NAGRI App</button>
-                            </li>
+                        <a class="btn btn-sm btn-outline-light ms-2 d-none d-md-inline" href="{% url 'login_page' %}">Sign In</a>
+                        <a class="btn btn-sm btn-light ms-2 d-none d-md-inline" href="{% url 'signup_form' %}">Create Account</a>
                     {% endif %}
-                </ul>
+                </div>
             </div>
+        </div>
+    </nav>
+
+    <!-- Secondary Category Navbar -->
+    <nav class="nagri-catsnav">
+        <div class="container-fluid catsnav-inner">
+            <ul class="cats-list">
+                <li><a href="{% url 'home' %}">Home</a></li>
+                <li class="dropdown">
+                    <a href="#" class="dropdown-toggle" data-bs-toggle="dropdown">Fashion <i class="fas fa-chevron-down"></i></a>
+                    <ul class="dropdown-menu">
+                        {% for category in categories %}
+                            <li><a class="dropdown-item" href="{% url 'product_list' %}?category={{ category.id }}">{{ category.name }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </li>
+                <li class="dropdown">
+                    <a href="#" class="dropdown-toggle" data-bs-toggle="dropdown">Home &amp; Kitchen <i class="fas fa-chevron-down"></i></a>
+                    <ul class="dropdown-menu">
+                        {% for category in categories %}
+                            <li><a class="dropdown-item" href="{% url 'product_list' %}?category={{ category.id }}">{{ category.name }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </li>
+                <li class="dropdown">
+                    <a href="#" class="dropdown-toggle" data-bs-toggle="dropdown">Mobiles &amp; Tablets <i class="fas fa-chevron-down"></i></a>
+                    <ul class="dropdown-menu">
+                        {% for category in categories %}
+                            <li><a class="dropdown-item" href="{% url 'product_list' %}?category={{ category.id }}">{{ category.name }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </li>
+                <li><a href="{% url 'product_list' %}?price_max=99">Only Rs. 99</a></li>
+                <li><a href="{% url 'product_list' %}?freebies=1">Freebies</a></li>
+            </ul>
         </div>
     </nav>
 

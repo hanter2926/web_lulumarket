@@ -1,0 +1,8 @@
+/* Seller dashboard styles */
+
+.seller-metrics{ display:grid; grid-template-columns: repeat(3,1fr); gap:1rem }
+.seller-orders{ margin-top:1rem }
+
+@media (max-width:900px){
+    .seller-metrics{ grid-template-columns: repeat(1,1fr) }
+}

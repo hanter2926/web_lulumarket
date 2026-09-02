@@ -1,0 +1,5 @@
+/* Owner-specific seller pages */
+
+.owner-list{ display:grid; grid-template-columns: repeat(2,1fr); gap:1rem }
+
+@media (max-width:900px){ .owner-list{ grid-template-columns:1fr } }
