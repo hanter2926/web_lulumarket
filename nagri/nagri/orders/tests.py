@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from decimal import Decimal
@@ -53,6 +53,14 @@ class OrderTests(TestCase):
         # Should redirect back to payment page
         self.assertEqual(resp.status_code, 302)
         self.assertIn(reverse('payment_page', args=[order.id]), resp['Location'])
+
+    @override_settings(RAZORPAY_KEY_ID='', RAZORPAY_KEY_SECRET='')
+    def test_payment_page_handles_missing_razorpay_config(self):
+        order = Order.objects.create(user=self.user, order_number='ORD-TEST-3', total_amount=Decimal('120.00'), status='pending', payment_method='razorpay', is_paid=False)
+        self.client.login(email='test@example.com', password='pass')
+        resp = self.client.get(reverse('payment_page', args=[order.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.context.get('gateway_error'))
 
     def test_order_created_unpaid(self):
         order = Order.objects.create(user=self.user, order_number='ORD-T1', total_amount=Decimal('100.00'), status='pending', is_paid=False)

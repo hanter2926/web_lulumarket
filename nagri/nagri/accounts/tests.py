@@ -1,4 +1,5 @@
-from django.test import TestCase
+from django.test import TestCase, Client
+from django.urls import reverse
 
 from .models import Address, CustomUser, UserProfile
 from .utils import generate_otp, normalize_phone_number
@@ -84,3 +85,50 @@ class AccountTests(TestCase):
         response = self.client.post("/accounts/request-otp/", {"phone": "9999999999"}, content_type="application/json")
         self.assertEqual(response.status_code, 404)
         self.assertIn("No account found with this phone number. Please register first.", response.json()["detail"])
+
+
+class RoleBasedNavbarTests(TestCase):
+    def setUp(self):
+        self.client = self.client
+        # Create users
+        self.customer = CustomUser.objects.create_user(email="cust@example.com", password="pass123", username="cust")
+        self.seller = CustomUser.objects.create_user(email="seller@example.com", password="pass123", username="seller")
+        self.seller.is_vendor = True
+        self.seller.save()
+        self.owner = CustomUser.objects.create_user(email="owner@example.com", password="pass123", username="owner")
+        self.owner.is_owner = True
+        self.owner.save()
+
+    def _login(self, user):
+        # Use force_login to avoid authentication backend differences in tests
+        self.client.force_login(user)
+
+    def test_customer_sees_become_seller(self):
+        self._login(self.customer)
+        resp = self.client.get(reverse("home"))
+        self.assertContains(resp, "Become a Seller")
+
+    def test_seller_sees_seller_dashboard(self):
+        self._login(self.seller)
+        resp = self.client.get(reverse("home"))
+        self.assertContains(resp, "Seller Dashboard")
+        self.assertNotContains(resp, "Become a Seller")
+
+    def test_owner_sees_owner_dashboard(self):
+        self._login(self.owner)
+        resp = self.client.get(reverse("home"))
+        self.assertContains(resp, "Owner Dashboard")
+
+    def test_login_redirects_by_role(self):
+        resp = self.client.post(reverse("email_login"), {"email": "seller@example.com", "password": "pass123"})
+        # Should redirect to seller dashboard
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("sellers:dashboard"), resp.url)
+
+        resp = self.client.post(reverse("email_login"), {"email": "owner@example.com", "password": "pass123"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("sellers:owner_dashboard"), resp.url)
+
+        resp = self.client.post(reverse("email_login"), {"email": "cust@example.com", "password": "pass123"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse("dashboard_page"), resp.url)

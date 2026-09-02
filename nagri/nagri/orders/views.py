@@ -25,6 +25,11 @@ from .serializers import OrderItemSerializer, OrderSerializer
 from django.urls import reverse
 
 
+def razorpay_is_configured():
+    """Return True only when Razorpay has both required credentials configured."""
+    return bool(settings.RAZORPAY_KEY_ID and settings.RAZORPAY_KEY_SECRET)
+
+
 @login_required(login_url='login_page')
 def order_list_view(request):
     """Display user's orders with statistics"""
@@ -404,6 +409,11 @@ def payment_page_view(request, order_id):
         return render(request, 'payment/payment.html', context)
 
     # For other payment methods, ensure we have a razorpay_order_id (if Razorpay is configured)
+    if not razorpay_is_configured():
+        logging.warning("Razorpay credentials missing; rendering payment page without online checkout for order %s", getattr(order, 'id', None))
+        context = {'order': order, 'gateway_error': True}
+        return render(request, 'payment/payment.html', context)
+
     try:
         # Create razorpay order if missing
         if not order.razorpay_order_id:
@@ -417,7 +427,7 @@ def payment_page_view(request, order_id):
             order.razorpay_order_id = razorpay_order.get('id')
             order.save(update_fields=['razorpay_order_id', 'updated_at'])
     except Exception:
-        # If gateway not configured or creation failed, log the exception and show a friendly message
+        # If gateway creation failed unexpectedly, show a friendly message without crashing the order flow
         logging.exception("Razorpay order creation failed for order %s", getattr(order, 'id', None))
         context = {'order': order, 'gateway_error': True}
         return render(request, 'payment/payment.html', context)
@@ -693,6 +703,21 @@ class OrderViewSet(viewsets.ModelViewSet):
                 quantity=item["quantity"],
                 price=item["price"],
             )
+
+        if not razorpay_is_configured():
+            return Response({
+                "order_id": order.id,
+                "order_number": order.order_number,
+                "amount": int(total_amount * 100),
+                "currency": "INR",
+                "razorpay_order_id": "",
+                "key": "",
+                "gateway_error": "Razorpay is not configured for this environment.",
+                "message": "Online payment is unavailable. Please use UPI or COD.",
+                "name": "Nagri",
+                "description": "Order Payment",
+                "image": "https://example.com/logo.png",
+            }, status=status.HTTP_200_OK)
 
         try:
             client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
