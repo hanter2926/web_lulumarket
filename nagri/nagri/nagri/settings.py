@@ -3,7 +3,10 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 #hosting
-import dj_database_url
+try:
+    import dj_database_url
+except Exception:
+    dj_database_url = None
 
 # ============================================================
 # BASE DIRECTORY
@@ -248,13 +251,36 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 # When running tests, ManifestStaticFilesStorage (used by whitenoise) requires collectstatic-generated manifest.
 # Use the default staticfiles storage for tests to avoid manifest errors while keeping production unchanged.
 import sys
-if any(arg.startswith('test') for arg in sys.argv):
+# Detect test runs robustly: any argv containing 'test'
+if any('test' in str(arg) for arg in sys.argv):
     STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
     # When Django uses the STORAGES setting (Django 4.2+), ensure test runner uses non-manifest storage for staticfiles.
+    # Ensure STORAGES mapping is defined so ConfiguredStorage picks the test backend.
     try:
-        STORAGES['staticfiles']['BACKEND'] = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+        STORAGES
+    except NameError:
+        STORAGES = {}
+    st = STORAGES.get('staticfiles') or {}
+    st.setdefault('BACKEND', 'django.contrib.staticfiles.storage.StaticFilesStorage')
+    STORAGES['staticfiles'] = st
+    # Some storage implementations (ManifestFilesMixin) raise when a manifest
+    # entry is missing. Tests should not require a production-built manifest.
+    try:
+        from django.contrib.staticfiles.storage import ManifestFilesMixin
+
+        ManifestFilesMixin.manifest_strict = False
     except Exception:
-        # STORAGES may not be defined yet; safe to ignore
+        pass
+    # Force the configured staticfiles_storage to use the simple filesystem storage
+    # so template `{% static %}` lookups during tests do not require a built manifest.
+    try:
+        from django.contrib.staticfiles.storage import staticfiles_storage, StaticFilesStorage
+
+        # instantiate and assign the simple storage implementation
+        staticfiles_storage._wrapped = StaticFilesStorage()
+    except Exception:
+        # If staticfiles system isn't ready yet, ignore — Django test runner will
+        # initialize storage when needed and we already set STORAGES mapping above.
         pass
 
 
