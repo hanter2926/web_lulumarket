@@ -87,17 +87,66 @@ class AccountTests(TestCase):
         self.assertIn("No account found with this phone number. Please register first.", response.json()["detail"])
 
 
+class AccountSecurityTests(TestCase):
+    def test_unverified_user_cannot_log_in_with_email_and_password(self):
+        user = CustomUser.objects.create_user(
+            email="pending@example.com",
+            username="pending-user",
+            password="StrongPass123",
+            phone="+919876543210",
+            is_active=True,
+        )
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.full_name = "Pending User"
+        profile.phone = user.phone
+        profile.is_phone_verified = False
+        profile.save(update_fields=["full_name", "phone", "is_phone_verified", "updated_at"])
+
+        response = self.client.post(reverse("email_login"), {"email": "pending@example.com", "password": "StrongPass123"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Verify your phone number before logging in")
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+    def test_verified_user_can_log_in_with_email_and_password(self):
+        user = CustomUser.objects.create_user(
+            email="verified@example.com",
+            username="verified-user",
+            password="StrongPass123",
+            phone="+919876543211",
+            is_active=True,
+        )
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.phone = user.phone
+        profile.is_phone_verified = True
+        profile.save(update_fields=["phone", "is_phone_verified", "updated_at"])
+
+        response = self.client.post(reverse("email_login"), {"email": "verified@example.com", "password": "StrongPass123"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("dashboard_page"), response.url)
+
+
 class RoleBasedNavbarTests(TestCase):
     def setUp(self):
         self.client = self.client
         # Create users
         self.customer = CustomUser.objects.create_user(email="cust@example.com", password="pass123", username="cust")
+        self.customer.is_active = True
+        self.customer.save()
+        UserProfile.objects.get_or_create(user=self.customer, defaults={"full_name": "Customer", "phone": "+919000000001", "is_phone_verified": True})
+
         self.seller = CustomUser.objects.create_user(email="seller@example.com", password="pass123", username="seller")
         self.seller.is_vendor = True
+        self.seller.is_active = True
         self.seller.save()
+        UserProfile.objects.get_or_create(user=self.seller, defaults={"full_name": "Seller", "phone": "+919000000002", "is_phone_verified": True})
+
         self.owner = CustomUser.objects.create_user(email="owner@example.com", password="pass123", username="owner")
         self.owner.is_owner = True
+        self.owner.is_active = True
         self.owner.save()
+        UserProfile.objects.get_or_create(user=self.owner, defaults={"full_name": "Owner", "phone": "+919000000003", "is_phone_verified": True})
 
     def _login(self, user):
         # Use force_login to avoid authentication backend differences in tests

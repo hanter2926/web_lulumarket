@@ -45,6 +45,17 @@ def find_user_by_phone(phone):
     return None
 
 
+def get_phone_verification_error_message(user):
+    if not getattr(user, "is_active", True):
+        return "Your account is inactive. Please contact support."
+
+    profile = UserProfile.objects.filter(user=user).first()
+    if profile and not profile.is_phone_verified:
+        return "Verify your phone number before logging in."
+
+    return "Verify your phone number before logging in."
+
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all().order_by("id")
     serializer_class = UserSerializer
@@ -65,6 +76,8 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        user.is_active = False
+        user.save(update_fields=["is_active", "updated_at"])
 
         profile, _ = UserProfile.objects.get_or_create(user=user)
         phone = (request.data.get("phone") or "").strip()
@@ -98,6 +111,13 @@ class UserViewSet(viewsets.ModelViewSet):
         if not user or not user.check_password(password):
             return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
+        if not getattr(user, "is_active", True):
+            return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
+
+        profile = UserProfile.objects.filter(user=user).first()
+        if profile is None or not profile.is_phone_verified:
+            return Response({"detail": "Verify your phone number before logging in."}, status=status.HTTP_403_FORBIDDEN)
+
         auth_login(request, user)
         refresh = RefreshToken.for_user(user)
         return Response({
@@ -129,6 +149,10 @@ class UserViewSet(viewsets.ModelViewSet):
 
         if profile.otp_expires_at and timezone.now() > profile.otp_expires_at:
             return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not getattr(user, "is_active", True):
+            user.is_active = True
+            user.save(update_fields=["is_active", "updated_at"])
 
         profile.is_phone_verified = True
         profile.otp = ""
@@ -284,6 +308,7 @@ def signup_submit(request):
         phone=phone,
         first_name=(full_name.split()[0] if full_name else ""),
         last_name=" ".join(full_name.split()[1:]) if full_name else "",
+        is_active=False,
     )
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
@@ -329,6 +354,10 @@ def verify_otp(request):
     if profile.otp_expires_at and timezone.now() > profile.otp_expires_at:
         return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
 
+    if not getattr(user, "is_active", True):
+        user.is_active = True
+        user.save(update_fields=["is_active", "updated_at"])
+
     profile.is_phone_verified = True
     profile.otp = ""
     profile.otp_expires_at = None
@@ -355,6 +384,13 @@ def email_login_view(request):
         user = CustomUser.objects.filter(email__iexact=email).first()
         if not user or not user.check_password(password):
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password."})
+
+        if not getattr(user, "is_active", True):
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support."})
+
+        profile = UserProfile.objects.filter(user=user).first()
+        if profile is None or not profile.is_phone_verified:
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Verify your phone number before logging in."})
 
         auth_login(request, user)
         # Redirect users by role: owner -> owner dashboard, vendor -> seller dashboard, else customer dashboard
@@ -392,6 +428,7 @@ def signup_form_view(request):
             phone=phone,
             first_name=(full_name.split()[0] if full_name else ""),
             last_name=" ".join(full_name.split()[1:]) if full_name else "",
+            is_active=False,
         )
 
         profile, _ = UserProfile.objects.get_or_create(user=user)
