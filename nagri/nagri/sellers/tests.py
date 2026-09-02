@@ -1,4 +1,7 @@
+import smtplib
 from decimal import Decimal
+from unittest.mock import patch
+
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
@@ -53,6 +56,30 @@ class SellerFlowTests(TestCase):
         self.assertIn(reverse('sellers:verify_email'), resp.url)
         follow_resp = self.client.get(reverse('sellers:verify_email'))
         self.assertContains(follow_resp, 'Please wait 30 seconds before requesting another OTP.')
+
+    @patch('sellers.views.send_mail')
+    def test_send_otp_email_is_attempted_with_correct_recipient_and_no_otp_logged(self, mock_send):
+        mock_send.return_value = 1
+        with self.assertLogs('sellers.views', level='INFO') as captured:
+            response = self.client.post(reverse('sellers:send_otp'))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(mock_send.called)
+        self.assertEqual(mock_send.call_args.kwargs['recipient_list'], [self.user.email])
+        log_output = '\n'.join(captured.output)
+        self.assertIn(self.user.email, log_output)
+        self.assertNotIn('otp', log_output.lower())
+
+    @patch('sellers.views.send_mail')
+    def test_failed_send_does_not_mark_otp_as_sent(self, mock_send):
+        mock_send.side_effect = smtplib.SMTPException('SMTP test failure')
+
+        response = self.client.post(reverse('sellers:send_otp'))
+
+        self.assertEqual(response.status_code, 302)
+        app = SellerApplication.objects.get(user=self.user)
+        self.assertIsNone(app.otp_last_sent_at)
+        self.assertFalse(app.otp_hash)
 
     def test_otp_expiry(self):
         resp = self.client.post(reverse('sellers:send_otp'))

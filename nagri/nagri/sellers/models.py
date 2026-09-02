@@ -179,9 +179,25 @@ class SellerApplication(models.Model):
         self.otp_created_at = now
         self.otp_expires_at = now + timedelta(minutes=ttl_minutes)
         self.otp_attempts = 0
-        self.otp_last_sent_at = now
-        self.save(update_fields=["otp_salt", "otp_hash", "otp_created_at", "otp_expires_at", "otp_attempts", "otp_last_sent_at", "updated_at"])
-        send_callable(self.email, otp)
+        self.otp_last_sent_at = None
+
+        try:
+            with transaction.atomic():
+                self.save(update_fields=["otp_salt", "otp_hash", "otp_created_at", "otp_expires_at", "otp_attempts", "otp_last_sent_at", "updated_at"])
+            send_callable(self.email, otp)
+            with transaction.atomic():
+                self.otp_last_sent_at = timezone.now()
+                self.save(update_fields=["otp_last_sent_at", "updated_at"])
+        except Exception:
+            with transaction.atomic():
+                self.otp_salt = None
+                self.otp_hash = None
+                self.otp_created_at = None
+                self.otp_expires_at = None
+                self.otp_attempts = 0
+                self.otp_last_sent_at = None
+                self.save(update_fields=["otp_salt", "otp_hash", "otp_created_at", "otp_expires_at", "otp_attempts", "otp_last_sent_at", "updated_at"])
+            raise
 
     def verify_otp(self, candidate, max_attempts=5):
         if not (self.otp_hash and self.otp_salt and self.otp_expires_at):

@@ -48,20 +48,31 @@ def send_email_otp(request):
             return redirect("sellers:documents")
         return redirect("sellers:verify_email")
 
+    logger.info("Seller OTP send attempt for recipient=%s", app.email)
+
     def send_callable(to_email, otp):
-        subject = "Your seller verification OTP"
+        subject = "Your NAGRI Seller Verification OTP"
         message = f"Your verification OTP is: {otp}\nIt will expire soon."
         sender = settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER or "noreply@localhost"
-        send_mail(subject, message, sender, [to_email], fail_silently=False)
+        logger.info("Attempting to send seller OTP email to %s", to_email)
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=sender,
+            recipient_list=[to_email],
+            fail_silently=False,
+        )
+        logger.info("Seller OTP email sent successfully to %s", to_email)
 
     try:
         app.generate_and_send_otp(send_callable)
     except ValidationError as exc:
         message = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
+        logger.warning("Seller OTP cooldown/validation error for recipient=%s: %s", app.email, message)
         messages.error(request, message)
         return redirect("sellers:verify_email")
-    except Exception:
-        logger.exception("Seller OTP email send failed for user=%s", request.user.pk)
+    except Exception as exc:
+        logger.exception("Seller OTP email failed for recipient=%s. Error=%s", app.email, type(exc).__name__)
         messages.error(request, "Unable to send OTP right now. Please try again later.")
         return redirect("sellers:verify_email")
 
