@@ -32,7 +32,7 @@ def apply_start(request):
 def _seller_otp_wait_seconds(app):
     if not app or not app.otp_last_sent_at:
         return 0
-    remaining = 30 - int((timezone.now() - app.otp_last_sent_at).total_seconds())
+    remaining = 60 - int((timezone.now() - app.otp_last_sent_at).total_seconds())
     return max(0, remaining)
 
 

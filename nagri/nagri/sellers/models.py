@@ -167,7 +167,7 @@ class SellerApplication(models.Model):
             raise ValidationError("This Seller ID is already in use.")
         return normalized
 
-    def generate_and_send_otp(self, send_callable, ttl_minutes=10, resend_cooldown_seconds=30):
+    def generate_and_send_otp(self, send_callable, ttl_minutes=10, resend_cooldown_seconds=60):
         now = timezone.now()
         if self.otp_last_sent_at and (now - self.otp_last_sent_at).total_seconds() < resend_cooldown_seconds:
             raise ValidationError(f"Please wait {resend_cooldown_seconds} seconds before requesting another OTP.")

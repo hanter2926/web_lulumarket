@@ -15,7 +15,7 @@
     {% csrf_token %}
     <p id="otpCountdown" class="text-muted" data-resend-seconds="{{ resend_wait_seconds|default:0 }}">
       {% if resend_wait_seconds %}
-        Resend OTP available in {{ resend_wait_seconds }} seconds
+        Resend OTP in 01:00
       {% else %}
         Resend OTP is available now.
       {% endif %}
@@ -34,6 +34,12 @@
 
     let remaining = Number(countdownEl.dataset.resendSeconds || 0);
 
+    function formatCountdown(totalSeconds) {
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+    }
+
     function updateCountdown() {
       if (remaining <= 0) {
         countdownEl.textContent = 'Resend OTP is available now.';
@@ -41,7 +47,7 @@
         return;
       }
 
-      countdownEl.textContent = 'Resend OTP available in ' + remaining + ' seconds';
+      countdownEl.textContent = 'Resend OTP in ' + formatCountdown(remaining);
       resendBtn.disabled = true;
       remaining -= 1;
       setTimeout(updateCountdown, 1000);

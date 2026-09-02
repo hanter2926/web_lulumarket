@@ -55,7 +55,16 @@ class SellerFlowTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertIn(reverse('sellers:verify_email'), resp.url)
         follow_resp = self.client.get(reverse('sellers:verify_email'))
-        self.assertContains(follow_resp, 'Please wait 30 seconds before requesting another OTP.')
+        self.assertContains(follow_resp, 'Please wait 60 seconds before requesting another OTP.')
+
+    def test_otp_email_appears_in_locmem_outbox_and_uses_registered_recipient(self):
+        mail.outbox.clear()
+        response = self.client.post(reverse('sellers:send_otp'))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.user.email])
+        self.assertEqual(mail.outbox[0].from_email, 'vikrampal803302@gmail.com')
 
     @patch('sellers.views.send_mail')
     def test_send_otp_email_is_attempted_with_correct_recipient_and_no_otp_logged(self, mock_send):
@@ -66,9 +75,12 @@ class SellerFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(mock_send.called)
         self.assertEqual(mock_send.call_args.kwargs['recipient_list'], [self.user.email])
+        self.assertEqual(mock_send.call_args.kwargs['from_email'], 'vikrampal803302@gmail.com')
+        otp_match = re.search(r"(\d{6})", mock_send.call_args.kwargs['message'])
+        self.assertIsNotNone(otp_match)
         log_output = '\n'.join(captured.output)
         self.assertIn(self.user.email, log_output)
-        self.assertNotIn('otp', log_output.lower())
+        self.assertNotIn(otp_match.group(1), log_output)
 
     @patch('sellers.views.send_mail')
     def test_failed_send_does_not_mark_otp_as_sent(self, mock_send):
@@ -80,6 +92,31 @@ class SellerFlowTests(TestCase):
         app = SellerApplication.objects.get(user=self.user)
         self.assertIsNone(app.otp_last_sent_at)
         self.assertFalse(app.otp_hash)
+
+    def test_resend_requires_full_60_seconds(self):
+        self.client.post(reverse('sellers:send_otp'))
+        response = self.client.post(reverse('sellers:send_otp'))
+        self.assertEqual(response.status_code, 302)
+
+        app = SellerApplication.objects.get(user=self.user)
+        app.otp_last_sent_at = timezone.now() - timezone.timedelta(seconds=59)
+        app.save(update_fields=['otp_last_sent_at'])
+        response = self.client.post(reverse('sellers:send_otp'))
+        self.assertEqual(response.status_code, 302)
+
+    def test_resend_allowed_after_60_seconds(self):
+        self.client.post(reverse('sellers:send_otp'))
+        app = SellerApplication.objects.get(user=self.user)
+        app.otp_last_sent_at = timezone.now() - timezone.timedelta(seconds=61)
+        app.save(update_fields=['otp_last_sent_at'])
+
+        response = self.client.post(reverse('sellers:send_otp'))
+        self.assertEqual(response.status_code, 302)
+
+    def test_verify_email_page_initial_countdown_is_60_seconds(self):
+        self.client.post(reverse('sellers:send_otp'))
+        response = self.client.get(reverse('sellers:verify_email'))
+        self.assertContains(response, 'data-resend-seconds="60"')
 
     def test_otp_expiry(self):
         resp = self.client.post(reverse('sellers:send_otp'))
