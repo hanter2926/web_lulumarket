@@ -119,3 +119,7 @@ class SellerProductForm(forms.ModelForm):
             inventory_data = {"stock_quantity": self.cleaned_data.get("stock", 0), "low_stock_threshold": 5}
             Inventory.objects.update_or_create(product=product, defaults=inventory_data)
         return product
+
+
+class TestEmailForm(forms.Form):
+    recipient = forms.EmailField(label="Recipient email", max_length=254)

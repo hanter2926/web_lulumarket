@@ -16,6 +16,7 @@ urlpatterns = [
     path("admin-marketplace/sellers/<int:user_id>/", views.owner_seller_detail, name="owner_seller_detail"),
     path("admin-marketplace/sellers/<int:user_id>/action/", views.owner_seller_action, name="owner_seller_action"),
     path("admin-marketplace/top-sellers/", views.owner_top_sellers, name="owner_top_sellers"),
+        path("admin/test-email/", views.admin_test_email, name="admin_test_email"),
     path("products/", views.product_list, name="product_list"),
     path("products/add/", views.product_create, name="product_create"),
     path("products/<int:pk>/edit/", views.product_edit, name="product_edit"),

@@ -1,0 +1,20 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Send Test Email{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h1>Send Test Email (Staff Only)</h1>
+  <form method="post" novalidate>{% csrf_token %}
+    <div class="mb-3">
+      {{ form.recipient.label_tag }}
+      {{ form.recipient }}
+      {% if form.recipient.errors %}
+        <div class="text-danger">{{ form.recipient.errors }}</div>
+      {% endif %}
+    </div>
+    <button class="btn btn-primary" type="submit">SEND TEST EMAIL</button>
+  </form>
+</div>
+{% endblock %}

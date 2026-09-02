@@ -17,6 +17,7 @@ from django.http import HttpResponseForbidden
 
 from .models import SellerApplication
 from .forms import OTPVerifyForm, SellerDocumentsForm, CategorySelectionForm, SellerProductForm
+from .forms import TestEmailForm
 from accounts.models import CustomUser
 from products.models import Category, Product
 from orders.models import Order, OrderItem
@@ -241,6 +242,32 @@ def _require_marketplace_owner(request):
     if not _is_marketplace_owner(request.user):
         return HttpResponseForbidden()
     return None
+
+
+@login_required
+def admin_test_email(request):
+    # staff-only endpoint to send a test email using current email settings
+    if not (request.user.is_staff or request.user.is_superuser):
+        return HttpResponseForbidden()
+
+    form = TestEmailForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        recipient = form.cleaned_data['recipient']
+        try:
+            send_mail(
+                "NAGRI Email Test",
+                "This is a test email from the NAGRI application.",
+                settings.DEFAULT_FROM_EMAIL,
+                [recipient],
+                fail_silently=False,
+            )
+            messages.success(request, "Test email sent successfully.")
+        except Exception:
+            logger.exception("Failed to send test email for user_id=%s recipient=%s", request.user.id if getattr(request, 'user', None) else None, recipient)
+            messages.error(request, "Unable to send test email. Please check server logs.")
+        return redirect('sellers:admin_test_email')
+
+    return render(request, 'sellers/admin_test_email.html', {'form': form})
 
 
 def _category_allowed_for_seller(app, category_id):

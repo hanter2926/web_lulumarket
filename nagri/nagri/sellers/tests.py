@@ -108,6 +108,39 @@ class SellerFlowTests(TestCase):
         # User should see a generic error message (no exception details)
         self.assertContains(resp, 'Unable to send OTP right now. Please try again later.')
 
+    def test_anonymous_cannot_access_admin_test_email(self):
+        resp = self.client.get(reverse('sellers:admin_test_email'))
+        # login_required will redirect to login for anonymous users
+        self.assertIn(resp.status_code, (302, 403))
+
+    def test_normal_customer_cannot_access_admin_test_email(self):
+        self.client.force_login(self.user)
+        resp = self.client.get(reverse('sellers:admin_test_email'))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_seller_cannot_access_admin_test_email(self):
+        seller = CustomUser.objects.create_user(email='s@ex.com', username='sellerx', password='pass', is_vendor=True)
+        self.client.force_login(seller)
+        resp = self.client.get(reverse('sellers:admin_test_email'))
+        self.assertEqual(resp.status_code, 403)
+
+    @patch('sellers.views.send_mail')
+    def test_staff_can_send_test_email_success(self, mock_send):
+        mock_send.return_value = 1
+        self.client.force_login(self.admin)
+        resp = self.client.post(reverse('sellers:admin_test_email'), {'recipient': 'ok@example.com'}, follow=True)
+        self.assertContains(resp, 'Test email sent successfully.')
+
+    @patch('sellers.views.send_mail')
+    def test_staff_send_test_email_exception_logged_and_shows_generic(self, mock_send):
+        mock_send.side_effect = Exception('SMTP fail')
+        self.client.force_login(self.admin)
+        with self.assertLogs('sellers.views', level='ERROR') as cm:
+            resp = self.client.post(reverse('sellers:admin_test_email'), {'recipient': 'fail@example.com'}, follow=True)
+        log_output = '\n'.join(cm.output)
+        self.assertIn('Failed to send test email', log_output)
+        self.assertContains(resp, 'Unable to send test email. Please check server logs.')
+
     def test_resend_requires_full_60_seconds(self):
         self.client.post(reverse('sellers:send_otp'))
         response = self.client.post(reverse('sellers:send_otp'))

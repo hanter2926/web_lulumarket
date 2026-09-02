@@ -245,6 +245,17 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # WhiteNoise storage configuration
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+# When running tests, ManifestStaticFilesStorage (used by whitenoise) requires collectstatic-generated manifest.
+# Use the default staticfiles storage for tests to avoid manifest errors while keeping production unchanged.
+import sys
+if any(arg.startswith('test') for arg in sys.argv):
+    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+    # When Django uses the STORAGES setting (Django 4.2+), ensure test runner uses non-manifest storage for staticfiles.
+    try:
+        STORAGES['staticfiles']['BACKEND'] = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+    except Exception:
+        # STORAGES may not be defined yet; safe to ignore
+        pass
 
 
 # ============================================================
