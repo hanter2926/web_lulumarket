@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.db.models import Case, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect, render
@@ -27,10 +28,23 @@ def apply_start(request):
     return render(request, "sellers/apply_start.html", {"application": app})
 
 
+def _seller_otp_wait_seconds(app):
+    if not app or not app.otp_last_sent_at:
+        return 0
+    remaining = 30 - int((timezone.now() - app.otp_last_sent_at).total_seconds())
+    return max(0, remaining)
+
+
 @login_required
 def send_email_otp(request):
+    if request.method != "POST":
+        app, _ = SellerApplication.objects.get_or_create(user=request.user, defaults={"email": request.user.email})
+        if app.email_verified:
+            return redirect("sellers:documents")
+        return redirect("sellers:verify_email")
+
     app, _ = SellerApplication.objects.get_or_create(user=request.user, defaults={"email": request.user.email})
-    # generate and send OTP via email
+
     def send_callable(to_email, otp):
         subject = "Your seller verification OTP"
         message = f"Your verification OTP is: {otp}\nIt will expire soon."
@@ -38,26 +52,46 @@ def send_email_otp(request):
 
     try:
         app.generate_and_send_otp(send_callable)
-    except Exception as e:
-        return render(request, "sellers/send_otp_result.html", {"error": str(e)})
+    except ValidationError as exc:
+        messages.error(request, str(exc))
+        return redirect("sellers:verify_email")
 
-    return render(request, "sellers/send_otp_result.html", {"sent": True})
+    messages.success(request, "OTP has been sent to your email address.")
+    return redirect("sellers:verify_email")
 
 
 @login_required
 def verify_email_otp(request):
     app = get_object_or_404(SellerApplication, user=request.user)
+    if app.email_verified:
+        return redirect("sellers:documents")
+
+    resend_wait_seconds = _seller_otp_wait_seconds(app)
+
     if request.method == "POST":
         form = OTPVerifyForm(request.POST)
         if form.is_valid():
             otp = form.cleaned_data["otp"]
             ok, reason = app.verify_otp(otp)
             if ok:
+                messages.success(request, "Email verified successfully.")
                 return redirect("sellers:documents")
-            return render(request, "sellers/verify_email.html", {"form": form, "error": reason})
+
+            if reason == "expired":
+                messages.error(request, "OTP has expired. Please request a new one.")
+            elif reason == "attempts_exceeded":
+                messages.error(request, "Too many invalid attempts. Please request a new OTP.")
+            elif reason == "invalid":
+                messages.error(request, "Invalid OTP.")
+            else:
+                messages.error(request, "Please request a new OTP.")
+
+            return render(request, "sellers/verify_email.html", {"form": form, "application": app, "resend_wait_seconds": resend_wait_seconds})
+
     else:
         form = OTPVerifyForm()
-    return render(request, "sellers/verify_email.html", {"form": form, "application": app})
+
+    return render(request, "sellers/verify_email.html", {"form": form, "application": app, "resend_wait_seconds": resend_wait_seconds})
 
 
 @login_required
@@ -280,6 +314,9 @@ def _seller_summary_for_user(user):
         "delivered_items": metrics["delivered_items"],
         "cancelled_items": metrics["cancelled_items"],
     }
+
+
+
 
 
 @login_required

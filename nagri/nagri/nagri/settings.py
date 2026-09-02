@@ -367,6 +367,8 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 
 # Add explicit timeout to prevent Gunicorn thread locks on SMTP hanging
 EMAIL_TIMEOUT = 10
+
+
 # ============================================================
 # SECURITY - DEVELOPMENT
 # ============================================================

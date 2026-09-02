@@ -3,12 +3,55 @@
 {% block content %}
 <div class="container py-5">
   <h3>Enter the OTP sent to {{ application.email }}</h3>
-  {% if error %}
-    <div class="alert alert-danger">{{ error }}</div>
-  {% endif %}
-  <form method="post">{% csrf_token %}
-    {{ form.as_p }}
-    <button class="btn btn-primary">Verify</button>
+
+  <div class="card shadow-sm p-4 mb-4">
+    <form method="post">{% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary">Verify</button>
+    </form>
+  </div>
+
+  <form method="post" action="{% url 'sellers:send_otp' %}">
+    {% csrf_token %}
+    <p id="otpCountdown" class="text-muted" data-resend-seconds="{{ resend_wait_seconds|default:0 }}">
+      {% if resend_wait_seconds %}
+        Resend OTP available in {{ resend_wait_seconds }} seconds
+      {% else %}
+        Resend OTP is available now.
+      {% endif %}
+    </p>
+    <button id="resendOtpBtn" type="submit" class="btn btn-outline-secondary" {% if resend_wait_seconds %}disabled{% endif %}>
+      Resend OTP
+    </button>
   </form>
 </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const countdownEl = document.getElementById('otpCountdown');
+    const resendBtn = document.getElementById('resendOtpBtn');
+    if (!countdownEl || !resendBtn) return;
+
+    let remaining = Number(countdownEl.dataset.resendSeconds || 0);
+
+    function updateCountdown() {
+      if (remaining <= 0) {
+        countdownEl.textContent = 'Resend OTP is available now.';
+        resendBtn.disabled = false;
+        return;
+      }
+
+      countdownEl.textContent = 'Resend OTP available in ' + remaining + ' seconds';
+      resendBtn.disabled = true;
+      remaining -= 1;
+      setTimeout(updateCountdown, 1000);
+    }
+
+    if (remaining > 0) {
+      updateCountdown();
+    } else {
+      resendBtn.disabled = false;
+    }
+  });
+</script>
 {% endblock %}

@@ -28,7 +28,8 @@ class SellerFlowTests(TestCase):
 
     def test_otp_generation_and_verification(self):
         resp = self.client.post(reverse('sellers:send_otp'))
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 302)
+        self.assertRedirects(resp, reverse('sellers:verify_email'))
         app = SellerApplication.objects.get(user=self.user)
         self.assertTrue(len(mail.outbox) >= 1)
         body = mail.outbox[-1].body
@@ -40,6 +41,18 @@ class SellerFlowTests(TestCase):
         self.assertEqual(verify.status_code, 302)
         app.refresh_from_db()
         self.assertTrue(app.email_verified)
+
+    def test_send_otp_get_redirects_and_cooldown_shows_message(self):
+        resp = self.client.get(reverse('sellers:send_otp'))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse('sellers:verify_email'), resp.url)
+
+        self.client.post(reverse('sellers:send_otp'))
+        resp = self.client.post(reverse('sellers:send_otp'))
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(reverse('sellers:verify_email'), resp.url)
+        follow_resp = self.client.get(reverse('sellers:verify_email'))
+        self.assertContains(follow_resp, 'Please wait 30 seconds before requesting another OTP.')
 
     def test_otp_expiry(self):
         resp = self.client.post(reverse('sellers:send_otp'))
