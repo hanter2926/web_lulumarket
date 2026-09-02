@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import timedelta
 from decimal import Decimal
@@ -35,25 +36,33 @@ def _seller_otp_wait_seconds(app):
     return max(0, remaining)
 
 
+logger = logging.getLogger(__name__)
+
+
 @login_required
 def send_email_otp(request):
+    app, _ = SellerApplication.objects.get_or_create(user=request.user, defaults={"email": request.user.email})
+
     if request.method != "POST":
-        app, _ = SellerApplication.objects.get_or_create(user=request.user, defaults={"email": request.user.email})
         if app.email_verified:
             return redirect("sellers:documents")
         return redirect("sellers:verify_email")
 
-    app, _ = SellerApplication.objects.get_or_create(user=request.user, defaults={"email": request.user.email})
-
     def send_callable(to_email, otp):
         subject = "Your seller verification OTP"
         message = f"Your verification OTP is: {otp}\nIt will expire soon."
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [to_email], fail_silently=False)
+        sender = settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER or "noreply@localhost"
+        send_mail(subject, message, sender, [to_email], fail_silently=False)
 
     try:
         app.generate_and_send_otp(send_callable)
     except ValidationError as exc:
-        messages.error(request, str(exc))
+        message = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
+        messages.error(request, message)
+        return redirect("sellers:verify_email")
+    except Exception:
+        logger.exception("Seller OTP email send failed for user=%s", request.user.pk)
+        messages.error(request, "Unable to send OTP right now. Please try again later.")
         return redirect("sellers:verify_email")
 
     messages.success(request, "OTP has been sent to your email address.")
