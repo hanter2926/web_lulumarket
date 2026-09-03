@@ -7,7 +7,14 @@
 }
 
 /* Global reset */
-* { margin:0; padding:0; box-sizing:border-box; }
+html,
+body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden; /* prevent page-level horizontal scrolling */
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 ul, ol { list-style: none; }
 a { text-decoration: none; color: inherit; }
 button, input { font: inherit; }
@@ -22,10 +29,9 @@ button, input { font: inherit; }
 .menu-grid { background:transparent; border:0; color:var(--white); font-size:18px; }
 .topnav-links a { background: var(--nagri-navy); color:var(--white); padding:8px 14px; border-radius:20px; margin-right:8px; font-weight:700; }
 
-/* Center search */
-.topnav-center { flex:1; justify-content:center; }
-.search-bar { width:60%; max-width:760px; display:flex; align-items:center; background: #f4f6f8; border-radius:40px; padding:8px 10px; }
-.search-bar input[type="search"]{ flex:1; border:0; outline:none; background:transparent; padding:10px 12px; font-size:14px; }
+.topnav-center { flex:1; justify-content:center; min-width:0; }
+.search-bar { flex:1 1 60%; max-width:760px; min-width:0; display:flex; align-items:center; background: #f4f6f8; border-radius:40px; padding:8px 10px; }
+.search-bar input[type="search"]{ flex:1 1 auto; min-width:0; border:0; outline:none; background:transparent; padding:10px 12px; font-size:14px; }
 .search-bar .search-btn{ background:transparent; border:0; color:var(--nagri-navy); padding:8px 12px; font-size:18px; }
 
 /* Right icons */
@@ -41,8 +47,8 @@ button, input { font: inherit; }
 /* Secondary nav */
 .nagri-catsnav { background: var(--nagri-navy); }
 .nagri-catsnav .catsnav-inner { max-width:1300px; margin:0 auto; padding:8px 18px; }
-.cats-list { display:flex; gap:18px; align-items:center; }
-.cats-list a { color:var(--white); padding:8px 10px; border-radius:6px; font-weight:700; }
+.cats-list { display:flex; gap:18px; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.cats-list a { color:var(--white); padding:8px 10px; border-radius:6px; font-weight:700; flex:0 0 auto; white-space:nowrap; }
 .cats-list .dropdown-toggle { display:inline-flex; align-items:center; gap:8px; }
 .cats-list .dropdown-menu { background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); margin-top:8px; padding:8px; }
 .cats-list .dropdown-menu .dropdown-item { color:var(--nagri-navy); padding:8px 12px; display:block; }

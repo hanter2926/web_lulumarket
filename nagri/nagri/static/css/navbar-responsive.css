@@ -1,11 +1,11 @@
 /* Responsive overrides specifically for Navbar */
 
 @media (max-width: 1200px) {
-    .search-bar { width:72%; }
+    .search-bar { flex:1 1 72%; min-width:0; }
 }
 
 @media (max-width: 991px) {
-    .search-bar { width:60%; max-width:360px; }
+    .search-bar { flex:1 1 60%; max-width:360px; min-width:0; }
     .topnav-links { display:none; }
     .icon-label { display:none; }
     .brand-text { display:none; }
@@ -13,10 +13,10 @@
 
 @media (max-width: 576px) {
     .topnav-inner { padding:8px; }
-    .search-bar { max-width:180px; }
+    .search-bar { max-width:180px; min-width:0; }
     .topnav-center { justify-content:flex-end }
     .icon-btn { width:36px; height:36px; }
-    .cats-list { overflow:auto; padding-bottom:6px; }
+    .cats-list { overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:6px; flex-wrap:nowrap; }
 }
 
 /* Mobile drawer styles */

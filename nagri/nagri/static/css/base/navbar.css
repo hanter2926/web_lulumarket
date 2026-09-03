@@ -32,8 +32,8 @@
 .menu-grid{ background:transparent; border:none; color:var(--nagri-navy); font-size:1.1rem; }
 .topnav-links a{ color:var(--nagri-navy); margin-right:0.5rem; font-weight:600; }
 
-.topnav-center{ flex:1; display:flex; justify-content:center; }
-.search-bar{ width:60%; max-width:720px; display:flex; align-items:center; background:white; border-radius:999px; padding:6px; box-shadow:0 6px 18px rgba(31,59,91,0.06); }
+.topnav-center{ flex:1; display:flex; justify-content:center; min-width:0; }
+.search-bar{ flex:1 1 60%; min-width:0; max-width:720px; display:flex; align-items:center; background:white; border-radius:999px; padding:6px; box-shadow:0 6px 18px rgba(31,59,91,0.06); }
 .search-bar input{ border:0; outline:none; padding:10px 14px; border-radius:999px; flex:1; font-size:0.95rem; background:transparent; }
 .search-bar .search-btn{ background:linear-gradient(90deg,var(--nagri-orange),#ff6a00); border:0; color:white; border-radius:999px; padding:8px 14px; margin-right:4px; }
 
@@ -44,9 +44,9 @@
 .badge-count{ position:absolute; top:-6px; right:-6px; background:var(--badge-bg); color:white; font-size:0.7rem; padding:3px 6px; border-radius:999px; box-shadow:0 4px 8px rgba(0,0,0,0.12); }
 
 .nagri-catsnav{ background:var(--nagri-navy); color:white; }
-.catsnav-inner{ padding:0.5rem 1rem; }
-.cats-list{ list-style:none; margin:0; padding:0; display:flex; gap:1rem; align-items:center; }
-.cats-list a{ color:white; text-decoration:none; padding:0.5rem 0.75rem; border-radius:6px; font-weight:600; }
+.catsnav-inner{ padding:0.5rem 1rem; overflow:hidden; }
+.cats-list{ list-style:none; margin:0; padding:0; display:flex; gap:1rem; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.cats-list a{ color:white; text-decoration:none; padding:0.5rem 0.75rem; border-radius:6px; font-weight:600; flex:0 0 auto; white-space:nowrap; }
 .cats-list .dropdown:hover > a, .cats-list a:hover{ background:rgba(255,255,255,0.06); }
 .cats-list .dropdown .dropdown-menu{ min-width:220px; border-radius:6px; padding:0.5rem 0; }
 .cats-list .dropdown .dropdown-item{ color:var(--nagri-navy); }
