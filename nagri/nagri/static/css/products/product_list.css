@@ -490,3 +490,30 @@
         font-size: 1.2rem;
     }
 }
+
+/* Enforce exactly 3 products per row for all mobile widths up to 767px
+   Keep this after other responsive blocks to ensure it overrides them */
+@media (max-width: 767px) {
+    .products-grid {
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    .product-card {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow: hidden;
+    }
+
+    /* Slightly reduce image height to better fit three columns on small screens */
+    .product-card-image {
+        height: 120px !important;
+    }
+
+    .product-card-image img { object-fit: cover; }
+}
