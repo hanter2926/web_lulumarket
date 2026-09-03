@@ -44,7 +44,8 @@
 .badge-count{ position:absolute; top:-6px; right:-6px; background:var(--badge-bg); color:white; font-size:0.7rem; padding:3px 6px; border-radius:999px; box-shadow:0 4px 8px rgba(0,0,0,0.12); }
 
 .nagri-catsnav{ background:var(--nagri-navy); color:white; }
-.catsnav-inner{ padding:0.5rem 1rem; overflow:hidden; }
+.catsnav-inner{ padding:0.5rem 1rem; overflow:visible; }
+.nagri-topnav{ --mobile-header-height:64px; }
 .cats-list{ list-style:none; margin:0; padding:0; display:flex; gap:1rem; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
 .cats-list a{ color:white; text-decoration:none; padding:0.5rem 0.75rem; border-radius:6px; font-weight:600; flex:0 0 auto; white-space:nowrap; }
 .cats-list .dropdown:hover > a, .cats-list a:hover{ background:rgba(255,255,255,0.06); }
@@ -71,10 +72,18 @@
     .nagri-topnav{
         position: sticky;
         top: 0;
-        z-index: 1050;
+        z-index: 9999;
         background: linear-gradient(90deg, rgba(255,138,0,1) 0%, rgba(255,112,0,1) 100%);
         color: white;
         box-shadow: 0 4px 16px rgba(31,59,91,0.12);
+    }
+
+    /* Keep category nav sticky below the top header on mobile */
+    .nagri-catsnav{
+        position: sticky;
+        top: var(--mobile-header-height,64px);
+        z-index: 9998;
+        width:100%;
     }
 
     .topnav-inner{
@@ -116,6 +125,9 @@
     .badge-count{ position:absolute; top:4px; right:4px; background:var(--badge-red); color:white; font-size:0.7rem; padding:3px 6px; border-radius:999px; box-shadow:0 2px 6px rgba(0,0,0,0.2) }
 
     .nagri-catsnav{ background:var(--nagri-navy); color:white; border-bottom:4px solid rgba(0,0,0,0.04) }
+    /* Provide fallback mapping for semantic class names */
+    .site-header{ position: sticky; top:0; z-index:9999; width:100%; }
+    .category-navbar{ position: sticky; top:var(--mobile-header-height,64px); z-index:9998; width:100%; }
     .catsnav-inner{ display:flex; align-items:center; padding:0.4rem 1rem }
     .cats-list{ list-style:none; display:flex; gap:1rem; margin:0; padding:0; align-items:center }
     .cats-list li a{ color:rgba(255,255,255,0.95); text-decoration:none; padding:8px 10px; display:inline-block }
