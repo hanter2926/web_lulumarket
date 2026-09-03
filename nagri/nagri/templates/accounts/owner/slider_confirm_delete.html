@@ -1,0 +1,16 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Delete Slider{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <h2>Delete Slider</h2>
+    <p>Are you sure you want to delete "{{ slider.title }}"?</p>
+    <form method="post">
+        {% csrf_token %}
+        <button class="btn btn-danger" type="submit">Yes, delete</button>
+        <a class="btn btn-secondary" href="{% url 'owner_sliders_list' %}">Cancel</a>
+    </form>
+</div>
+{% endblock %}

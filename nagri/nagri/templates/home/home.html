@@ -6,16 +6,262 @@
 
 {% block extra_css %}
     <link rel="stylesheet" href="{% static 'css/home/home.css' %}">
+    <style>
+        /* Professional Hero Slider Styles */
+        .hero-banner {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 0;
+            margin-bottom: 40px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .hero-banner .container {
+            padding: 0;
+        }
+        
+        #homeSlider {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .carousel-item {
+            min-height: 300px;
+            position: relative;
+        }
+        
+        .carousel-item img {
+            height: 400px;
+            object-fit: cover;
+            width: 100%;
+        }
+        
+        .carousel-caption {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+            padding: 30px;
+            color: white;
+            text-align: left;
+            z-index: 10;
+        }
+        
+        .carousel-caption h3 {
+            font-size: 36px;
+            font-weight: 700;
+            margin: 0 0 10px 0;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .carousel-caption p {
+            font-size: 18px;
+            margin: 0 0 20px 0;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+        
+        .carousel-caption .btn {
+            display: inline-block;
+            padding: 12px 28px;
+            font-weight: 600;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+        
+        .carousel-caption .btn-primary {
+            background: #ff9800;
+            border-color: #ff9800;
+            color: white;
+        }
+        
+        .carousel-caption .btn-primary:hover {
+            background: #e68900;
+            border-color: #e68900;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
+        }
+        
+        .carousel-control-prev,
+        .carousel-control-next {
+            width: auto;
+            background: transparent;
+            border: none;
+            padding: 20px;
+            opacity: 0.7;
+            transition: opacity 0.3s ease;
+        }
+        
+        .carousel-control-prev:hover,
+        .carousel-control-next:hover {
+            opacity: 1;
+        }
+        
+        .carousel-control-prev-icon,
+        .carousel-control-next-icon {
+            background-size: 30px;
+            width: 40px;
+            height: 40px;
+        }
+        
+        .carousel-indicators {
+            bottom: 20px;
+            z-index: 15;
+        }
+        
+        .carousel-indicators button {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: rgba(255,255,255,0.5);
+            border: none;
+            margin: 0 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .carousel-indicators button.active {
+            background-color: #ff9800;
+            width: 30px;
+            border-radius: 5px;
+        }
+        
+        .hero-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 80px 30px;
+            text-align: center;
+            border-radius: 8px;
+        }
+        
+        .hero-content h1 {
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .hero-content p {
+            font-size: 20px;
+            margin-bottom: 30px;
+            opacity: 0.95;
+        }
+        
+        .hero-content .btn {
+            padding: 14px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 4px;
+            background: #ff9800;
+            border-color: #ff9800;
+            color: white;
+        }
+        
+        .hero-content .btn:hover {
+            background: #e68900;
+            border-color: #e68900;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
+        }
+        
+        @media (max-width: 768px) {
+            .carousel-item {
+                min-height: 200px;
+            }
+            
+            .carousel-item img {
+                height: 280px;
+            }
+            
+            .carousel-caption {
+                padding: 20px;
+            }
+            
+            .carousel-caption h3 {
+                font-size: 24px;
+            }
+            
+            .carousel-caption p {
+                font-size: 14px;
+            }
+            
+            .carousel-caption .btn {
+                padding: 10px 20px;
+                font-size: 14px;
+            }
+            
+            .hero-content {
+                padding: 60px 20px;
+            }
+            
+            .hero-content h1 {
+                font-size: 32px;
+            }
+            
+            .hero-content p {
+                font-size: 16px;
+            }
+        }
+    </style>
 {% endblock %}
 
 {% block content %}
 
-<!-- Hero Banner Section -->
+<!-- Hero Banner Section with Promotional Sliders -->
 <section class="hero-banner">
-    <div class="hero-content">
-        <h1>Welcome to Nagri</h1>
-        <p>Discover amazing products at unbeatable prices</p>
-        <a href="{% url 'product_list' %}" class="btn btn-primary btn-lg">Shop Now</a>
+    <div class="container">
+        {% if sliders %}
+            <!-- Dynamic Carousel with Database Sliders -->
+            <div id="homeSlider" class="carousel slide" data-bs-ride="carousel" data-bs-interval="5000">
+                <div class="carousel-inner">
+                    {% for slide in sliders %}
+                    <div class="carousel-item {% if forloop.first %}active{% endif %}">
+                        <!-- Use mobile image on mobile, desktop on larger screens -->
+                        {% if slide.mobile_image %}
+                            <img src="{{ slide.mobile_image.url }}" class="d-block w-100 d-md-none" alt="{{ slide.title }}">
+                            <img src="{{ slide.image.url }}" class="d-block w-100 d-none d-md-block" alt="{{ slide.title }}">
+                        {% else %}
+                            <img src="{{ slide.image.url }}" class="d-block w-100" alt="{{ slide.title }}">
+                        {% endif %}
+                        
+                        {% if slide.title or slide.subtitle or slide.button_text %}
+                        <div class="carousel-caption d-md-block">
+                            {% if slide.title %}<h3>{{ slide.title }}</h3>{% endif %}
+                            {% if slide.subtitle %}<p>{{ slide.subtitle }}</p>{% endif %}
+                            {% if slide.button_text and slide.button_link %}
+                                <a href="{{ slide.button_link }}" class="btn btn-lg btn-primary">{{ slide.button_text }}</a>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <!-- Navigation Arrows -->
+                {% if sliders.count > 1 %}
+                <button class="carousel-control-prev" type="button" data-bs-target="#homeSlider" data-bs-slide="prev" aria-label="Previous slide">
+                    <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                </button>
+                <button class="carousel-control-next" type="button" data-bs-target="#homeSlider" data-bs-slide="next" aria-label="Next slide">
+                    <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                </button>
+                
+                <!-- Indicators -->
+                <div class="carousel-indicators">
+                    {% for slide in sliders %}
+                    <button type="button" data-bs-target="#homeSlider" data-bs-slide-to="{{ forloop.counter0 }}" {% if forloop.first %}class="active"{% endif %} aria-label="Slide {{ forloop.counter }}"></button>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        {% else %}
+            <!-- Default Hero when no sliders exist -->
+            <div class="hero-content">
+                <h1>Welcome to Nagri</h1>
+                <p>Discover amazing products at unbeatable prices</p>
+                <a href="{% url 'product_list' %}" class="btn btn-primary btn-lg">Shop Now</a>
+            </div>
+        {% endif %}
     </div>
 </section>
 

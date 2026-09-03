@@ -1,0 +1,484 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .slider-form-page {
+        padding: 30px 0;
+        max-width: 1000px;
+        margin: 0 auto;
+    }
+    
+    .form-header {
+        margin-bottom: 30px;
+    }
+    
+    .form-header h1 {
+        margin: 0 0 10px 0;
+        font-size: 28px;
+        color: #333;
+    }
+    
+    .form-header p {
+        color: #666;
+        margin: 0;
+    }
+    
+    .form-card {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 30px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    
+    .form-section {
+        margin-bottom: 30px;
+    }
+    
+    .form-section:last-child {
+        margin-bottom: 0;
+    }
+    
+    .form-section-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #f0f0f0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .form-section-title i {
+        color: #0066cc;
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #333;
+    }
+    
+    .form-group .form-control,
+    .form-group .form-select {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 10px 12px;
+        font-size: 14px;
+        font-family: inherit;
+    }
+    
+    .form-group .form-control:focus,
+    .form-group .form-select:focus {
+        border-color: #0066cc;
+        box-shadow: 0 0 0 0.2rem rgba(0, 102, 204, 0.25);
+    }
+    
+    .form-text {
+        display: block;
+        font-size: 12px;
+        color: #666;
+        margin-top: 6px;
+    }
+    
+    .form-check {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .form-check-input {
+        width: 20px;
+        height: 20px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    
+    .form-check-input:checked {
+        background: #0066cc;
+        border-color: #0066cc;
+    }
+    
+    .form-check-label {
+        font-weight: 600;
+        margin: 0;
+        cursor: pointer;
+    }
+    
+    .image-preview-container {
+        border: 2px dashed #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+        background: #fafafa;
+        margin-top: 10px;
+    }
+    
+    .image-preview-container img {
+        max-width: 100%;
+        max-height: 300px;
+        border-radius: 4px;
+        margin-bottom: 10px;
+    }
+    
+    .no-image-placeholder {
+        color: #999;
+        font-size: 48px;
+        margin: 20px 0;
+    }
+    
+    .form-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+    }
+    
+    .form-actions .btn {
+        padding: 12px 24px;
+        font-size: 14px;
+        font-weight: 600;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .form-actions .btn-primary {
+        background: #0066cc;
+        color: white;
+    }
+    
+    .form-actions .btn-primary:hover {
+        background: #0052a3;
+    }
+    
+    .form-actions .btn-secondary {
+        background: #e0e0e0;
+        color: #333;
+    }
+    
+    .form-actions .btn-secondary:hover {
+        background: #d0d0d0;
+    }
+    
+    .error-list {
+        list-style: none;
+        padding: 10px;
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
+        color: #721c24;
+        margin-bottom: 15px;
+    }
+    
+    .error-list li {
+        margin: 4px 0;
+    }
+    
+    .error-list li:before {
+        content: "✗ ";
+        font-weight: bold;
+        margin-right: 6px;
+    }
+    
+    .form-group.has-error .form-control,
+    .form-group.has-error .form-select {
+        border-color: #dc3545;
+    }
+    
+    .info-box {
+        background: #e7f3ff;
+        border-left: 4px solid #0066cc;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 4px;
+        color: #333;
+    }
+    
+    .info-box strong {
+        color: #0066cc;
+    }
+    
+    .two-column-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+    
+    @media (max-width: 768px) {
+        .slider-form-page {
+            padding: 20px;
+        }
+        
+        .form-card {
+            padding: 20px;
+        }
+        
+        .form-header h1 {
+            font-size: 22px;
+        }
+        
+        .two-column-row {
+            grid-template-columns: 1fr;
+        }
+        
+        .form-actions {
+            flex-direction: column;
+        }
+        
+        .form-actions .btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container slider-form-page">
+    <div class="form-header">
+        <h1>
+            <i class="fas fa-{% if slider %}edit{% else %}plus-circle{% endif %}"></i>
+            {{ page_title }}
+        </h1>
+        <p>Create and manage your promotional homepage sliders</p>
+    </div>
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <div class="form-card">
+        {% if form.non_field_errors %}
+            <div class="error-list">
+                {% for error in form.non_field_errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </div>
+        {% endif %}
+        
+        <form method="post" enctype="multipart/form-data" novalidate>
+            {% csrf_token %}
+            
+            <!-- Content Section -->
+            <div class="form-section">
+                <h3 class="form-section-title">
+                    <i class="fas fa-pen"></i> Slider Content
+                </h3>
+                
+                <div class="form-group {% if form.title.errors %}has-error{% endif %}">
+                    <label for="{{ form.title.id_for_label }}">{{ form.title.label }} <span style="color: #dc3545;">*</span></label>
+                    {{ form.title }}
+                    {% if form.title.help_text %}
+                        <small class="form-text">{{ form.title.help_text }}</small>
+                    {% endif %}
+                    {% if form.title.errors %}
+                        <div class="error-list">
+                            {% for error in form.title.errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="form-group {% if form.subtitle.errors %}has-error{% endif %}">
+                    <label for="{{ form.subtitle.id_for_label }}">{{ form.subtitle.label }}</label>
+                    {{ form.subtitle }}
+                    {% if form.subtitle.help_text %}
+                        <small class="form-text">{{ form.subtitle.help_text }}</small>
+                    {% endif %}
+                    {% if form.subtitle.errors %}
+                        <div class="error-list">
+                            {% for error in form.subtitle.errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Images Section -->
+            <div class="form-section">
+                <h3 class="form-section-title">
+                    <i class="fas fa-image"></i> Images
+                </h3>
+                
+                <div class="info-box">
+                    <strong>Image Requirements:</strong><br>
+                    Desktop image: 1200×400px (or similar aspect ratio)<br>
+                    Mobile image: 600×400px (optional, for mobile optimization)
+                </div>
+                
+                <div class="form-group {% if form.image.errors %}has-error{% endif %}">
+                    <label for="{{ form.image.id_for_label }}">{{ form.image.label }} <span style="color: #dc3545;">*</span></label>
+                    {{ form.image }}
+                    {% if form.image.help_text %}
+                        <small class="form-text">{{ form.image.help_text }}</small>
+                    {% endif %}
+                    {% if slider and slider.image %}
+                        <div class="image-preview-container">
+                            <p style="color: #666; font-weight: 600; margin-bottom: 10px;">Current Desktop Image:</p>
+                            <img src="{{ slider.image.url }}" alt="Current image">
+                            <p style="font-size: 12px; color: #999; margin: 10px 0 0 0;">Upload a new image to replace</p>
+                        </div>
+                    {% endif %}
+                    {% if form.image.errors %}
+                        <div class="error-list">
+                            {% for error in form.image.errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div class="form-group {% if form.mobile_image.errors %}has-error{% endif %}">
+                    <label for="{{ form.mobile_image.id_for_label }}">{{ form.mobile_image.label }}</label>
+                    {{ form.mobile_image }}
+                    {% if form.mobile_image.help_text %}
+                        <small class="form-text">{{ form.mobile_image.help_text }}</small>
+                    {% endif %}
+                    {% if slider and slider.mobile_image %}
+                        <div class="image-preview-container">
+                            <p style="color: #666; font-weight: 600; margin-bottom: 10px;">Current Mobile Image:</p>
+                            <img src="{{ slider.mobile_image.url }}" alt="Current mobile image">
+                            <p style="font-size: 12px; color: #999; margin: 10px 0 0 0;">Upload a new image to replace</p>
+                        </div>
+                    {% endif %}
+                    {% if form.mobile_image.errors %}
+                        <div class="error-list">
+                            {% for error in form.mobile_image.errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- CTA Button Section -->
+            <div class="form-section">
+                <h3 class="form-section-title">
+                    <i class="fas fa-link"></i> Call-to-Action Button
+                </h3>
+                
+                <div class="two-column-row">
+                    <div class="form-group {% if form.button_text.errors %}has-error{% endif %}">
+                        <label for="{{ form.button_text.id_for_label }}">{{ form.button_text.label }}</label>
+                        {{ form.button_text }}
+                        {% if form.button_text.help_text %}
+                            <small class="form-text">{{ form.button_text.help_text }}</small>
+                        {% endif %}
+                        {% if form.button_text.errors %}
+                            <div class="error-list">
+                                {% for error in form.button_text.errors %}
+                                    <li>{{ error }}</li>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="form-group {% if form.button_link.errors %}has-error{% endif %}">
+                        <label for="{{ form.button_link.id_for_label }}">{{ form.button_link.label }}</label>
+                        {{ form.button_link }}
+                        {% if form.button_link.help_text %}
+                            <small class="form-text">{{ form.button_link.help_text }}</small>
+                        {% endif %}
+                        {% if form.button_link.errors %}
+                            <div class="error-list">
+                                {% for error in form.button_link.errors %}
+                                    <li>{{ error }}</li>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="info-box">
+                    <strong>URL Examples:</strong><br>
+                    • Internal: <code>/products/</code> or <code>/category/electronics/</code><br>
+                    • External: <code>https://example.com/sale</code>
+                </div>
+            </div>
+            
+            <!-- Display Settings Section -->
+            <div class="form-section">
+                <h3 class="form-section-title">
+                    <i class="fas fa-cog"></i> Display Settings
+                </h3>
+                
+                <div class="two-column-row">
+                    <div class="form-group {% if form.display_order.errors %}has-error{% endif %}">
+                        <label for="{{ form.display_order.id_for_label }}">{{ form.display_order.label }} <span style="color: #dc3545;">*</span></label>
+                        {{ form.display_order }}
+                        {% if form.display_order.help_text %}
+                            <small class="form-text">{{ form.display_order.help_text }}</small>
+                        {% endif %}
+                        {% if form.display_order.errors %}
+                            <div class="error-list">
+                                {% for error in form.display_order.errors %}
+                                    <li>{{ error }}</li>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="form-group {% if form.is_active.errors %}has-error{% endif %}">
+                        <label for="{{ form.is_active.id_for_label }}">Status</label>
+                        <div class="form-check">
+                            {{ form.is_active }}
+                            <label for="{{ form.is_active.id_for_label }}" class="form-check-label">
+                                Activate this slider (appears on homepage)
+                            </label>
+                        </div>
+                        {% if not can_add_active and not slider.is_active %}
+                            <div class="alert alert-warning" style="margin-top: 10px; font-size: 12px;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Maximum active sliders reached. Deactivate another slider first.
+                            </div>
+                        {% endif %}
+                        {% if form.is_active.errors %}
+                            <div class="error-list">
+                                {% for error in form.is_active.errors %}
+                                    <li>{{ error }}</li>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Form Actions -->
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-{% if slider %}check{% else %}plus{% endif %}"></i>
+                    {% if slider %}Update Slider{% else %}Create Slider{% endif %}
+                </button>
+                <a href="{% url 'slider_list' %}" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

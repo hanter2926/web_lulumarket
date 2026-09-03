@@ -14,4 +14,11 @@ urlpatterns = [
     path("policies/cancellation/", views.cancellation_policy, name="cancellation_policy"),
     path("support/help-center/", views.help_center, name="help_center"),
     path("support/contact/", views.contact_support, name="contact_support"),
+    
+    # Owner-only slider management routes
+    path("owner/sliders/", views.slider_list, name="slider_list"),
+    path("owner/sliders/add/", views.slider_add, name="slider_add"),
+    path("owner/sliders/<int:slider_id>/edit/", views.slider_edit, name="slider_edit"),
+    path("owner/sliders/<int:slider_id>/delete/", views.slider_delete, name="slider_delete"),
+    path("owner/sliders/<int:slider_id>/toggle/", views.slider_toggle, name="slider_toggle"),
 ]

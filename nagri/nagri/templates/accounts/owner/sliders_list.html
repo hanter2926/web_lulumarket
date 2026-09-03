@@ -1,0 +1,35 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Homepage Sliders - Owner{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <h2>Homepage Sliders</h2>
+    <p><a class="btn btn-primary" href="{% url 'owner_sliders_add' %}">Add Slider</a></p>
+    <table class="table table-striped">
+        <thead>
+            <tr><th>Preview</th><th>Title</th><th>Order</th><th>Active</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+            {% for s in sliders %}
+            <tr>
+                <td>
+                    {% if s.image %}
+                        <img src="{{ s.image.url }}" style="height:60px;" />
+                    {% endif %}
+                </td>
+                <td>{{ s.title }}</td>
+                <td>{{ s.display_order }}</td>
+                <td>{{ s.is_active }}</td>
+                <td>
+                    <a class="btn btn-sm btn-outline-primary" href="{% url 'owner_sliders_edit' s.pk %}">Edit</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'owner_sliders_toggle' s.pk %}">Toggle</a>
+                    <a class="btn btn-sm btn-danger" href="{% url 'owner_sliders_delete' s.pk %}">Delete</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -23,6 +23,11 @@ from .utils import (
 )
 from django.contrib.auth import views as auth_views
 from django.urls import reverse_lazy
+from django.shortcuts import get_object_or_404, redirect
+from django.contrib import messages
+from .models import HomeSlider
+from .forms import HomeSliderForm
+from .decorators import owner_required
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -493,3 +498,54 @@ def dashboard_page(request):
         "wishlist_count": 0,
         "cart_count": 0,
     })
+
+
+@owner_required
+def owner_sliders_list(request):
+    sliders = HomeSlider.objects.all().order_by('display_order', '-created_at')
+    return render(request, 'accounts/owner/sliders_list.html', {'sliders': sliders})
+
+
+@owner_required
+def owner_sliders_add(request):
+    if request.method == 'POST':
+        form = HomeSliderForm(request.POST, request.FILES)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Slider added')
+            return redirect('owner_sliders_list')
+    else:
+        form = HomeSliderForm()
+    return render(request, 'accounts/owner/slider_form.html', {'form': form, 'is_edit': False})
+
+
+@owner_required
+def owner_sliders_edit(request, pk):
+    slider = get_object_or_404(HomeSlider, pk=pk)
+    if request.method == 'POST':
+        form = HomeSliderForm(request.POST, request.FILES, instance=slider)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Slider updated')
+            return redirect('owner_sliders_list')
+    else:
+        form = HomeSliderForm(instance=slider)
+    return render(request, 'accounts/owner/slider_form.html', {'form': form, 'is_edit': True, 'slider': slider})
+
+
+@owner_required
+def owner_sliders_delete(request, pk):
+    slider = get_object_or_404(HomeSlider, pk=pk)
+    if request.method == 'POST':
+        slider.delete()
+        messages.success(request, 'Slider deleted')
+        return redirect('owner_sliders_list')
+    return render(request, 'accounts/owner/slider_confirm_delete.html', {'slider': slider})
+
+
+@owner_required
+def owner_sliders_toggle(request, pk):
+    slider = get_object_or_404(HomeSlider, pk=pk)
+    slider.is_active = not slider.is_active
+    slider.save()
+    return redirect('owner_sliders_list')

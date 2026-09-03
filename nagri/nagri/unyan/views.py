@@ -1,15 +1,20 @@
 from django.contrib import messages
 from django.db.models import Count
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect, render, get_object_or_404
 from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponseForbidden, JsonResponse
+from django.views.decorators.http import require_POST
 
 from products.models import Product, Category
 from orders.models import Order
-from .forms import ContactSupportForm
+from accounts.decorators import owner_required
+from .forms import ContactSupportForm, HomeSliderForm
+from .models import HomeSlider
 
 
 def home(request):
-    """Home page view with featured products, bestsellers, and new arrivals."""
+    """Home page view with featured products, bestsellers, new arrivals, and promotional sliders."""
     featured_products = (
         Product.objects.filter(is_featured=True, is_active=True)
         .select_related("category")
@@ -79,6 +84,10 @@ def home(request):
         .order_by("-rating")[:6]
     )
     categories = Category.objects.annotate(product_count=Count("products", distinct=True)).order_by("name")
+    
+    # Get active promotional sliders
+    active_sliders = HomeSlider.get_active_sliders()
+    
     orders_count = 0
     if request.user.is_authenticated:
         orders_count = Order.objects.filter(user=request.user).count()
@@ -90,6 +99,7 @@ def home(request):
         'top_rated_products': top_rated_products,
         'categories': categories,
         'orders_count': orders_count,
+        'sliders': active_sliders,
     }
     return render(request, 'home/home.html', context)
 
@@ -143,3 +153,105 @@ def contact_support(request):
         messages.success(request, 'Thank you! Your support request has been received.')
         return redirect('contact_support')
     return render(request, 'support/contact_support.html', {'form': form})
+
+
+# ============================================================================
+# SLIDER MANAGEMENT VIEWS (OWNER-ONLY)
+# ============================================================================
+
+@owner_required
+def slider_list(request):
+    """List all sliders for owner management."""
+    sliders = HomeSlider.objects.all().order_by('display_order', 'created_at')
+    active_count = HomeSlider.objects.filter(is_active=True).count()
+    can_add_active = active_count < 8
+    
+    context = {
+        'sliders': sliders,
+        'active_count': active_count,
+        'can_add_active': can_add_active,
+        'max_sliders': 8,
+        'min_recommended': 3,
+    }
+    return render(request, 'sliders/slider_list.html', context)
+
+
+@owner_required
+def slider_add(request):
+    """Add new slider."""
+    if request.method == 'POST':
+        form = HomeSliderForm(request.POST, request.FILES)
+        if form.is_valid():
+            slider = form.save()
+            messages.success(request, f'Slider "{slider.title}" created successfully.')
+            return redirect('slider_list')
+    else:
+        form = HomeSliderForm()
+    
+    active_count = HomeSlider.objects.filter(is_active=True).count()
+    can_add_active = active_count < 8
+    
+    context = {
+        'form': form,
+        'page_title': 'Add New Slider',
+        'can_add_active': can_add_active,
+        'max_sliders': 8,
+    }
+    return render(request, 'sliders/slider_form.html', context)
+
+
+@owner_required
+def slider_edit(request, slider_id):
+    """Edit existing slider."""
+    slider = get_object_or_404(HomeSlider, pk=slider_id)
+    
+    if request.method == 'POST':
+        form = HomeSliderForm(request.POST, request.FILES, instance=slider)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Slider "{slider.title}" updated successfully.')
+            return redirect('slider_list')
+    else:
+        form = HomeSliderForm(instance=slider)
+    
+    active_count = HomeSlider.objects.filter(is_active=True).exclude(pk=slider_id).count()
+    can_activate = active_count < 8
+    
+    context = {
+        'form': form,
+        'slider': slider,
+        'page_title': f'Edit Slider: {slider.title}',
+        'can_activate': can_activate or slider.is_active,  # Can always save if already active
+        'max_sliders': 8,
+    }
+    return render(request, 'sliders/slider_form.html', context)
+
+
+@owner_required
+@require_POST
+def slider_delete(request, slider_id):
+    """Delete slider."""
+    slider = get_object_or_404(HomeSlider, pk=slider_id)
+    title = slider.title
+    slider.delete()
+    messages.success(request, f'Slider "{title}" deleted successfully.')
+    return redirect('slider_list')
+
+
+@owner_required
+@require_POST
+def slider_toggle(request, slider_id):
+    """Toggle slider active/inactive status."""
+    slider = get_object_or_404(HomeSlider, pk=slider_id)
+    
+    # Check if activating would exceed limit
+    if not slider.is_active and HomeSlider.objects.filter(is_active=True).count() >= 8:
+        messages.error(request, 'Cannot activate slider. Maximum 8 active sliders allowed.')
+        return redirect('slider_list')
+    
+    slider.is_active = not slider.is_active
+    slider.save(update_fields=['is_active', 'updated_at'])
+    
+    status = 'activated' if slider.is_active else 'deactivated'
+    messages.success(request, f'Slider "{slider.title}" {status} successfully.')
+    return redirect('slider_list')

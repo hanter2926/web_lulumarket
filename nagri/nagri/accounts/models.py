@@ -122,3 +122,35 @@ class PaymentMethod(models.Model):
 
     def __str__(self):
         return f"{self.card_brand} ending {self.card_last4}"
+
+
+class HomeSlider(models.Model):
+    title = models.CharField(max_length=140, blank=True)
+    subtitle = models.CharField(max_length=255, blank=True)
+    image = models.ImageField(upload_to='sliders/', help_text='Desktop/banner image')
+    mobile_image = models.ImageField(upload_to='sliders/mobile/', null=True, blank=True, help_text='Optional mobile image')
+    button_text = models.CharField(max_length=64, blank=True)
+    button_link = models.CharField(max_length=1024, blank=True, help_text='Destination URL (internal or external)')
+    display_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', '-created_at']
+
+    def clean(self):
+        # Enforce maximum 8 active sliders
+        if self.is_active:
+            qs = HomeSlider.objects.filter(is_active=True)
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            if qs.count() >= 8:
+                raise ValidationError('Cannot have more than 8 active sliders.')
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.title or 'Slider'} ({'Active' if self.is_active else 'Inactive'})"
