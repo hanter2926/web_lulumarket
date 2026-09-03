@@ -1,0 +1,27 @@
+/* Responsive overrides specifically for Navbar */
+
+@media (max-width: 1200px) {
+    .search-bar { width:72%; }
+}
+
+@media (max-width: 991px) {
+    .search-bar { width:60%; max-width:360px; }
+    .topnav-links { display:none; }
+    .icon-label { display:none; }
+    .brand-text { display:none; }
+}
+
+@media (max-width: 576px) {
+    .topnav-inner { padding:8px; }
+    .search-bar { max-width:180px; }
+    .topnav-center { justify-content:flex-end }
+    .icon-btn { width:36px; height:36px; }
+    .cats-list { overflow:auto; padding-bottom:6px; }
+}
+
+/* Mobile drawer styles */
+.mobile-drawer { position:fixed; left:0; top:0; bottom:0; width:280px; background:#fff; transform:translateX(-110%); transition:transform 260ms ease; z-index:1060; }
+.mobile-drawer.open { transform:translateX(0); }
+.mobile-drawer .drawer-header { padding:12px 16px; border-bottom:1px solid #f0f0f0; }
+.mobile-drawer .drawer-list { padding:12px; }
+.mobile-drawer .drawer-list a { display:block; padding:10px 8px; color:var(--nagri-navy); border-radius:6px; }

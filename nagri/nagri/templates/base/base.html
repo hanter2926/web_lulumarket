@@ -16,6 +16,8 @@
     <!-- Base CSS -->
     <link rel="stylesheet" href="{% static 'css/base/base.css' %}">
     <link rel="stylesheet" href="{% static 'css/base/navbar.css' %}">
+    <link rel="stylesheet" href="{% static 'css/navbar.css' %}">
+    <link rel="stylesheet" href="{% static 'css/navbar-responsive.css' %}">
     <link rel="stylesheet" href="{% static 'css/base/footer.css' %}">
     <!-- PWA manifest and theme -->
     <link rel="manifest" href="{% static 'manifest.json' %}">
@@ -39,13 +41,12 @@
 
                 <a class="brand" href="{% url 'home' %}">
                     <img src="{% static 'images/logo.png' %}" alt="NAGRI" class="brand-logo" onerror="this.style.display='inline-block'; this.previousElementSibling && (this.previousElementSibling.style.display='inline-block')">
-                    <i class="fas fa-shopping-bag fallback-logo d-none"></i>
                     <span class="brand-text">NAGRI</span>
                 </a>
 
                 <div class="topnav-links d-none d-lg-flex">
-                    <a class="btn btn-link" href="{% url 'home' %}">Main Page</a>
-                    <a class="btn btn-link" href="{% url 'dashboard_page' %}">Dashboard</a>
+                    <a class="topnav-pill" href="{% url 'home' %}">Main Page</a>
+                    <a class="topnav-pill" href="{% url 'dashboard_page' %}">Dashboard</a>
                 </div>
             </div>
 
@@ -65,21 +66,26 @@
                         </select>
                     </div>
 
-                    <a class="icon-btn position-relative" href="{% url 'wishlist_list' %}" title="Wishlist">
-                        <i class="fas fa-heart"></i>
-                        <span class="badge badge-count wishlist-count">0</span>
+                    <a class="icon-wrap badge" href="{% url 'wishlist_list' %}" title="Wishlist">
+                        <div class="icon-btn"><i class="fas fa-heart"></i></div>
+                        <span class="badge-count wishlist-count">0</span>
+                        <div class="icon-label">Wish List</div>
                     </a>
 
-                    <a class="icon-btn position-relative" href="{% url 'cart_detail' %}" title="Cart">
-                        <i class="fas fa-shopping-cart"></i>
-                        <span class="badge badge-count cart-count">0</span>
+                    <a class="icon-wrap badge" href="{% url 'cart_detail' %}" title="Cart">
+                        <div class="icon-btn"><i class="fas fa-shopping-cart"></i></div>
+                        <span class="badge-count cart-count">0</span>
+                        <div class="icon-label">View Cart</div>
                     </a>
 
                     {% if user.is_authenticated %}
-                        <div class="account-dropdown dropdown">
+                        <div class="icon-wrap">
                             <a class="icon-btn" href="#" id="accountToggle" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="fas fa-user-circle"></i>
                             </a>
+                            <div class="icon-label">Account</div>
+                        </div>
+                        <div class="account-dropdown dropdown">
                             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountToggle">
                                 <li class="dropdown-header">Signed in as <strong>{{ user.email|truncatechars:20 }}</strong></li>
                                 <li><hr class="dropdown-divider"></li>
@@ -96,8 +102,8 @@
                             </ul>
                         </div>
                     {% else %}
-                        <a class="btn btn-sm btn-outline-light ms-2 d-none d-md-inline" href="{% url 'login_page' %}">Sign In</a>
-                        <a class="btn btn-sm btn-light ms-2 d-none d-md-inline" href="{% url 'signup_form' %}">Create Account</a>
+                        <a class="topnav-pill d-none d-md-inline" href="{% url 'login_page' %}">Sign In</a>
+                        <a class="topnav-pill d-none d-md-inline" href="{% url 'signup_form' %}">Create Account</a>
                     {% endif %}
                 </div>
             </div>

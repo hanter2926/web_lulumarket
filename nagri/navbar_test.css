@@ -1,0 +1,160 @@
+/* ======================================
+   NAVBAR.CSS - Premium Top + Category Nav
+   ====================================== */
+
+:root{
+    --nagri-orange: #FF8A00;
+    --nagri-navy: #1F3B5B;
+    --nagri-bg: #F5F6F8;
+    --badge-bg: #FF5A00;
+}
+
+.nagri-topnav{
+    position: sticky;
+    top: 0;
+    z-index: 1050;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 6px 18px rgba(31,59,91,0.06);
+}
+
+.topnav-inner{
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.6rem 1rem;
+    background: linear-gradient(90deg, rgba(255,138,0,0.12), rgba(255,138,0,0.06));
+}
+
+.topnav-left{ display:flex; align-items:center; gap:0.75rem; }
+.brand{ display:flex; align-items:center; gap:0.5rem; text-decoration:none; color:var(--nagri-navy); }
+.brand-logo{ height:36px; width:auto; border-radius:6px; }
+.brand-text{ font-weight:800; letter-spacing:1px; color:var(--nagri-navy); font-size:1.15rem; }
+.menu-grid{ background:transparent; border:none; color:var(--nagri-navy); font-size:1.1rem; }
+.topnav-links a{ color:var(--nagri-navy); margin-right:0.5rem; font-weight:600; }
+
+.topnav-center{ flex:1; display:flex; justify-content:center; }
+.search-bar{ width:60%; max-width:720px; display:flex; align-items:center; background:white; border-radius:999px; padding:6px; box-shadow:0 6px 18px rgba(31,59,91,0.06); }
+.search-bar input{ border:0; outline:none; padding:10px 14px; border-radius:999px; flex:1; font-size:0.95rem; background:transparent; }
+.search-bar .search-btn{ background:linear-gradient(90deg,var(--nagri-orange),#ff6a00); border:0; color:white; border-radius:999px; padding:8px 14px; margin-right:4px; }
+
+.topnav-right{ display:flex; align-items:center; gap:0.5rem; }
+.topnav-actions{ display:flex; gap:0.5rem; align-items:center; }
+.icon-btn{ display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:10px; color:var(--nagri-navy); background:white; box-shadow:0 4px 12px rgba(31,59,91,0.06); text-decoration:none; }
+.icon-btn i{ font-size:1.05rem; }
+.badge-count{ position:absolute; top:-6px; right:-6px; background:var(--badge-bg); color:white; font-size:0.7rem; padding:3px 6px; border-radius:999px; box-shadow:0 4px 8px rgba(0,0,0,0.12); }
+
+.nagri-catsnav{ background:var(--nagri-navy); color:white; }
+.catsnav-inner{ padding:0.5rem 1rem; }
+.cats-list{ list-style:none; margin:0; padding:0; display:flex; gap:1rem; align-items:center; }
+.cats-list a{ color:white; text-decoration:none; padding:0.5rem 0.75rem; border-radius:6px; font-weight:600; }
+.cats-list .dropdown:hover > a, .cats-list a:hover{ background:rgba(255,255,255,0.06); }
+.cats-list .dropdown .dropdown-menu{ min-width:220px; border-radius:6px; padding:0.5rem 0; }
+.cats-list .dropdown .dropdown-item{ color:var(--nagri-navy); }
+
+/* Mobile specific */
+@media (max-width: 991px){
+    .search-bar{ width:85%; }
+    .topnav-links{ display:none; }
+    .language-select{ display:none; }
+    .brand-text{ font-size:1rem; }
+    /* ======================================
+       NAVBAR.CSS - Premium Top + Category Nav
+       ====================================== */
+
+    :root{
+        --nagri-orange: #FF8A00;
+        --nagri-navy: #1F3B5B;
+        --nagri-bg: #F5F6F8;
+        --badge-red: #FF4D4F;
+    }
+
+    .nagri-topnav{
+        position: sticky;
+        top: 0;
+        z-index: 1050;
+        background: linear-gradient(90deg, rgba(255,138,0,1) 0%, rgba(255,112,0,1) 100%);
+        color: white;
+        box-shadow: 0 4px 16px rgba(31,59,91,0.12);
+    }
+
+    .topnav-inner{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:1rem;
+        padding:0.6rem 1rem;
+    }
+
+    .topnav-left, .topnav-center, .topnav-right{
+        display:flex;
+        align-items:center;
+    }
+
+    .topnav-left{ flex:0 0 auto; gap:0.5rem }
+    .topnav-center{ flex:1 1 50%; justify-content:center }
+    .topnav-right{ flex:0 0 auto; gap:0.5rem }
+
+    .brand{ display:flex; align-items:center; gap:0.5rem; color:white; text-decoration:none }
+    .brand-logo{ height:36px; width:auto; border-radius:6px }
+    .brand-text{ font-weight:800; letter-spacing:1px; font-size:1.1rem }
+    .fallback-logo{ font-size:1.4rem }
+
+    .topnav-links a{ color:rgba(255,255,255,0.95); margin-right:0.5rem }
+    .topnav-links a:hover{ color:#fff; text-decoration:underline }
+
+    .search-bar{
+        display:flex; align-items:center; width:100%; max-width:720px; background:white; border-radius:999px; padding:6px; box-shadow:0 4px 18px rgba(0,0,0,0.12);
+    }
+    .search-bar input{ border:0; outline:none; padding:10px 14px; border-radius:999px; flex:1; font-size:0.95rem }
+    .search-bar .search-btn{ background:var(--nagri-orange); color:white; border-radius:999px; border:0; padding:8px 14px; margin-right:4px }
+
+    .topnav-actions{ display:flex; gap:0.4rem; align-items:center }
+    .icon-btn{ color:white; text-decoration:none; background:transparent; border:none; position:relative; padding:8px; border-radius:8px }
+    .icon-btn i{ font-size:1.1rem }
+    .icon-btn:hover{ background:rgba(255,255,255,0.06) }
+
+    .badge-count{ position:absolute; top:4px; right:4px; background:var(--badge-red); color:white; font-size:0.7rem; padding:3px 6px; border-radius:999px; box-shadow:0 2px 6px rgba(0,0,0,0.2) }
+
+    .nagri-catsnav{ background:var(--nagri-navy); color:white; border-bottom:4px solid rgba(0,0,0,0.04) }
+    .catsnav-inner{ display:flex; align-items:center; padding:0.4rem 1rem }
+    .cats-list{ list-style:none; display:flex; gap:1rem; margin:0; padding:0; align-items:center }
+    .cats-list li a{ color:rgba(255,255,255,0.95); text-decoration:none; padding:8px 10px; display:inline-block }
+    .cats-list li a:hover{ background:rgba(255,255,255,0.04); border-radius:6px }
+    .cats-list .dropdown .dropdown-menu{ min-width:220px; border-radius:6px }
+
+    /* Mobile behavior */
+    @media (max-width: 991px){
+        .topnav-center{ justify-content:flex-end }
+        .search-bar{ max-width:320px }
+        .topnav-links{ display:none }
+        .brand-text{ display:none }
+    }
+
+    @media (max-width: 768px){
+        .search-bar{ max-width:260px }
+        .brand-logo{ height:30px }
+    }
+
+    /* Mobile: transform nav into compact bar with drawer */
+    @media (max-width: 576px){
+        .topnav-inner{ padding:0.4rem 0.6rem }
+        .topnav-center{ flex:1; justify-content:center }
+        .search-bar{ max-width:180px }
+        .language-select{ display:none }
+        .topnav-right .btn{ display:none }
+        .brand-text{ display:none }
+    }
+
+    /* Small accessibility and transitions */
+    .search-bar, .icon-btn, .brand, .cats-list a{ transition: all 180ms ease }
+
+    /* Drawer placeholder (will be controlled via JS if needed) */
+    .mobile-drawer{ position:fixed; left:0; top:0; bottom:0; width:320px; background:white; box-shadow:2px 0 24px rgba(0,0,0,0.2); transform:translateX(-100%); transition:transform 260ms ease; z-index:1060 }
+    .mobile-drawer.open{ transform:translateX(0) }
+
+    /* Dropdown caret style */
+    .cats-list .dropdown-toggle i{ margin-left:6px; font-size:0.8rem }
+
+    /* Ensure dropdowns accessible on touch */
+    .dropdown-menu{ touch-action: manipulation }
+
