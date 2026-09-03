@@ -79,31 +79,15 @@
                     </a>
 
                     {% if user.is_authenticated %}
-                        <div class="icon-wrap">
-                            <a class="icon-btn" href="#" id="accountToggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="fas fa-user-circle"></i>
-                            </a>
+                        <a href="{% url 'dashboard_page' %}" class="icon-wrap" title="My Account">
+                            <div class="icon-btn"><i class="fas fa-user-circle"></i></div>
                             <div class="icon-label">Account</div>
-                        </div>
-                        <div class="account-dropdown dropdown">
-                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountToggle">
-                                <li class="dropdown-header">Signed in as <strong>{{ user.email|truncatechars:20 }}</strong></li>
-                                <li><hr class="dropdown-divider"></li>
-                                {% if request.user.is_owner %}
-                                    <li><a class="dropdown-item" href="{% url 'sellers:owner_dashboard' %}"><i class="fas fa-tools"></i> Owner Dashboard</a></li>
-                                {% elif request.user.is_vendor %}
-                                    <li><a class="dropdown-item" href="{% url 'sellers:dashboard' %}"><i class="fas fa-tachometer-alt"></i> Seller Dashboard</a></li>
-                                {% else %}
-                                    <li><a class="dropdown-item" href="{% url 'dashboard_page' %}"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
-                                {% endif %}
-                                <li><a class="dropdown-item" href="{% url 'order_list' %}"><i class="fas fa-box"></i> Orders</a></li>
-                                <li><a class="dropdown-item" href="{% url 'wishlist_list' %}"><i class="fas fa-heart"></i> Wishlist</a></li>
-                                <li><a class="dropdown-item" href="{% url 'logout_page' %}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
-                            </ul>
-                        </div>
+                        </a>
                     {% else %}
-                        <a class="topnav-pill d-none d-md-inline" href="{% url 'login_page' %}">Sign In</a>
-                        <a class="topnav-pill d-none d-md-inline" href="{% url 'signup_form' %}">Create Account</a>
+                        <a href="{% url 'login_page' %}" class="icon-wrap" title="Sign In">
+                            <div class="icon-btn"><i class="fas fa-user-circle"></i></div>
+                            <div class="icon-label">Sign In</div>
+                        </a>
                     {% endif %}
                 </div>
             </div>
