@@ -51,7 +51,7 @@
             </div>
 
             <div class="topnav-center">
-                <form class="search-bar" method="get" action="{% url 'product_list' %}">
+                <form class="search-bar desktop-search" method="get" action="{% url 'product_list' %}">
                     <input type="search" name="search" placeholder="Search for products, brands and categories" value="{{ search_query|default:'' }}" aria-label="Search">
                     <button class="search-btn" type="submit"><i class="fas fa-search"></i></button>
                 </form>

@@ -36,7 +36,8 @@ document.addEventListener('DOMContentLoaded', function(){
     var mobilePanel = document.querySelector('.mobile-search-panel');
     if (!mobilePanel) {
         mobilePanel = document.createElement('div');
-        mobilePanel.className = 'mobile-search-panel';
+        // add both class names: panel and container (per responsive CSS conventions)
+        mobilePanel.className = 'mobile-search-panel mobile-search-container';
 
         // Attempt to reuse action URL from existing desktop search form
         var desktopForm = document.querySelector('.topnav-center form');

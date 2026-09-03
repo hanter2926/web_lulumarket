@@ -20,7 +20,7 @@
 }
 
 /* Mobile search panel styles and behavior */
-@media (max-width: 991px) {
+@media (max-width: 768px) {
     /* Hide the desktop search bar in the topnav on mobile to reduce crowding */
     .topnav-center .search-bar { display: none !important; }
 
@@ -28,13 +28,28 @@
     .mobile-search-btn { display: inline-flex !important; align-items:center; justify-content:center; width:40px; height:40px; border-radius:10px; background:transparent; color:var(--nagri-navy); }
 
     /* Search panel that slides open beneath the header */
-    .mobile-search-panel { width:100%; max-width:100%; box-sizing:border-box; overflow:hidden; max-height:0; transition: max-height 260ms ease, padding 260ms ease; padding:0 12px; }
-    .mobile-search-panel.open { max-height:120px; padding:10px 12px; }
+    .mobile-search-panel,
+    .mobile-search-container { width:100%; max-width:100%; box-sizing:border-box; overflow:hidden; max-height:0; transition: max-height 260ms ease, padding 260ms ease; padding:0 12px; }
+    .mobile-search-panel.open,
+    .mobile-search-container.open,
+    .mobile-search-container.active { max-height:120px; padding:10px 12px; }
 
     .mobile-search-panel .mobile-search-form { display:flex; gap:8px; align-items:center; }
     .mobile-search-panel .mobile-search-input { width:100%; max-width:100%; box-sizing:border-box; height:48px; border-radius:16px; padding:10px 12px; font-size:16px; border:1px solid #e9ecef; }
     .mobile-search-panel .mobile-search-submit { height:48px; border-radius:12px; padding:8px 12px; background:var(--nagri-orange); color:#fff; border:0; }
     .mobile-search-panel .mobile-search-close { background:transparent; border:0; color:var(--nagri-navy); font-size:18px; padding:8px; }
+}
+
+/* Desktop: ensure mobile search panel is hidden and desktop search visible */
+@media (min-width: 769px) {
+    .desktop-search { display: flex !important; }
+    .mobile-search-panel, .mobile-search-container { display: none !important; max-height: 0 !important; padding: 0 !important; }
+}
+
+/* Mobile: ensure desktop search is hidden and mobile panel can appear */
+@media (max-width: 768px) {
+    .desktop-search { display: none !important; }
+    .mobile-search-panel, .mobile-search-container { display: block; }
 }
 
 /* Mobile drawer styles */

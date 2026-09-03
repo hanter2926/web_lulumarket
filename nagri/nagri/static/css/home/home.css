@@ -522,10 +522,29 @@
         gap: 15px;
     }
     
+    /* On mobile keep benefits in one horizontal row of 4 items */
     .benefits-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 20px;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 8px;
+        width: 100%;
+        overflow: hidden;
+        align-items: stretch;
     }
+
+    .benefit-card {
+        flex: 0 0 25%;
+        width: 25%;
+        min-width: 0;
+        padding: 10px 6px;
+        text-align: center;
+    }
+
+    .benefit-icon { font-size: 1.6rem; margin-bottom: 8px; }
+
+    .benefit-card h4 { font-size: 0.95rem; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .benefit-card p { font-size: 0.75rem; margin:0; }
     
     .search-form-large {
         flex-direction: column;
