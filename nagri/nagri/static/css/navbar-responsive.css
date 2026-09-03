@@ -52,6 +52,17 @@
     .mobile-search-panel, .mobile-search-container { display: block; }
 }
 
+/* Homepage large search is mobile-only: hide on desktop to prevent duplicate inputs */
+@media (min-width: 769px) {
+    .mobile-only-search { display: none !important; }
+}
+
+@media (max-width: 768px) {
+    .mobile-only-search { display: flex !important; }
+    .search-form-large { width: 100%; }
+    .search-input-large { flex: 1 1 auto; min-width: 0; }
+}
+
 /* Mobile drawer styles */
 .mobile-drawer { position:fixed; left:0; top:0; bottom:0; width:280px; background:#fff; transform:translateX(-110%); transition:transform 260ms ease; z-index:1060; }
 .mobile-drawer.open { transform:translateX(0); }
