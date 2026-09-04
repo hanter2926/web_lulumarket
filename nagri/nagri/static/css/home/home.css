@@ -522,11 +522,10 @@
         gap: 15px;
     }
     
-    /* On mobile keep benefits in one horizontal row of 4 items */
+    /* On mobile keep benefits in one horizontal row of 4 equal columns without horizontal scroll */
     .benefits-grid {
-        display: flex;
-        flex-direction: row;
-        flex-wrap: nowrap;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
         gap: 8px;
         width: 100%;
         overflow: hidden;
@@ -534,11 +533,9 @@
     }
 
     .benefit-card {
-        flex: 0 0 25%;
-        width: 25%;
-        min-width: 0;
         padding: 10px 6px;
         text-align: center;
+        min-width: 0;
     }
 
     .benefit-icon { font-size: 1.6rem; margin-bottom: 8px; }

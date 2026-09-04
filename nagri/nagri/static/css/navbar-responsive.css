@@ -19,6 +19,37 @@
     .cats-list { overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:6px; flex-wrap:nowrap; }
 }
 
+/* Mobile: make the top header fixed so it never scrolls away, and ensure main content
+   receives top padding so it isn't hidden beneath the fixed header and optional category bar. */
+@media (max-width: 991px) {
+    :root {
+        --mobile-catsnav-height: 48px;
+    }
+
+    /* Keep top header fixed at top on mobile-only without affecting desktop */
+    .nagri-topnav, .site-header {
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 9999;
+        width: 100%;
+    }
+
+    /* If category navbar is present and sticky, keep it below the fixed top header */
+    .nagri-catsnav, .category-navbar {
+        position: sticky !important;
+        top: var(--mobile-header-height, 64px) !important;
+        z-index: 9998;
+        width: 100%;
+    }
+
+    /* Ensure the main content is pushed down under header + cats nav to avoid being hidden */
+    .main-content {
+        padding-top: calc(var(--mobile-header-height, 64px) + var(--mobile-catsnav-height, 48px));
+    }
+}
+
 /* Mobile search panel styles and behavior */
 @media (max-width: 768px) {
     /* Hide the desktop search bar in the topnav on mobile to reduce crowding */

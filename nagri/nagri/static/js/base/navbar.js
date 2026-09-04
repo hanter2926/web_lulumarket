@@ -32,23 +32,31 @@ document.addEventListener('DOMContentLoaded', function(){
     var mobileSearchBtn = document.getElementById('mobileSearchBtn');
     if (!mobileSearchBtn) return;
 
-    // Create panel if missing
+    // Create panel if missing. Reuse an existing `.mobile-only-search` form on the page
+    // to avoid duplicating the search input on mobile pages like home.
     var mobilePanel = document.querySelector('.mobile-search-panel');
     if (!mobilePanel) {
+        var existingMobileOnly = document.querySelector('.mobile-only-search');
         mobilePanel = document.createElement('div');
-        // add both class names: panel and container (per responsive CSS conventions)
         mobilePanel.className = 'mobile-search-panel mobile-search-container';
 
-        // Attempt to reuse action URL from existing desktop search form
-        var desktopForm = document.querySelector('.topnav-center form');
-        var action = (desktopForm && desktopForm.action) ? desktopForm.action : (window.location.pathname || '/');
-
-        mobilePanel.innerHTML = '' +
-            '<form class="mobile-search-form" action="' + action + '" method="get">' +
-                '<input type="search" name="search" class="mobile-search-input" placeholder="Search for products, brands and categories" aria-label="Search">' +
-                '<button type="submit" class="mobile-search-submit" aria-label="Search"><i class="fas fa-search"></i></button>' +
-                '<button type="button" class="mobile-search-close" aria-label="Close search">&times;</button>' +
-            '</form>';
+        if (existingMobileOnly) {
+            // Clone the existing mobile-only form (do not remove original)
+            var cloned = existingMobileOnly.cloneNode(true);
+            // Ensure cloned form uses expected dialog class
+            cloned.classList.add('mobile-search-form');
+            mobilePanel.appendChild(cloned);
+        } else {
+            // Fallback: build a simple mobile search form reusing desktop action if possible
+            var desktopForm = document.querySelector('.topnav-center form');
+            var action = (desktopForm && desktopForm.action) ? desktopForm.action : (window.location.pathname || '/');
+            mobilePanel.innerHTML = '' +
+                '<form class="mobile-search-form" action="' + action + '" method="get">' +
+                    '<input type="search" name="search" class="mobile-search-input" placeholder="Search for products, brands and categories" aria-label="Search">' +
+                    '<button type="submit" class="mobile-search-submit" aria-label="Search"><i class="fas fa-search"></i></button>' +
+                    '<button type="button" class="mobile-search-close" aria-label="Close search">&times;</button>' +
+                '</form>';
+        }
 
         // Insert after the topnav so it appears below the header
         var topnav = document.querySelector('.nagri-topnav');
