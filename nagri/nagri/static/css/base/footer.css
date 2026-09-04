@@ -154,6 +154,9 @@
     
     .footer .row {
         text-align: center;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
     }
     
     .social-links {
@@ -162,6 +165,7 @@
     
     .footer-links {
         text-align: center;
+        padding: 0;
     }
     
     .footer-links a {
@@ -174,6 +178,7 @@
     
     .newsletter-form .input-group {
         flex-direction: column;
+        gap: 0.75rem;
     }
     
     .newsletter-form .form-control,
@@ -183,6 +188,34 @@
     
     .footer-title {
         margin-top: 1.5rem;
+    }
+
+    /* Make social icons larger and circular on mobile like screenshot */
+    .social-links a {
+        width: 44px;
+        height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        font-size: 1.05rem;
+    }
+
+    /* Footer columns: make each section full width and centered */
+    .footer .col-md-3 {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    /* Increase spacing for footer items on mobile */
+    .footer-links li {
+        margin-bottom: 1rem;
+    }
+
+    /* Make newsletter input visually prominent */
+    .newsletter-form .form-control {
+        padding: 0.9rem 1rem;
+        border-radius: 0.5rem;
     }
 }
 
