@@ -91,14 +91,38 @@ def home(request):
     # Get active promotional sliders
     active_sliders = HomeSlider.get_active_sliders()
 
-    # Temporary debug logging: report slider count and image URLs to help diagnose
+    # Temporary debug logging: report all sliders and the exact queryset used for active sliders.
     try:
+        all_sliders = HomeSlider.objects.all().order_by('display_order', 'created_at')
+        logger.info('Home view: total sliders count=%s', all_sliders.count())
+        for s in all_sliders:
+            img = getattr(s, 'image', None)
+            mobile_img = getattr(s, 'mobile_image', None)
+            start_date = getattr(s, 'start_date', None)
+            end_date = getattr(s, 'end_date', None)
+            logger.info(
+                'Slider ALL id=%s title=%s is_active=%s start_date=%s end_date=%s image=%s mobile_image=%s',
+                s.pk,
+                s.title,
+                getattr(s, 'is_active', None),
+                start_date,
+                end_date,
+                getattr(img, 'url', None),
+                getattr(mobile_img, 'url', None),
+            )
+
         slider_count = active_sliders.count()
         logger.info('Home view: active sliders count=%s', slider_count)
+        # Log the exact queryset SQL for the active_slider query
+        try:
+            logger.info('Active sliders queryset: %s', str(active_sliders.query))
+        except Exception:
+            logger.exception('Failed to stringify active_sliders.query')
+
         for s in active_sliders:
             img = getattr(s, 'image', None)
             mobile_img = getattr(s, 'mobile_image', None)
-            logger.info('Slider id=%s title=%s image=%s mobile_image=%s', s.pk, s.title, getattr(img, 'url', None), getattr(mobile_img, 'url', None))
+            logger.info('Slider ACTIVE id=%s title=%s image=%s mobile_image=%s', s.pk, s.title, getattr(img, 'url', None), getattr(mobile_img, 'url', None))
     except Exception:
         logger.exception('Error while logging slider info')
     
