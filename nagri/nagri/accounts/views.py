@@ -230,7 +230,6 @@ class PasswordResetView(auth_views.PasswordResetView):
                 email_template_name=self.email_template_name,
                 from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
                 request=self.request,
-                fail_silently=False,
             )
         except Exception:
             # Log the real exception for debugging (do NOT log secrets or tokens)

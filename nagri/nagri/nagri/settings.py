@@ -479,14 +479,22 @@ CLOUDINARY_STORAGE = {
     'API_KEY': CLOUDINARY_API_KEY,
     'API_SECRET': CLOUDINARY_API_SECRET,
 }
-
 HAS_CLOUDINARY_CONFIG = all(CLOUDINARY_STORAGE.values())
+
+# If cloudinary libs are installed and config exists, use Cloudinary storage.
+try:
+    import cloudinary_storage  # type: ignore
+    HAS_CLOUDINARY_LIBS = True
+except Exception:
+    HAS_CLOUDINARY_LIBS = False
+
+USE_CLOUDINARY = HAS_CLOUDINARY_CONFIG and HAS_CLOUDINARY_LIBS
 
 STORAGES = {
     'default': {
         'BACKEND': (
             'cloudinary_storage.storage.MediaCloudinaryStorage'
-            if HAS_CLOUDINARY_CONFIG
+            if USE_CLOUDINARY
             else 'django.core.files.storage.FileSystemStorage'
         ),
     },
@@ -495,6 +503,6 @@ STORAGES = {
     },
 }
 
-# Use Cloudinary as Django's default file storage when credentials are present
-if HAS_CLOUDINARY_CONFIG:
+# Use Cloudinary as Django's default file storage only when both config and libs are present
+if USE_CLOUDINARY:
     DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
