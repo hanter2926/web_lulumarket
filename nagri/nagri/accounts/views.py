@@ -32,6 +32,8 @@ from django.contrib import messages
 from .models import HomeSlider
 from .forms import HomeSliderForm
 from .decorators import owner_required
+from .forms import SafePasswordResetForm
+from urllib.parse import urlparse
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -220,16 +222,34 @@ class PasswordResetView(auth_views.PasswordResetView):
     template_name = 'registration/password_reset_form.html'
     email_template_name = 'registration/password_reset_email.html'
     subject_template_name = 'registration/password_reset_subject.txt'
+    form_class = SafePasswordResetForm
     success_url = reverse_lazy('password_reset_done')
     
     def form_valid(self, form):
         # Attempt to send the password reset email and surface failures in logs.
         try:
+            # Determine domain/protocol for the reset link. Prefer SITE_URL when configured.
+            site_url = getattr(settings, "SITE_URL", None) or None
+            domain_override = None
+            use_https = False
+            if site_url:
+                try:
+                    parsed = urlparse(site_url)
+                    # If SITE_URL included scheme, use its scheme to determine https
+                    if parsed.scheme:
+                        use_https = parsed.scheme.lower() == "https"
+                    # Build domain_override as host[:port]
+                    domain_override = parsed.netloc or parsed.path
+                except Exception:
+                    domain_override = None
+
             form.save(
                 subject_template_name=self.subject_template_name,
                 email_template_name=self.email_template_name,
                 from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
                 request=self.request,
+                domain_override=domain_override,
+                use_https=use_https,
             )
         except Exception:
             # Log the real exception for debugging (do NOT log secrets or tokens)
