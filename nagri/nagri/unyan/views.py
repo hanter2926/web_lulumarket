@@ -11,6 +11,9 @@ from orders.models import Order
 from accounts.decorators import owner_required
 from .forms import ContactSupportForm, HomeSliderForm
 from .models import HomeSlider
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def home(request):
@@ -87,6 +90,17 @@ def home(request):
     
     # Get active promotional sliders
     active_sliders = HomeSlider.get_active_sliders()
+
+    # Temporary debug logging: report slider count and image URLs to help diagnose
+    try:
+        slider_count = active_sliders.count()
+        logger.info('Home view: active sliders count=%s', slider_count)
+        for s in active_sliders:
+            img = getattr(s, 'image', None)
+            mobile_img = getattr(s, 'mobile_image', None)
+            logger.info('Slider id=%s title=%s image=%s mobile_image=%s', s.pk, s.title, getattr(img, 'url', None), getattr(mobile_img, 'url', None))
+    except Exception:
+        logger.exception('Error while logging slider info')
     
     orders_count = 0
     if request.user.is_authenticated:
