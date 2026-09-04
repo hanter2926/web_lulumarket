@@ -68,9 +68,20 @@ INSTALLED_APPS = [
     "orders",
     "cart",
     "wishlist",
-    'cloudinary',
-    'cloudinary_storage',
 ]
+
+# Cloudinary apps are optional; only add if the packages are installed to avoid import errors
+try:
+    import cloudinary  # type: ignore
+    import cloudinary_storage  # type: ignore
+    INSTALLED_APPS += [
+        'cloudinary',
+        'cloudinary_storage',
+    ]
+except Exception:
+    # If Cloudinary libs aren't installed, skip adding them. Storage backend will fall back accordingly.
+    pass
+ 
 
 
 # ============================================================

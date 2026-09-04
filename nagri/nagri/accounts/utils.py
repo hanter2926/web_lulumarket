@@ -3,7 +3,8 @@ import re
 import secrets
 
 OTP_TTL_MINUTES = 5
-OTP_RESEND_COOLDOWN_SECONDS = 30
+# Use 60 seconds cooldown for normal user OTP resend to match requirements
+OTP_RESEND_COOLDOWN_SECONDS = 60
 
 
 def normalize_phone_number(phone):

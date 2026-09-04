@@ -21,6 +21,10 @@ from .utils import (
     normalize_phone_number,
     send_otp_to_phone,
 )
+import logging
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
 from django.contrib.auth import views as auth_views
 from django.urls import reverse_lazy
 from django.shortcuts import get_object_or_404, redirect
@@ -90,13 +94,43 @@ class UserViewSet(viewsets.ModelViewSet):
             profile.full_name = request.data.get("full_name") or user.get_full_name() or user.email
             profile.phone = phone
             profile.is_phone_verified = False
-            profile.otp = generate_otp()
-            profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
-            profile.last_otp_sent_at = timezone.now()
-            profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "last_otp_sent_at", "updated_at"])
+
+            otp_code = generate_otp()
+
+            # Persist OTP record before attempting delivery
+            profile.otp = otp_code
+            profile.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MINUTES)
+            profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "updated_at"])
             user.phone = phone
             user.save(update_fields=["phone", "updated_at"])
-            send_otp_to_phone(phone, profile.otp)
+
+            try:
+                send_result = send_otp_to_phone(phone, otp_code)
+                status_sent = False
+                if isinstance(send_result, dict):
+                    status_sent = str(send_result.get("status") or "").lower() == "sent"
+                else:
+                    status_sent = True
+
+                if not status_sent:
+                    # Delivery failed — invalidate saved OTP
+                    profile.otp = ""
+                    profile.otp_expires_at = None
+                    profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+                    logger.warning("Register API OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+                    return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
+
+            except Exception:
+                # Delivery exception — invalidate saved OTP and log
+                profile.otp = ""
+                profile.otp_expires_at = None
+                profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+                logger.exception("Failed to send registration phone OTP for phone=%s", phone)
+                return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
+
+            # Delivery succeeded — record send timestamp
+            profile.last_otp_sent_at = timezone.now()
+            profile.save(update_fields=["last_otp_sent_at", "updated_at"])
 
         return Response({
             "detail": "User registered successfully. Verify your phone OTP to complete setup.",
@@ -187,6 +221,25 @@ class PasswordResetView(auth_views.PasswordResetView):
     email_template_name = 'registration/password_reset_email.html'
     subject_template_name = 'registration/password_reset_subject.txt'
     success_url = reverse_lazy('password_reset_done')
+    
+    def form_valid(self, form):
+        # Attempt to send the password reset email and surface failures in logs.
+        try:
+            form.save(
+                subject_template_name=self.subject_template_name,
+                email_template_name=self.email_template_name,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                request=self.request,
+                fail_silently=False,
+            )
+        except Exception:
+            # Log the real exception for debugging (do NOT log secrets or tokens)
+            email = form.cleaned_data.get('email') if hasattr(form, 'cleaned_data') else None
+            logger.exception("Failed to send password reset email for recipient=%s", email)
+            messages.error(self.request, "Unable to send password reset email right now. Please try again later.")
+            return self.form_invalid(form)
+
+        return super().form_valid(form)
 
 
 class PasswordResetDoneView(auth_views.PasswordResetDoneView):
@@ -273,16 +326,43 @@ def request_otp(request):
 
     profile.phone = phone
     profile.is_phone_verified = False
+
+    # Generate OTP and persist before attempting delivery
     otp_code = generate_otp()
     profile.otp = otp_code
     profile.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MINUTES)
+    profile.save(update_fields=["phone", "is_phone_verified", "otp", "otp_expires_at", "updated_at"])
+
+    try:
+        send_result = send_otp_to_phone(phone, otp_code)
+        status_sent = False
+        if isinstance(send_result, dict):
+            status_sent = str(send_result.get("status") or "").lower() == "sent"
+        else:
+            status_sent = True
+
+        if not status_sent:
+            # Invalidate saved OTP
+            profile.otp = ""
+            profile.otp_expires_at = None
+            profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+            logger.warning("OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+            return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
+
+    except Exception:
+        profile.otp = ""
+        profile.otp_expires_at = None
+        profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+        logger.exception("Failed to send registration phone OTP for phone=%s", phone)
+        return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
+
+    # Delivery succeeded — record send timestamp
     profile.last_otp_sent_at = timezone.now()
-    profile.save(update_fields=["phone", "is_phone_verified", "otp", "otp_expires_at", "last_otp_sent_at", "updated_at"])
+    profile.save(update_fields=["last_otp_sent_at", "updated_at"])
 
     user.phone = phone
     user.save(update_fields=["phone", "updated_at"])
 
-    send_otp_to_phone(phone, otp_code)
     return Response({"detail": "OTP sent successfully.", "phone": phone})
 
 
@@ -320,11 +400,37 @@ def signup_submit(request):
     profile.full_name = full_name or user.get_full_name() or email
     profile.phone = phone
     profile.is_phone_verified = False
-    profile.otp = generate_otp()
+
+    # Generate OTP and persist before attempting delivery
+    otp_code = generate_otp()
+    profile.otp = otp_code
     profile.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MINUTES)
+    profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "updated_at"])
+
+    try:
+        send_result = send_otp_to_phone(phone, otp_code)
+        status_sent = False
+        if isinstance(send_result, dict):
+            status_sent = str(send_result.get("status") or "").lower() == "sent"
+        else:
+            status_sent = True
+
+        if not status_sent:
+            profile.otp = ""
+            profile.otp_expires_at = None
+            profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+            logger.warning("Signup OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+            return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
+
+    except Exception:
+        profile.otp = ""
+        profile.otp_expires_at = None
+        profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+        logger.exception("Failed to send signup phone OTP for phone=%s", phone)
+        return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
+
     profile.last_otp_sent_at = timezone.now()
-    profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "last_otp_sent_at", "updated_at"])
-    send_otp_to_phone(phone, profile.otp)
+    profile.save(update_fields=["last_otp_sent_at", "updated_at"])
 
     return Response({
         "detail": "Account created successfully. OTP sent to your phone.",
@@ -440,12 +546,40 @@ def signup_form_view(request):
         profile.full_name = full_name or user.get_full_name() or email
         profile.phone = phone
         profile.is_phone_verified = False
-        profile.otp = generate_otp()
-        profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
-        profile.last_otp_sent_at = timezone.now()
-        profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "last_otp_sent_at", "updated_at"])
-        send_otp_to_phone(phone, profile.otp)
 
+        otp_code = generate_otp()
+
+        # Persist OTP before attempting delivery
+        profile.otp = otp_code
+        profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
+        profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "updated_at"])
+
+        try:
+            send_result = send_otp_to_phone(phone, otp_code)
+            status_sent = False
+            if isinstance(send_result, dict):
+                status_sent = str(send_result.get("status") or "").lower() == "sent"
+            else:
+                status_sent = True
+
+            if not status_sent:
+                profile.otp = ""
+                profile.otp_expires_at = None
+                profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+                logger.warning("Signup form OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+                messages.error(request, "Unable to send verification OTP. Please try again later.")
+                return render(request, "accounts/auth.html", {"active_tab": "signup", "error": "Unable to send verification OTP. Please try again later."})
+
+        except Exception:
+            profile.otp = ""
+            profile.otp_expires_at = None
+            profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+            logger.exception("Failed to send signup form phone OTP for phone=%s", phone)
+            messages.error(request, "Unable to send verification OTP. Please try again later.")
+            return render(request, "accounts/auth.html", {"active_tab": "signup", "error": "Unable to send verification OTP. Please try again later."})
+
+        profile.last_otp_sent_at = timezone.now()
+        profile.save(update_fields=["last_otp_sent_at", "updated_at"])
         return render(request, "accounts/otp_login.html", {"phone": phone, "message": "Account created. OTP sent to your phone."})
 
     return render(request, "accounts/auth.html", {"active_tab": "signup"})
