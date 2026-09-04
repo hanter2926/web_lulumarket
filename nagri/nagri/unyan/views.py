@@ -10,8 +10,13 @@ from products.models import Product, Category
 from orders.models import Order
 from accounts.decorators import owner_required
 from .forms import ContactSupportForm, HomeSliderForm
-from .models import HomeSlider
+# Use the HomeSlider model that administrators edit in the admin site.
+# Historically HomeSlider was defined in two places; ensure we use the accounts app's model
+from accounts.models import HomeSlider as AdminHomeSlider
+from .models import HomeSlider as UnyanHomeSlider
 import logging
+import os
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -88,43 +93,57 @@ def home(request):
     )
     categories = Category.objects.annotate(product_count=Count("products", distinct=True)).order_by("name")
     
-    # Get active promotional sliders
-    active_sliders = HomeSlider.get_active_sliders()
-
-    # Temporary debug logging: report all sliders and the exact queryset used for active sliders.
+    # Prefer the admin-managed HomeSlider model (accounts.HomeSlider).
+    # Fall back to the unyan HomeSlider if accounts.HomeSlider is not available.
     try:
-        all_sliders = HomeSlider.objects.all().order_by('display_order', 'created_at')
-        logger.info('Home view: total sliders count=%s', all_sliders.count())
-        for s in all_sliders:
-            img = getattr(s, 'image', None)
-            mobile_img = getattr(s, 'mobile_image', None)
-            start_date = getattr(s, 'start_date', None)
-            end_date = getattr(s, 'end_date', None)
-            logger.info(
-                'Slider ALL id=%s title=%s is_active=%s start_date=%s end_date=%s image=%s mobile_image=%s',
-                s.pk,
-                s.title,
-                getattr(s, 'is_active', None),
-                start_date,
-                end_date,
-                getattr(img, 'url', None),
-                getattr(mobile_img, 'url', None),
-            )
-
-        slider_count = active_sliders.count()
-        logger.info('Home view: active sliders count=%s', slider_count)
-        # Log the exact queryset SQL for the active_slider query
-        try:
-            logger.info('Active sliders queryset: %s', str(active_sliders.query))
-        except Exception:
-            logger.exception('Failed to stringify active_sliders.query')
-
-        for s in active_sliders:
-            img = getattr(s, 'image', None)
-            mobile_img = getattr(s, 'mobile_image', None)
-            logger.info('Slider ACTIVE id=%s title=%s image=%s mobile_image=%s', s.pk, s.title, getattr(img, 'url', None), getattr(mobile_img, 'url', None))
+        slider_model = AdminHomeSlider
     except Exception:
-        logger.exception('Error while logging slider info')
+        slider_model = UnyanHomeSlider
+
+    # Fetch active sliders using the actual model fields
+    try:
+        active_sliders = slider_model.objects.filter(is_active=True).order_by('display_order', 'created_at')
+    except Exception:
+        # As a safe fallback, return an empty queryset of the unyan model
+        logger.exception('Error querying active sliders from %s', slider_model)
+        active_sliders = UnyanHomeSlider.objects.none()
+
+    # Conditional debug logging: enabled when DJANGO settings DEBUG is True or
+    # SLIDER_DEBUG env var is set to 'true'. This avoids leaving verbose logs enabled in production.
+    should_log = getattr(settings, 'DEBUG', False) or os.environ.get('SLIDER_DEBUG', 'false').lower() == 'true'
+    if should_log:
+        try:
+            all_sliders = slider_model.objects.all().order_by('display_order', 'created_at')
+            logger.info('Home view: using slider model=%s total sliders count=%s', slider_model.__name__, all_sliders.count())
+            for s in all_sliders:
+                img = getattr(s, 'image', None)
+                mobile_img = getattr(s, 'mobile_image', None)
+                start_date = getattr(s, 'start_date', None)
+                end_date = getattr(s, 'end_date', None)
+                logger.info(
+                    'Slider ALL id=%s title=%s is_active=%s start_date=%s end_date=%s image=%s mobile_image=%s',
+                    s.pk,
+                    getattr(s, 'title', None),
+                    getattr(s, 'is_active', None),
+                    start_date,
+                    end_date,
+                    getattr(img, 'url', None),
+                    getattr(mobile_img, 'url', None),
+                )
+
+            slider_count = active_sliders.count()
+            logger.info('Home view: active sliders count=%s', slider_count)
+            try:
+                logger.info('Active sliders queryset: %s', str(active_sliders.query))
+            except Exception:
+                logger.exception('Failed to stringify active_sliders.query')
+
+            for s in active_sliders:
+                img = getattr(s, 'image', None)
+                mobile_img = getattr(s, 'mobile_image', None)
+                logger.info('Slider ACTIVE id=%s title=%s image=%s mobile_image=%s', s.pk, getattr(s, 'title', None), getattr(img, 'url', None), getattr(mobile_img, 'url', None))
+        except Exception:
+            logger.exception('Error while logging slider info')
     
     orders_count = 0
     if request.user.is_authenticated:

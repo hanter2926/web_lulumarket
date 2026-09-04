@@ -8,8 +8,8 @@ admin.site.register(UserProfile)
 
 @admin.register(HomeSlider)
 class HomeSliderAdmin(admin.ModelAdmin):
-	list_display = ('__str__', 'display_order', 'is_active', 'created_at')
-	list_filter = ('is_active',)
+	list_display = ('id', 'title', 'display_order', 'is_active', 'image_preview', 'created_at')
+	list_filter = ('is_active', 'created_at')
 	search_fields = ('title', 'subtitle', 'button_text')
 	ordering = ('display_order',)
 
@@ -18,6 +18,10 @@ class HomeSliderAdmin(admin.ModelAdmin):
 	def image_preview(self, obj):
 		if not obj.image:
 			return '(no image)'
-		return format_html('<img src="{}" style="max-height:80px;" />', obj.image.url)
+		# Use a safe URL lookup; some storage backends may not have url property until saved
+		img_url = getattr(obj.image, 'url', None)
+		if not img_url:
+			return '(no url)'
+		return format_html('<img src="{}" style="max-height:80px;" />', img_url)
 
 	image_preview.short_description = 'Image'
