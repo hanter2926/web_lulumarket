@@ -434,6 +434,20 @@ except Exception:
     # Don't surface configuration errors during import; they are handled by runtime checks/tests
     logger.exception("Error while logging email configuration state")
 
+# Log presence of Twilio configuration (do NOT log secret values)
+try:
+    twilio_sid_present = bool(os.environ.get("TWILIO_ACCOUNT_SID"))
+    twilio_token_present = bool(os.environ.get("TWILIO_AUTH_TOKEN"))
+    twilio_phone_present = bool(os.environ.get("TWILIO_PHONE_NUMBER"))
+    logger.info(
+        "Twilio configuration presence: account_sid_present=%s auth_token_present=%s phone_number_present=%s",
+        twilio_sid_present,
+        twilio_token_present,
+        twilio_phone_present,
+    )
+except Exception:
+    logger.exception("Error while logging Twilio configuration presence")
+
 
 # ============================================================
 # SECURITY - DEVELOPMENT

@@ -91,7 +91,10 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save(update_fields=["is_active", "updated_at"])
 
         profile, _ = UserProfile.objects.get_or_create(user=user)
-        phone = (request.data.get("phone") or "").strip()
+        raw_phone = (request.data.get("phone") or "").strip()
+        phone = normalize_phone_number(raw_phone)
+        if raw_phone and not phone:
+            return Response({"detail": "Enter a valid phone number."}, status=400)
         if phone:
             profile.full_name = request.data.get("full_name") or user.get_full_name() or user.email
             profile.phone = phone
@@ -542,7 +545,8 @@ def signup_form_view(request):
     if request.method == "POST":
         email = (request.POST.get("email") or "").strip()
         password = request.POST.get("password") or ""
-        phone = (request.POST.get("phone") or "").strip()
+        raw_phone = (request.POST.get("phone") or "").strip()
+        phone = normalize_phone_number(raw_phone)
         full_name = (request.POST.get("full_name") or "").strip()
 
         if not email or not password or not phone:

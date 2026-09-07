@@ -1,6 +1,7 @@
 import os
 import re
 import secrets
+import logging
 
 OTP_TTL_MINUTES = 5
 # Use 60 seconds cooldown for normal user OTP resend to match requirements
@@ -85,11 +86,19 @@ def send_otp_via_twilio(phone_number, otp, account_sid=None, auth_token=None, fr
         raise RuntimeError("Twilio dependency is not installed. Install 'twilio' to use the Twilio provider.")
 
     client = Client(account_sid, auth_token)
-    message = client.messages.create(
-        body=f"Your Nagri OTP is {otp}",
-        from_=from_number,
-        to=phone_number,
-    )
+    logger = logging.getLogger(__name__)
+    try:
+        message = client.messages.create(
+            body=f"Your Nagri OTP is {otp}",
+            from_=from_number,
+            to=phone_number,
+        )
+    except Exception:
+        # Do NOT log secrets (account_sid/auth_token) or the OTP value.
+        logger.exception("Failed to send registration phone OTP via Twilio for recipient=%s", phone_number)
+        # Re-raise so higher layers can invalidate persisted OTP and show a generic error.
+        raise
+
     return {"provider": "twilio", "status": "sent", "sid": getattr(message, "sid", None), "phone_number": phone_number}
 
 
