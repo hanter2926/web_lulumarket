@@ -36,6 +36,7 @@ def product_list_view(request):
     subcategory = request.GET.get("subcategory", "").strip()
     min_price = request.GET.get("min_price", "").strip()
     max_price = request.GET.get("max_price", "").strip()
+    freebies = request.GET.get("freebies", "").strip()
 
     if search:
         queryset = queryset.filter(
@@ -62,6 +63,14 @@ def product_list_view(request):
         try:
             queryset = queryset.filter(price__lte=max_price)
         except ValueError:
+            pass
+
+    # Freebies filter: show products with price <= 0 or tagged as freebies via tags field
+    if freebies:
+        try:
+            # If a numeric freebies parameter is passed (e.g. freebies=1), apply simple rule
+            queryset = queryset.filter(Q(price__lte=0) | Q(tags__icontains='freebie') | Q(tags__icontains='freebies'))
+        except Exception:
             pass
 
     paginator = Paginator(queryset, 12)
