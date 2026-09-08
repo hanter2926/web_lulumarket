@@ -47,7 +47,7 @@ button, input { font: inherit; }
 /* Secondary nav */
 .nagri-catsnav { background: var(--nagri-navy); }
 .nagri-catsnav .catsnav-inner { max-width:1300px; margin:0 auto; padding:8px 18px; }
-.cats-list { display:flex; gap:18px; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.cats-list { display:flex; gap:18px; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; overflow-y: hidden; }
 .cats-list a { color:var(--white); padding:8px 10px; border-radius:6px; font-weight:700; flex:0 0 auto; white-space:nowrap; }
 .cats-list .dropdown-toggle { display:inline-flex; align-items:center; gap:8px; }
 .cats-list .dropdown-menu { background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); margin-top:8px; padding:8px; }
