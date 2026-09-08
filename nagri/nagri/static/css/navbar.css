@@ -54,7 +54,8 @@ button, input { font: inherit; }
 .cats-list .dropdown-menu .dropdown-item { color:var(--nagri-navy); padding:8px 12px; display:block; }
 
 /* Caret */
-.cats-list .dropdown-toggle i { font-size:12px; }
+.cats-list .dropdown-toggle i { display: none; }
+.dropdown-toggle::after { display: none !important; }
 
 /* Accessibility & interactions */
 .cats-list a:hover, .topnav-links a:hover { opacity:0.95; transform:translateY(-1px); transition:all 140ms ease; }
