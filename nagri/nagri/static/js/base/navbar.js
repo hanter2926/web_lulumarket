@@ -27,6 +27,62 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 });
 
+// Ensure cats-list dropdowns toggle reliably (works alongside Bootstrap)
+document.addEventListener('DOMContentLoaded', function () {
+    const catsNav = document.querySelector('.cats-list');
+    if (!catsNav) return;
+
+    const toggles = Array.from(catsNav.querySelectorAll('.dropdown-toggle'));
+
+    function closeAllDropdowns(exceptEl) {
+        toggles.forEach(t => {
+            const parent = t.closest('.dropdown');
+            const menu = parent && parent.querySelector('.dropdown-menu');
+            if (!parent || !menu) return;
+            if (t === exceptEl) return;
+            parent.classList.remove('show');
+            menu.classList.remove('show');
+            t.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    toggles.forEach(function (t) {
+        // Ensure aria attributes exist
+        if (!t.hasAttribute('role')) t.setAttribute('role', 'button');
+        if (!t.hasAttribute('aria-expanded')) t.setAttribute('aria-expanded', 'false');
+
+        t.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const parent = t.closest('.dropdown');
+            if (!parent) return;
+            const menu = parent.querySelector('.dropdown-menu');
+            if (!menu) return;
+
+            const isOpen = parent.classList.contains('show') || menu.classList.contains('show');
+            if (isOpen) {
+                // close
+                parent.classList.remove('show');
+                menu.classList.remove('show');
+                t.setAttribute('aria-expanded', 'false');
+            } else {
+                // open this, close others
+                closeAllDropdowns(t);
+                parent.classList.add('show');
+                menu.classList.add('show');
+                t.setAttribute('aria-expanded', 'true');
+            }
+        });
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.cats-list')) {
+            closeAllDropdowns();
+        }
+    }, true);
+});
+
 // Mobile search panel toggle
 document.addEventListener('DOMContentLoaded', function(){
     var mobileSearchBtn = document.getElementById('mobileSearchBtn');
