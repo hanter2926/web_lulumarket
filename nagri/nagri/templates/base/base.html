@@ -251,5 +251,20 @@
     <!-- Page-specific JS -->
     {% block extra_js %}{% endblock %}
     
+    <!-- WhatsApp widget: popup + floating button -->
+    <div id="whatsapp-widget">
+        <div id="whatsapp-popup" class="whatsapp-popup" role="dialog" aria-hidden="true">
+            <button type="button" id="whatsapp-popup-close" class="whatsapp-close" aria-label="Close">×</button>
+            <div class="whatsapp-popup-header">Chat with us</div>
+            <div class="whatsapp-popup-body">👋 Hi! Welcome to NAGRI. How can we help you?</div>
+            <div class="whatsapp-popup-actions">
+                <a id="whatsapp-popup-chat" class="btn btn-success" href="https://wa.me/917065140327" target="_blank" rel="noopener noreferrer">Chat on WhatsApp</a>
+            </div>
+        </div>
+
+        <a id="whatsapp-floating-btn" class="whatsapp-floating-btn" href="https://wa.me/917065140327" target="_blank" rel="noopener noreferrer" aria-label="Chat on WhatsApp">
+            <i class="fab fa-whatsapp"></i>
+        </a>
+    </div>
 </body>
 </html>

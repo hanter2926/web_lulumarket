@@ -223,3 +223,56 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 });
+
+// WhatsApp widget behavior
+(function () {
+    const popup = document.getElementById('whatsapp-popup');
+    const floatingBtn = document.getElementById('whatsapp-floating-btn');
+    const closeBtn = document.getElementById('whatsapp-popup-close');
+    const popupChat = document.getElementById('whatsapp-popup-chat');
+
+    if (!popup || !floatingBtn) return;
+
+    // Track whether popup was shown/closed during this page session (in-memory only)
+    let popupShownThisSession = false;
+    let popupTimeoutId = null;
+
+    function showPopupOnce() {
+        if (popupShownThisSession) return;
+        popupShownThisSession = true;
+        popup.setAttribute('aria-hidden', 'false');
+
+        // Auto hide after 10 seconds
+        popupTimeoutId = setTimeout(() => {
+            hidePopup();
+        }, 10000);
+    }
+
+    function hidePopup() {
+        if (popupTimeoutId) {
+            clearTimeout(popupTimeoutId);
+            popupTimeoutId = null;
+        }
+        popup.setAttribute('aria-hidden', 'true');
+    }
+
+    // Show immediately on page load (only once per page session)
+    document.addEventListener('DOMContentLoaded', function () {
+        // Slight microtask delay to ensure layout is ready
+        setTimeout(showPopupOnce, 10);
+    });
+
+    // Close button manually hides popup for the rest of session
+    closeBtn && closeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        hidePopup();
+        popupShownThisSession = true;
+    });
+
+    // Clicking chat in popup opens wa link immediately (anchor handles it)
+    // Floating button should open wa link immediately; keep it always visible
+    floatingBtn.addEventListener('click', function (e) {
+        // Let anchor behave normally and also ensure popup is hidden
+        hidePopup();
+    });
+})();
