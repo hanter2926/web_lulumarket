@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Category(models.Model):
@@ -40,6 +41,9 @@ class Product(models.Model):
     tags = models.CharField(max_length=255, blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2, db_index=True)
     compare_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    is_flash_sale = models.BooleanField(default=False, db_index=True)
+    flash_sale_start = models.DateTimeField(blank=True, null=True, db_index=True)
+    flash_sale_end = models.DateTimeField(blank=True, null=True, db_index=True)
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.00, db_index=True)
     image = models.ImageField(upload_to="products/", blank=True, null=True)
     is_featured = models.BooleanField(default=False, db_index=True)
@@ -53,11 +57,40 @@ class Product(models.Model):
             models.Index(fields=["is_active", "is_featured", "is_bestseller", "created_at"]),
             models.Index(fields=["category", "is_active", "created_at"]),
             models.Index(fields=["price", "is_active"]),
+            models.Index(fields=["is_active", "is_flash_sale", "flash_sale_end"]),
         ]
 
     @property
     def in_stock(self):
         return self.inventory.stock_quantity > 0 if hasattr(self, "inventory") else False
+
+    @property
+    def flash_sale_is_active(self):
+        now = timezone.now()
+        return bool(
+            self.is_active
+            and self.is_flash_sale
+            and self.flash_sale_start
+            and self.flash_sale_end
+            and self.flash_sale_start <= now <= self.flash_sale_end
+        )
+
+    @property
+    def flash_sale_discount_percent(self):
+        if self.compare_price and self.compare_price > self.price:
+            try:
+                discount = ((float(self.compare_price) - float(self.price)) / float(self.compare_price)) * 100.0
+                return int(round(discount))
+            except (TypeError, ValueError, ZeroDivisionError):
+                return 0
+        return 0
+
+    @property
+    def flash_sale_remaining_stock(self):
+        inventory = getattr(self, "inventory", None)
+        if inventory is None:
+            return None
+        return inventory.stock_quantity
 
     def __str__(self):
         return self.name

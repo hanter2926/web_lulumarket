@@ -27,7 +27,10 @@ class ProductImageInline(admin.TabularInline):
 
 
 class ProductAdmin(admin.ModelAdmin):
-	list_display = ('id', 'name', 'category', 'price', 'is_active')
+	list_display = ('id', 'name', 'category', 'price', 'is_active', 'is_flash_sale', 'flash_sale_start', 'flash_sale_end')
+	list_filter = ('is_active', 'is_featured', 'is_bestseller', 'is_flash_sale', 'category')
+	search_fields = ('name', 'slug', 'tags', 'brand')
+	list_editable = ('is_active', 'is_flash_sale')
 	inlines = [ProductImageInline]
 
 

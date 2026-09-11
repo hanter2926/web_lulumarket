@@ -133,6 +133,71 @@ async function updateNavbarCounts() {
     }
 }
 
+function formatCountdownValue(value) {
+    return String(value).padStart(2, '0');
+}
+
+function initializeFlashSaleCountdowns() {
+    document.querySelectorAll('.flash-sale-section[data-flash-sale-end-time]').forEach((section) => {
+        const timerNode = section.querySelector('[data-flash-sale-timer]');
+        const statusNode = section.querySelector('[data-flash-sale-status-message]');
+        const targetTime = new Date(section.dataset.flashSaleEndTime);
+        const endedText = section.dataset.flashSaleEndedText || 'Flash Sale Ended';
+
+        if (!timerNode || Number.isNaN(targetTime.getTime())) {
+            if (timerNode) {
+                timerNode.textContent = endedText;
+            }
+            if (statusNode) {
+                statusNode.textContent = endedText;
+            }
+            return;
+        }
+
+        const dayNode = timerNode.querySelector('[data-countdown-days]');
+        const hourNode = timerNode.querySelector('[data-countdown-hours]');
+        const minuteNode = timerNode.querySelector('[data-countdown-minutes]');
+        const secondNode = timerNode.querySelector('[data-countdown-seconds]');
+
+        const endSale = () => {
+            section.classList.add('flash-sale-ended');
+            timerNode.textContent = endedText;
+            if (statusNode) {
+                statusNode.textContent = endedText;
+            }
+
+            section.querySelectorAll('.add-to-cart').forEach((button) => {
+                button.disabled = true;
+                button.classList.add('is-disabled');
+            });
+        };
+
+        const renderCountdown = () => {
+            const remainingMs = targetTime.getTime() - Date.now();
+
+            if (remainingMs <= 0) {
+                endSale();
+                clearInterval(intervalId);
+                return;
+            }
+
+            const totalSeconds = Math.floor(remainingMs / 1000);
+            const days = Math.floor(totalSeconds / 86400);
+            const hours = Math.floor((totalSeconds % 86400) / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            if (dayNode) dayNode.textContent = formatCountdownValue(days);
+            if (hourNode) hourNode.textContent = formatCountdownValue(hours);
+            if (minuteNode) minuteNode.textContent = formatCountdownValue(minutes);
+            if (secondNode) secondNode.textContent = formatCountdownValue(seconds);
+        };
+
+        const intervalId = window.setInterval(renderCountdown, 1000);
+        renderCountdown();
+    });
+}
+
 function bindGenericActionButtons() {
     document.querySelectorAll('.add-to-cart, .add-to-cart-btn').forEach((button) => {
         if (button.dataset.bound === 'true') return;
@@ -204,6 +269,7 @@ function bindGenericActionButtons() {
 document.addEventListener('DOMContentLoaded', function () {
     bindGenericActionButtons();
     updateNavbarCounts();
+    initializeFlashSaleCountdowns();
     // Make any product-card with data-url clickable across the site
     document.querySelectorAll('.product-card, .wishlist-card').forEach(function (card) {
         const url = card.dataset.url;

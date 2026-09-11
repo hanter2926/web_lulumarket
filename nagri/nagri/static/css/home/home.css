@@ -189,6 +189,289 @@
     font-weight: 600;
 }
 
+/* Flash Sale Section */
+.flash-sale-section {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #fff6ef 0%, #fff 48%, #fff0f0 100%);
+}
+
+.flash-sale-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle at top right, rgba(255, 111, 89, 0.12), transparent 28%), radial-gradient(circle at bottom left, rgba(0, 86, 179, 0.08), transparent 30%);
+    pointer-events: none;
+}
+
+.flash-sale-shell {
+    position: relative;
+    z-index: 1;
+    border-radius: 28px;
+    padding: 28px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 248, 244, 0.94));
+    border: 1px solid rgba(255, 111, 89, 0.16);
+    box-shadow: 0 24px 60px rgba(17, 24, 39, 0.08);
+}
+
+.flash-sale-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.flash-sale-heading {
+    max-width: 720px;
+}
+
+.section-title.section-title-left {
+    text-align: left;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.section-title.section-title-left::after {
+    left: 0;
+    transform: none;
+    width: 96px;
+}
+
+.flash-sale-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255, 111, 89, 0.1);
+    color: #d94d33;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.flash-sale-copy {
+    margin: 0;
+    color: #5b6472;
+    font-size: 1rem;
+    line-height: 1.7;
+}
+
+.flash-sale-countdown-panel {
+    min-width: 320px;
+    padding: 18px 20px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #1f4b99 0%, #0f2f67 100%);
+    color: white;
+    box-shadow: 0 18px 40px rgba(15, 47, 103, 0.22);
+}
+
+.flash-sale-countdown-label {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.flash-sale-countdown {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.countdown-unit {
+    min-width: 64px;
+    padding: 8px 10px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.12);
+    text-align: center;
+    backdrop-filter: blur(8px);
+}
+
+.countdown-number {
+    display: block;
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.countdown-text {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.86;
+}
+
+.countdown-separator {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.flash-sale-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+    gap: 18px;
+}
+
+.flash-sale-card {
+    background: #fff;
+    border: 1px solid rgba(17, 24, 39, 0.08);
+    border-radius: 22px;
+    overflow: hidden;
+    box-shadow: 0 10px 26px rgba(17, 24, 39, 0.06);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.flash-sale-card:hover {
+    transform: translateY(-6px);
+    border-color: rgba(255, 111, 89, 0.32);
+    box-shadow: 0 18px 32px rgba(17, 24, 39, 0.12);
+}
+
+.flash-sale-card-image {
+    position: relative;
+    height: 220px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #fff8f4 0%, #f5f8ff 100%);
+}
+
+.flash-sale-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.35s ease;
+}
+
+.flash-sale-card:hover .flash-sale-card-image img {
+    transform: scale(1.06);
+}
+
+.flash-sale-badge-row {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.flash-sale-badge,
+.flash-sale-discount {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: white;
+    background: linear-gradient(135deg, #ff6f59 0%, #d9480f 100%);
+    box-shadow: 0 8px 18px rgba(217, 72, 15, 0.22);
+}
+
+.flash-sale-stock {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(17, 24, 39, 0.74);
+    color: white;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.flash-sale-info {
+    padding: 18px;
+}
+
+.flash-sale-category {
+    margin: 0 0 8px 0;
+    color: #d94d33;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.flash-sale-name {
+    margin: 0 0 12px 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #14213d;
+    line-height: 1.45;
+}
+
+.flash-sale-rating {
+    margin-bottom: 14px;
+}
+
+.flash-sale-prices {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.flash-sale-price {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #0f2f67;
+}
+
+.flash-sale-original-price {
+    font-size: 0.95rem;
+    text-decoration: line-through;
+    color: #7b8495;
+}
+
+.flash-sale-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.flash-sale-actions .btn {
+    flex: 1;
+    border-radius: 12px;
+}
+
+.flash-sale-actions .btn-primary {
+    background: linear-gradient(135deg, #ff6f59 0%, #d9480f 100%);
+    border-color: transparent;
+}
+
+.flash-sale-actions .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(217, 72, 15, 0.22);
+}
+
+.flash-sale-actions .btn[disabled] {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.flash-sale-ended .flash-sale-countdown {
+    justify-content: flex-start;
+}
+
+.flash-sale-ended .add-to-cart {
+    pointer-events: none;
+}
+
 /* Products Section */
 .products-section {
     background-color: #ffffff;
@@ -388,6 +671,81 @@
 
 .product-actions i {
     margin-right: 5px;
+}
+
+@media (max-width: 991px) {
+    .flash-sale-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .flash-sale-countdown-panel {
+        min-width: 0;
+        width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .flash-sale-shell {
+        padding: 18px;
+        border-radius: 20px;
+    }
+
+    .flash-sale-grid {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 14px;
+    }
+
+    .flash-sale-card-image {
+        height: 180px;
+    }
+
+    .flash-sale-info {
+        padding: 14px;
+    }
+
+    .flash-sale-name {
+        font-size: 0.98rem;
+    }
+
+    .flash-sale-price {
+        font-size: 1.35rem;
+    }
+
+    .flash-sale-actions {
+        flex-direction: column;
+    }
+
+    .flash-sale-countdown {
+        gap: 6px;
+    }
+
+    .countdown-unit {
+        min-width: 58px;
+        padding: 7px 8px;
+    }
+
+    .countdown-number {
+        font-size: 1.25rem;
+    }
+
+    .countdown-separator {
+        font-size: 1.2rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .flash-sale-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .flash-sale-countdown-panel {
+        padding: 14px 15px;
+    }
+
+    .flash-sale-countdown {
+        justify-content: flex-start;
+    }
 }
 
 /* Benefits Section */

@@ -295,6 +295,134 @@
     </div>
 </section>
 
+{% if flash_sale_has_items %}
+<section class="flash-sale-section py-5" data-flash-sale-countdown data-flash-sale-status="{{ flash_sale_status }}" data-flash-sale-end-time="{% if flash_sale_end_time %}{{ flash_sale_end_time|date:'c' }}{% endif %}" data-flash-sale-ended-text="Flash Sale Ended">
+    <div class="container">
+        <div class="flash-sale-shell">
+            <div class="flash-sale-header">
+                <div class="flash-sale-heading">
+                    <span class="flash-sale-kicker">Limited time deals</span>
+                    <h2 class="section-title section-title-left">🔥 Flash Sale</h2>
+                    <p class="flash-sale-copy">
+                        {% if flash_sale_status == 'active' %}
+                            Grab these deals before time runs out.
+                        {% else %}
+                            The flash sale has ended. Check back soon for the next drop.
+                        {% endif %}
+                    </p>
+                </div>
+
+                <div class="flash-sale-countdown-panel">
+                    <span class="flash-sale-countdown-label" data-flash-sale-status-message>
+                        {% if flash_sale_status == 'active' %}Ends In{% else %}Flash Sale Ended{% endif %}
+                    </span>
+                    <div class="flash-sale-countdown" data-flash-sale-timer aria-live="polite">
+                        {% if flash_sale_status == 'active' %}
+                            <div class="countdown-unit">
+                                <span class="countdown-number" data-countdown-days>00</span>
+                                <span class="countdown-text">Days</span>
+                            </div>
+                            <span class="countdown-separator">:</span>
+                            <div class="countdown-unit">
+                                <span class="countdown-number" data-countdown-hours>00</span>
+                                <span class="countdown-text">Hours</span>
+                            </div>
+                            <span class="countdown-separator">:</span>
+                            <div class="countdown-unit">
+                                <span class="countdown-number" data-countdown-minutes>00</span>
+                                <span class="countdown-text">Minutes</span>
+                            </div>
+                            <span class="countdown-separator">:</span>
+                            <div class="countdown-unit">
+                                <span class="countdown-number" data-countdown-seconds>00</span>
+                                <span class="countdown-text">Seconds</span>
+                            </div>
+                        {% else %}
+                            Flash Sale Ended
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            {% if flash_sale_products %}
+                <div class="flash-sale-grid">
+                    {% for product in flash_sale_products %}
+                        {% with remaining_stock=product.flash_sale_remaining_stock %}
+                        <article class="flash-sale-card product-card" data-url="{% url 'product_detail' product.id %}" role="button" tabindex="0">
+                            <div class="flash-sale-card-image">
+                                {% with first_image=product.images.all|first %}
+                                    {% if first_image and first_image.image %}
+                                        <img src="{{ first_image.image.url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
+                                    {% elif product.image %}
+                                        <img src="{{ product.image.url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
+                                    {% else %}
+                                        <div class="placeholder-image">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                    {% endif %}
+                                {% endwith %}
+
+                                <div class="flash-sale-badge-row">
+                                    <span class="flash-sale-badge">Flash Deal</span>
+                                    {% if product.flash_sale_discount_percent %}
+                                        <span class="flash-sale-discount">{{ product.flash_sale_discount_percent }}% OFF</span>
+                                    {% endif %}
+                                </div>
+
+                                {% if flash_sale_status == 'active' and remaining_stock %}
+                                    <div class="flash-sale-stock">Only {{ remaining_stock }} left</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="flash-sale-info">
+                                <p class="flash-sale-category">{{ product.category.name }}</p>
+                                <h3 class="flash-sale-name">{{ product.name }}</h3>
+
+                                <div class="product-rating flash-sale-rating">
+                                    <div class="stars">
+                                        {% for i in "12345" %}
+                                            {% if forloop.counter <= product.rating %}
+                                                <i class="fas fa-star"></i>
+                                            {% else %}
+                                                <i class="far fa-star"></i>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                    <span class="rating-value">({{ product.rating }})</span>
+                                </div>
+
+                                <div class="flash-sale-prices">
+                                    <span class="flash-sale-price">₹{{ product.price }}</span>
+                                    {% if product.compare_price and product.compare_price > product.price %}
+                                        <span class="flash-sale-original-price">₹{{ product.compare_price }}</span>
+                                    {% endif %}
+                                </div>
+
+                                <div class="flash-sale-actions product-actions">
+                                    {% if flash_sale_status == 'active' and remaining_stock %}
+                                        <button class="btn btn-primary btn-sm add-to-cart" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
+                                            <i class="fas fa-shopping-cart"></i> Add to Cart
+                                        </button>
+                                    {% else %}
+                                        <button class="btn btn-primary btn-sm" disabled>
+                                            <i class="fas fa-ban"></i> Sold Out
+                                        </button>
+                                    {% endif %}
+                                    <button class="btn btn-outline-primary btn-sm add-to-wishlist" data-product-id="{{ product.id }}" onclick="event.stopPropagation();">
+                                        <i class="fas fa-heart"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                        {% endwith %}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
 <!-- Featured Products -->
 {% if featured_products %}
 <section class="products-section py-5">

@@ -5,6 +5,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden, JsonResponse
 from django.views.decorators.http import require_POST
+from django.utils import timezone
 
 from products.models import Product, Category
 from orders.models import Order
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 def home(request):
     """Home page view with featured products, bestsellers, new arrivals, and promotional sliders."""
+    now = timezone.now()
     featured_products = (
         Product.objects.filter(is_featured=True, is_active=True)
         .select_related("category")
@@ -91,6 +93,37 @@ def home(request):
         )
         .order_by("-rating")[:6]
     )
+    flash_sale_queryset = (
+        Product.objects.filter(is_active=True, is_flash_sale=True)
+        .select_related("category", "inventory")
+        .prefetch_related("images")
+        .order_by("flash_sale_end", "-created_at")
+    )
+    active_flash_sale_queryset = flash_sale_queryset.filter(
+        flash_sale_start__isnull=False,
+        flash_sale_end__isnull=False,
+        flash_sale_start__lte=now,
+        flash_sale_end__gte=now,
+    )
+    flash_sale_products = list(active_flash_sale_queryset[:8])
+    flash_sale_status = "ended"
+    flash_sale_end_time = None
+    flash_sale_has_items = False
+
+    if flash_sale_products:
+        flash_sale_status = "active"
+        flash_sale_end_time = (
+            active_flash_sale_queryset.order_by("-flash_sale_end")
+            .values_list("flash_sale_end", flat=True)
+            .first()
+        )
+        flash_sale_has_items = True
+    else:
+        flash_sale_has_items = flash_sale_queryset.filter(
+            flash_sale_start__isnull=False,
+            flash_sale_end__isnull=False,
+            flash_sale_end__lt=now,
+        ).exists()
     categories = Category.objects.annotate(product_count=Count("products", distinct=True)).order_by("name")
     
     # Prefer the admin-managed HomeSlider model (accounts.HomeSlider).
@@ -154,6 +187,10 @@ def home(request):
         'bestseller_products': bestseller_products,
         'new_arrivals': new_arrivals,
         'top_rated_products': top_rated_products,
+        'flash_sale_products': flash_sale_products,
+        'flash_sale_status': flash_sale_status,
+        'flash_sale_end_time': flash_sale_end_time,
+        'flash_sale_has_items': flash_sale_has_items,
         'categories': categories,
         'orders_count': orders_count,
         'sliders': active_sliders,
