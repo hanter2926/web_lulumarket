@@ -320,9 +320,14 @@
 }
 
 .flash-sale-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 18px;
+}
+
+.flash-sale-grid > .flash-sale-card {
+    flex: 0 0 calc((100% - 36px) / 3);
+    max-width: calc((100% - 36px) / 3);
 }
 
 .flash-sale-card {
@@ -683,6 +688,11 @@
         min-width: 0;
         width: 100%;
     }
+
+    .flash-sale-grid > .flash-sale-card {
+        flex-basis: calc((100% - 18px) / 2);
+        max-width: calc((100% - 18px) / 2);
+    }
 }
 
 @media (max-width: 768px) {
@@ -692,8 +702,12 @@
     }
 
     .flash-sale-grid {
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 14px;
+    }
+
+    .flash-sale-grid > .flash-sale-card {
+        flex-basis: 100%;
+        max-width: 100%;
     }
 
     .flash-sale-card-image {
@@ -735,10 +749,6 @@
 }
 
 @media (max-width: 480px) {
-    .flash-sale-grid {
-        grid-template-columns: 1fr;
-    }
-
     .flash-sale-countdown-panel {
         padding: 14px 15px;
     }
