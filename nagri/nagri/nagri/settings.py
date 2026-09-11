@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "orders",
     "cart",
     "wishlist",
+    "rewards",
 ]
 
 # Cloudinary apps are optional; only add if the packages are installed to avoid import errors

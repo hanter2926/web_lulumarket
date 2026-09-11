@@ -1,4 +1,4 @@
-modules = ['accounts.admin','products.admin','orders.admin','cart.admin','wishlist.admin','unyan.admin']
+modules = ['accounts.admin','products.admin','orders.admin','cart.admin','wishlist.admin','unyan.admin','rewards.admin']
 import importlib, traceback
 for m in modules:
     try:

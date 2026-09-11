@@ -33,6 +33,9 @@
                             {% csrf_token %}
                             <div class="coupon-box">
                                 <h3>Apply coupon</h3>
+                                {% if reward_claim %}
+                                    <p class="text-success mb-2"><strong>Mystery reward applied:</strong> {{ reward_claim.reward_type.reward_label }} ({{ reward_claim.reward_code }})</p>
+                                {% endif %}
                                 <div class="coupon-row">
                                     {{ coupon_form.coupon_code }}
                                     <button type="submit" class="btn btn-outline-primary" name="action" value="apply_coupon">Apply</button>
@@ -70,6 +73,9 @@
                     <div class="summary-row"><span>Discount</span>
                         <span>-₹{{ discount_amount }}</span>
                     </div>
+                    {% if reward_discount_amount %}
+                    <div class="summary-row"><span>Mystery Reward</span><span>-₹{{ reward_discount_amount }}</span></div>
+                    {% endif %}
                     <div class="summary-row"><span>You Saved</span><span>{% if discount_percent %}{{ discount_percent|floatformat:2 }}%{% else %}0%{% endif %}</span></div>
                     <div class="summary-row"><span>Delivery</span><span>₹{{ delivery_charge }}</span></div>
                     <div class="summary-divider"></div>

@@ -295,6 +295,85 @@
     </div>
 </section>
 
+{% if mystery_reward_config.is_enabled %}
+<section class="mystery-reward-section py-4" data-mystery-reward-widget data-claim-url="{% url 'mystery_box_claim' %}" data-login-url="{% url 'login_page' %}">
+    <div class="container">
+        <div class="mystery-reward-card {% if mystery_reward_current_claim %}has-claim{% endif %}">
+            <div class="mystery-reward-art" aria-hidden="true">
+                <div class="mystery-box-visual">
+                    <span class="box-spark box-spark-one"></span>
+                    <span class="box-spark box-spark-two"></span>
+                    <div class="box-lid"></div>
+                    <div class="box-body"></div>
+                </div>
+            </div>
+
+            <div class="mystery-reward-copy">
+                <span class="mystery-reward-eyebrow">Daily Bonus</span>
+                <h2>{{ mystery_reward_config.display_title }}</h2>
+                <p>{{ mystery_reward_config.display_subtitle }}</p>
+
+                {% if user.is_authenticated %}
+                    {% if mystery_reward_current_claim %}
+                        <div class="mystery-reward-status-panel">
+                            <div class="status-pill status-pill-active">{{ mystery_reward_current_claim.display_state }}</div>
+                            <strong>{{ mystery_reward_current_claim.reward_type.reward_label }}</strong>
+                            <span>Code: {{ mystery_reward_current_claim.reward_code }}</span>
+                            <span>Claimed: {{ mystery_reward_current_claim.claimed_date }}</span>
+                        </div>
+                    {% else %}
+                        <p class="mystery-reward-note">Open once per day. Your reward is stored securely in your account.</p>
+                    {% endif %}
+                {% else %}
+                    <p class="mystery-reward-note">Login required before you can claim your reward.</p>
+                {% endif %}
+            </div>
+
+            <div class="mystery-reward-actions">
+                <button
+                    type="button"
+                    class="btn btn-primary mystery-reward-trigger"
+                    data-mystery-reward-open
+                    {% if not user.is_authenticated %}data-login-required="true"{% endif %}
+                >
+                    {% if user.is_authenticated %}
+                        {% if mystery_reward_current_claim %}View Reward{% else %}{{ mystery_reward_config.button_label }}{% endif %}
+                    {% else %}
+                        Login to Open
+                    {% endif %}
+                </button>
+                <small>One reward per day. Stored in your account and reused at checkout.</small>
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="mystery-reward-modal" id="mysteryRewardModal" aria-hidden="true">
+    <div class="mystery-reward-modal-backdrop" data-mystery-reward-close></div>
+    <div class="mystery-reward-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="mysteryRewardModalTitle">
+        <button type="button" class="mystery-reward-modal-close" data-mystery-reward-close aria-label="Close reward box">&times;</button>
+        <div class="mystery-reward-modal-content">
+            <div class="mystery-reward-animation">
+                <div class="mystery-box-modal" data-mystery-reward-box>
+                    <span class="box-glow"></span>
+                    <div class="box-lid"></div>
+                    <div class="box-body"></div>
+                </div>
+            </div>
+            <div class="mystery-reward-result">
+                <p class="mystery-reward-eyebrow">Mystery Reward Box</p>
+                <h3 id="mysteryRewardModalTitle" data-mystery-reward-result-title>Open the box to reveal your reward</h3>
+                <p data-mystery-reward-result-message>Click below to claim today's reward.</p>
+                <div class="mystery-reward-result-details" data-mystery-reward-result-details></div>
+                <button type="button" class="btn btn-primary mystery-reward-claim-btn" data-mystery-reward-claim>
+                    {{ mystery_reward_config.button_label }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% if flash_sale_has_items %}
 <section class="flash-sale-section py-5" data-flash-sale-countdown data-flash-sale-status="{{ flash_sale_status }}" data-flash-sale-end-time="{% if flash_sale_end_time %}{{ flash_sale_end_time|date:'c' }}{% endif %}" data-flash-sale-ended-text="Flash Sale Ended">
     <div class="container">

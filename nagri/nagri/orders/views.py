@@ -19,6 +19,11 @@ from django.db import DatabaseError
 from cart.models import Cart
 from products.models import Product
 from accounts.models import Address
+from rewards.utils import (
+    calculate_reward_adjustment,
+    get_available_claim_for_checkout,
+    mark_reward_claim_used_for_order,
+)
 
 from .models import Order, OrderItem, UpiPaymentSubmission
 from .serializers import OrderItemSerializer, OrderSerializer
@@ -243,6 +248,13 @@ def checkout_payment_view(request):
         original_subtotal = Decimal(0)
 
     delivery_charge = Decimal(get_delivery_charge(delivery_method))
+    reward_claim = get_available_claim_for_checkout(request.user)
+    if reward_claim:
+        request.session['checkout_coupon'] = reward_claim.reward_code
+
+    reward_adjustment = calculate_reward_adjustment(reward_claim, discounted_subtotal, delivery_charge)
+    reward_discount_amount = reward_adjustment['reward_discount']
+    delivery_charge = reward_adjustment['delivery_charge']
 
     # Compute discount amount/percent from the two subtotals
     discount_amount = (original_subtotal - discounted_subtotal) if original_subtotal > discounted_subtotal else Decimal(0)
@@ -255,7 +267,7 @@ def checkout_payment_view(request):
         discount_percent = Decimal(0)
 
     # Final payable is discounted subtotal plus delivery
-    total = discounted_subtotal + delivery_charge
+    total = discounted_subtotal - reward_discount_amount + delivery_charge
     
     context = {
         'payment_form': payment_form,
@@ -264,6 +276,8 @@ def checkout_payment_view(request):
         'discounted_subtotal': discounted_subtotal,
         'delivery_charge': delivery_charge,
         'discount_amount': discount_amount,
+        'reward_discount_amount': reward_discount_amount,
+        'reward_claim': reward_claim,
         'discount_percent': discount_percent,
         'total': total,
         'delivery_method': delivery_method,
@@ -308,7 +322,15 @@ def checkout_review_view(request):
 
     delivery_charge = get_delivery_charge(delivery_method)
     discount_amount = (original_subtotal - discounted_subtotal) if original_subtotal > discounted_subtotal else Decimal(0)
-    total = discounted_subtotal + delivery_charge
+    reward_claim = get_available_claim_for_checkout(user)
+    if reward_claim:
+        coupon_code = reward_claim.reward_code
+        request.session['checkout_coupon'] = coupon_code
+
+    reward_adjustment = calculate_reward_adjustment(reward_claim, discounted_subtotal, delivery_charge)
+    reward_discount_amount = reward_adjustment['reward_discount']
+    delivery_charge = reward_adjustment['delivery_charge']
+    total = discounted_subtotal - reward_discount_amount + delivery_charge
     
     if request.method == 'POST':
         # Create order
@@ -335,6 +357,9 @@ def checkout_review_view(request):
             status='pending',
             is_paid=False,
         )
+
+        if order.payment_method == 'cod':
+            mark_reward_claim_used_for_order(order)
         
         # Create order items
         for cart_item in cart_items:
@@ -370,6 +395,8 @@ def checkout_review_view(request):
         'discounted_subtotal': discounted_subtotal,
         'delivery_charge': delivery_charge,
         'discount_amount': discount_amount,
+        'reward_discount_amount': reward_discount_amount,
+        'reward_claim': reward_claim,
         'total': total,
     }
     return render(request, 'checkout/order_review.html', context)
@@ -488,6 +515,9 @@ def payment_success_view(request, order_id):
         messages.error(request, 'Payment not completed for this order. Please complete payment first.')
         return redirect('payment_page', order_id=order.id)
 
+    if order.payment_method == 'cod':
+        mark_reward_claim_used_for_order(order)
+
     items = order.items.all().select_related('product')
     return render(request, 'payment/payment_success.html', {'order': order, 'items': items})
 
@@ -545,6 +575,7 @@ def verify_payment(request):
     order.is_paid = True
     order.status = "paid"
     order.save(update_fields=["razorpay_payment_id", "razorpay_signature", "is_paid", "status", "updated_at"])
+    mark_reward_claim_used_for_order(order)
 
     return Response({"detail": "Payment verified and order marked as paid.", "order_id": order.id}, status=status.HTTP_200_OK)
 
@@ -587,6 +618,7 @@ def payment_webhook(request):
     order.is_paid = True
     order.status = "paid"
     order.save(update_fields=["razorpay_payment_id", "razorpay_signature", "is_paid", "status", "updated_at"])
+    mark_reward_claim_used_for_order(order)
     return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
 

@@ -198,6 +198,123 @@ function initializeFlashSaleCountdowns() {
     });
 }
 
+function initializeMysteryRewardWidget() {
+    const widget = document.querySelector('[data-mystery-reward-widget]');
+    if (!widget) return;
+
+    const claimUrl = widget.dataset.claimUrl;
+    const loginUrl = widget.dataset.loginUrl || '/accounts/auth/';
+    const trigger = widget.querySelector('[data-mystery-reward-open]');
+    const modal = document.getElementById('mysteryRewardModal');
+    const closeButtons = modal ? modal.querySelectorAll('[data-mystery-reward-close]') : [];
+    const claimButton = modal ? modal.querySelector('[data-mystery-reward-claim]') : null;
+    const box = modal ? modal.querySelector('[data-mystery-reward-box]') : null;
+    const titleNode = modal ? modal.querySelector('[data-mystery-reward-result-title]') : null;
+    const messageNode = modal ? modal.querySelector('[data-mystery-reward-result-message]') : null;
+    const detailsNode = modal ? modal.querySelector('[data-mystery-reward-result-details]') : null;
+    const existingClaim = widget.querySelector('.mystery-reward-status-panel');
+    const isAuthenticated = !trigger?.dataset.loginRequired;
+
+    if (!trigger || !modal || !claimUrl) return;
+
+    const openModal = () => {
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+    };
+
+    const closeModal = () => {
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        if (box) box.classList.remove('is-opening');
+    };
+
+    const renderClaim = (claim) => {
+        if (!detailsNode) return;
+        detailsNode.innerHTML = [
+            `<span class="reward-detail-pill">Reward: ${claim.reward_label}</span>`,
+            `<span class="reward-detail-pill reward-detail-code">Code: ${claim.reward_code}</span>`,
+            `<span class="reward-detail-pill">Expires: ${new Date(claim.expires_at).toLocaleDateString()}</span>`,
+        ].join('');
+    };
+
+    if (claimButton) {
+        claimButton.addEventListener('click', async () => {
+            if (!isAuthenticated) {
+                window.location.href = loginUrl + '?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+                return;
+            }
+
+            try {
+                claimButton.disabled = true;
+                openModal();
+                if (box) {
+                    box.classList.add('is-opening');
+                }
+                if (titleNode) titleNode.textContent = 'Opening your mystery box...';
+                if (messageNode) messageNode.textContent = 'Please wait while we reveal your reward.';
+
+                const response = await fetchJson(claimUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
+
+                if (response.success && response.claim) {
+                    if (titleNode) titleNode.textContent = response.message || 'Reward Claimed';
+                    if (messageNode) messageNode.textContent = response.claim.reward_label;
+                    renderClaim(response.claim);
+                    widget.classList.add('has-claim');
+                    if (existingClaim) {
+                        existingClaim.querySelector('.status-pill')?.textContent = response.claim.state || 'Active';
+                    }
+                    trigger.textContent = 'View Reward';
+                    return;
+                }
+
+                if (messageNode) messageNode.textContent = response.message || 'Unable to claim reward.';
+            } catch (error) {
+                if (error.message && error.message.toLowerCase().includes('already claimed')) {
+                    if (titleNode) titleNode.textContent = 'Reward already claimed';
+                    if (messageNode) messageNode.textContent = error.message;
+                } else if (titleNode) {
+                    titleNode.textContent = 'Reward unavailable';
+                    if (messageNode) messageNode.textContent = error.message || 'Please try again later.';
+                }
+            } finally {
+                claimButton.disabled = false;
+                if (box) {
+                    window.setTimeout(() => box.classList.remove('is-opening'), 900);
+                }
+            }
+        });
+    }
+
+    trigger.addEventListener('click', () => {
+        if (!isAuthenticated) {
+            window.location.href = loginUrl + '?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+            return;
+        }
+        openModal();
+        if (existingClaim && titleNode && messageNode) {
+            titleNode.textContent = 'Your current reward';
+            messageNode.textContent = existingClaim.innerText.trim();
+            if (detailsNode) detailsNode.innerHTML = '';
+        }
+    });
+
+    closeButtons.forEach((button) => button.addEventListener('click', closeModal));
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && modal.classList.contains('is-open')) {
+            closeModal();
+        }
+    });
+}
+
 function bindGenericActionButtons() {
     document.querySelectorAll('.add-to-cart, .add-to-cart-btn').forEach((button) => {
         if (button.dataset.bound === 'true') return;
@@ -270,6 +387,7 @@ document.addEventListener('DOMContentLoaded', function () {
     bindGenericActionButtons();
     updateNavbarCounts();
     initializeFlashSaleCountdowns();
+    initializeMysteryRewardWidget();
     // Make any product-card with data-url clickable across the site
     document.querySelectorAll('.product-card, .wishlist-card').forEach(function (card) {
         const url = card.dataset.url;

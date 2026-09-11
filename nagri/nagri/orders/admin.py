@@ -1,5 +1,6 @@
 from django.contrib import admin
 from .models import Order, OrderItem
+from rewards.utils import mark_reward_claim_used_for_order
 
 from .models import UpiPaymentSubmission
 from django.utils import timezone
@@ -26,6 +27,7 @@ class UpiPaymentSubmissionAdmin(admin.ModelAdmin):
 				order.status = "paid"
 				order.payment_provider = "manual_upi"
 				order.save(update_fields=["is_paid", "status", "payment_provider", "updated_at"])
+				mark_reward_claim_used_for_order(order)
 			except Exception:
 				logger.exception('Error approving UPI submission id=%s', getattr(submission, 'id', None))
 	approve_submission.short_description = "Approve selected UPI submissions"

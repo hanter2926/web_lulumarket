@@ -10,6 +10,7 @@ from django.utils import timezone
 from products.models import Product, Category
 from orders.models import Order
 from accounts.decorators import owner_required
+from rewards.utils import get_reward_config, get_today_claim_for_user, get_latest_claim_for_user
 from .forms import ContactSupportForm, HomeSliderForm
 # Use the HomeSlider model that administrators edit in the admin site.
 # Historically HomeSlider was defined in two places; ensure we use the accounts app's model
@@ -182,6 +183,11 @@ def home(request):
     if request.user.is_authenticated:
         orders_count = Order.objects.filter(user=request.user).count()
 
+    mystery_reward_config = get_reward_config()
+    mystery_reward_today_claim = get_today_claim_for_user(request.user) if request.user.is_authenticated else None
+    mystery_reward_latest_claim = get_latest_claim_for_user(request.user) if request.user.is_authenticated else None
+    mystery_reward_current_claim = mystery_reward_today_claim or mystery_reward_latest_claim
+
     context = {
         'featured_products': featured_products,
         'bestseller_products': bestseller_products,
@@ -194,6 +200,10 @@ def home(request):
         'categories': categories,
         'orders_count': orders_count,
         'sliders': active_sliders,
+        'mystery_reward_config': mystery_reward_config,
+        'mystery_reward_today_claim': mystery_reward_today_claim,
+        'mystery_reward_latest_claim': mystery_reward_latest_claim,
+        'mystery_reward_current_claim': mystery_reward_current_claim,
     }
     return render(request, 'home/home.html', context)
 
