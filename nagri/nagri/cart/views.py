@@ -58,7 +58,7 @@ class CartItemViewSet(viewsets.ModelViewSet):
         serializer.save(cart=cart)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 @require_POST
 def add_to_cart(request):
     try:
@@ -96,14 +96,14 @@ def add_to_cart(request):
     })
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def cart_count_view(request):
     cart, _ = Cart.objects.get_or_create(user=request.user)
     total = cart.items.aggregate(total=Sum("quantity"))["total"] or 0
     return JsonResponse({"count": total})
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 @require_POST
 def remove_from_cart(request, item_id):
     cart = Cart.objects.filter(user=request.user).first()
@@ -117,7 +117,7 @@ def remove_from_cart(request, item_id):
     return JsonResponse({"success": True, "count": cart.items.aggregate(total=Sum("quantity"))["total"] or 0})
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 @require_POST
 def update_cart_item(request, item_id):
     try:
@@ -143,7 +143,7 @@ def update_cart_item(request, item_id):
     return JsonResponse({"success": True, "quantity": item.quantity, "count": cart.items.aggregate(total=Sum("quantity"))["total"] or 0})
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def cart_detail_view(request):
     """Display shopping cart for the user"""
     cart, _ = Cart.objects.get_or_create(user=request.user)

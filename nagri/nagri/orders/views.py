@@ -35,7 +35,7 @@ def razorpay_is_configured():
     return bool(settings.RAZORPAY_KEY_ID and settings.RAZORPAY_KEY_SECRET)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def order_list_view(request):
     """Display user's orders with statistics"""
     orders = Order.objects.filter(user=request.user).prefetch_related('items__product').order_by('-created_at')
@@ -55,7 +55,7 @@ def order_list_view(request):
     return render(request, 'orders/order_list.html', context)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def order_detail_view(request, order_id):
     """Display detailed information about a specific order"""
     order = get_object_or_404(Order, id=order_id, user=request.user)
@@ -68,7 +68,7 @@ def order_detail_view(request, order_id):
     return render(request, 'orders/order_detail.html', context)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def checkout_view(request):
     """First step of checkout - review cart items"""
     cart, _ = Cart.objects.get_or_create(user=request.user)
@@ -92,7 +92,7 @@ def checkout_view(request):
     return render(request, 'checkout/checkout.html', context)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def checkout_address_view(request):
     """Second step - select/enter shipping address"""
     from .forms import CheckoutAddressForm
@@ -163,7 +163,7 @@ def checkout_address_view(request):
     return render(request, 'checkout/address.html', context)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def checkout_delivery_view(request):
     """Third step - select delivery method"""
     from .forms import DeliveryMethodForm
@@ -191,7 +191,7 @@ def checkout_delivery_view(request):
     return render(request, 'checkout/delivery.html', context)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def checkout_payment_view(request):
     """Fourth step - select payment method"""
     from .forms import PaymentMethodForm, CouponForm
@@ -285,7 +285,7 @@ def checkout_payment_view(request):
     return render(request, 'checkout/payment.html', context)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def checkout_review_view(request):
     """Fifth step - review order before placing"""
     user = request.user
@@ -402,7 +402,7 @@ def checkout_review_view(request):
     return render(request, 'checkout/order_review.html', context)
 
 
-@login_required(login_url='login')
+@login_required(login_url='accounts:email_login')
 def order_confirmation_view(request, order_id):
     """Order confirmation page after successful order placement"""
     order = get_object_or_404(Order, id=order_id, user=request.user)
@@ -425,7 +425,7 @@ def get_delivery_charge(delivery_method):
     return charges.get(delivery_method, Decimal(0))
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def payment_page_view(request, order_id):
     """Render payment page for an order. For online payments create a Razorpay order id if missing."""
     order = get_object_or_404(Order, id=order_id, user=request.user)
@@ -468,7 +468,7 @@ def payment_page_view(request, order_id):
     return render(request, 'payment/payment.html', context)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def upi_submit_view(request, order_id):
     order = get_object_or_404(Order, id=order_id, user=request.user)
 
@@ -504,7 +504,7 @@ def upi_submit_view(request, order_id):
     return redirect('order_detail', order_id=order.id)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def payment_success_view(request, order_id):
     order = get_object_or_404(Order, id=order_id, user=request.user)
     # Allow viewing success/order page for one of:
@@ -522,7 +522,7 @@ def payment_success_view(request, order_id):
     return render(request, 'payment/payment_success.html', {'order': order, 'items': items})
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def payment_failed_view(request, order_id):
     order = get_object_or_404(Order, id=order_id, user=request.user)
     return render(request, 'payment/payment_failed.html', {'order': order})

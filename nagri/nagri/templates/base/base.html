@@ -46,7 +46,7 @@
 
                 <div class="topnav-links d-none d-lg-flex">
                     <a class="topnav-pill" href="{% url 'home' %}">Main Page</a>
-                    <a class="topnav-pill" href="{% url 'dashboard_page' %}">Dashboard</a>
+                    <a class="topnav-pill" href="{% url 'accounts:dashboard_page' %}">Dashboard</a>
                 </div>
             </div>
 
@@ -84,12 +84,12 @@
                     </button>
 
                     {% if user.is_authenticated %}
-                        <a href="{% url 'dashboard_page' %}" class="icon-wrap" title="My Account">
+                        <a href="{% url 'accounts:dashboard_page' %}" class="icon-wrap" title="My Account">
                             <div class="icon-btn"><i class="fas fa-user-circle"></i></div>
                             <div class="icon-label">Account</div>
                         </a>
                     {% else %}
-                        <a href="{% url 'login_page' %}" class="icon-wrap" title="Sign In">
+                        <a href="{% url 'accounts:email_login' %}" class="icon-wrap" title="Sign In">
                             <div class="icon-btn"><i class="fas fa-user-circle"></i></div>
                             <div class="icon-label">Sign In</div>
                         </a>

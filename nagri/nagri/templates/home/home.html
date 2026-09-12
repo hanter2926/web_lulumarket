@@ -296,7 +296,7 @@
 </section>
 
 {% if mystery_reward_config.is_enabled %}
-<section class="mystery-reward-section" data-mystery-reward-widget data-claim-url="{% url 'mystery_box_claim' %}" data-login-url="{% url 'login_page' %}">
+    <section class="mystery-reward-section" data-mystery-reward-widget data-claim-url="{% url 'mystery_box_claim' %}" data-login-url="{% url 'accounts:email_login' %}">
     <div class="container">
         <div class="mystery-reward-shell">
             <div class="mystery-reward-card {% if mystery_reward_current_claim %}has-claim{% endif %}" data-mystery-reward-card>

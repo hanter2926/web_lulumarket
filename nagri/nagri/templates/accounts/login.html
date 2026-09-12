@@ -26,7 +26,7 @@
                 {% endfor %}
             {% endif %}
 
-            <form method="post" action="{% url 'email_login' %}" class="login-form">
+            <form method="post" action="{% url 'accounts:email_login' %}" class="login-form">
                 {% csrf_token %}
 
                 <div class="form-group">

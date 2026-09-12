@@ -10,7 +10,7 @@ def owner_required(view_func):
         if not (user and user.is_authenticated and getattr(user, 'is_owner', False)):
             # If not authenticated, redirect to login page, else raise permission denied
             if not (user and user.is_authenticated):
-                return redirect('login_page')
+                return redirect('accounts:email_login')
             raise PermissionDenied()
         return view_func(request, *args, **kwargs)
 

@@ -5,7 +5,7 @@ from django.views.decorators.http import require_POST
 from .utils import claim_daily_reward, format_reward_value
 
 
-@login_required(login_url="login_page")
+@login_required(login_url="accounts:email_login")
 @require_POST
 def claim_mystery_reward(request):
     claim, created, message = claim_daily_reward(request.user)

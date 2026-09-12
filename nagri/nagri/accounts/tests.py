@@ -102,7 +102,7 @@ class AccountSecurityTests(TestCase):
         profile.is_phone_verified = False
         profile.save(update_fields=["full_name", "phone", "is_phone_verified", "updated_at"])
 
-        response = self.client.post(reverse("email_login"), {"email": "pending@example.com", "password": "StrongPass123"})
+        response = self.client.post(reverse("accounts:email_login"), {"email": "pending@example.com", "password": "StrongPass123"})
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Verify your phone number before logging in")
@@ -121,10 +121,10 @@ class AccountSecurityTests(TestCase):
         profile.is_phone_verified = True
         profile.save(update_fields=["phone", "is_phone_verified", "updated_at"])
 
-        response = self.client.post(reverse("email_login"), {"email": "verified@example.com", "password": "StrongPass123"})
+        response = self.client.post(reverse("accounts:email_login"), {"email": "verified@example.com", "password": "StrongPass123"})
 
         self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("dashboard_page"), response.url)
+        self.assertIn(reverse("accounts:dashboard_page"), response.url)
 
 
 class RoleBasedNavbarTests(TestCase):
@@ -169,15 +169,15 @@ class RoleBasedNavbarTests(TestCase):
         self.assertContains(resp, "Owner Dashboard")
 
     def test_login_redirects_by_role(self):
-        resp = self.client.post(reverse("email_login"), {"email": "seller@example.com", "password": "pass123"})
+        resp = self.client.post(reverse("accounts:email_login"), {"email": "seller@example.com", "password": "pass123"})
         # Should redirect to seller dashboard
         self.assertEqual(resp.status_code, 302)
         self.assertIn(reverse("sellers:dashboard"), resp.url)
 
-        resp = self.client.post(reverse("email_login"), {"email": "owner@example.com", "password": "pass123"})
+        resp = self.client.post(reverse("accounts:email_login"), {"email": "owner@example.com", "password": "pass123"})
         self.assertEqual(resp.status_code, 302)
         self.assertIn(reverse("sellers:owner_dashboard"), resp.url)
 
-        resp = self.client.post(reverse("email_login"), {"email": "cust@example.com", "password": "pass123"})
+        resp = self.client.post(reverse("accounts:email_login"), {"email": "cust@example.com", "password": "pass123"})
         self.assertEqual(resp.status_code, 302)
-        self.assertIn(reverse("dashboard_page"), resp.url)
+        self.assertIn(reverse("accounts:dashboard_page"), resp.url)

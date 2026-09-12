@@ -29,7 +29,12 @@ urlpatterns = [
     path('reset/done/', views.PasswordResetCompleteView.as_view(), name='password_reset_complete'),
     *router.urls,
     path('settings/', views.account_settings, name='account_settings'),
+    path('addresses/<int:pk>/edit/', views.edit_address, name='address_edit'),
+    path('addresses/<int:pk>/delete/', views.delete_address, name='address_delete'),
+    path('addresses/<int:pk>/set-default/', views.set_default_address, name='address_set_default'),
 ]
+
+app_name = 'accounts'
 
 # Owner slider management
 urlpatterns += [

@@ -58,19 +58,46 @@
         <div class="card-body">
           <h5>Address Management</h5>
           <div class="addresses-list">
-            {% for addr in addresses %}
+            {% for addr, form in address_pairs %}
               <div class="address-item p-3 mb-2 border rounded">
-                <div class="d-flex justify-content-between">
-                  <div>
-                    <strong>{{ addr.label }}</strong>
-                    {% if addr.is_default %}<span class="badge bg-primary ms-2">Default</span>{% endif %}
-                    <div>{{ addr.full_name }} • {{ addr.phone }}</div>
-                    <div>{{ addr.address_line_1 }}{% if addr.address_line_2 %}, {{ addr.address_line_2 }}{% endif %}</div>
-                    <div>{{ addr.city }}, {{ addr.state }} - {{ addr.pincode }}</div>
+                <div class="d-flex justify-content-between align-items-start gap-3">
+                  <div class="flex-grow-1">
+                    <div class="d-flex align-items-center justify-content-between">
+                      <div>
+                        <strong>{{ addr.label }}</strong>
+                        {% if addr.is_default %}<span class="badge bg-primary ms-2">Default</span>{% endif %}
+                      </div>
+                      <div class="text-end small text-muted">Added {{ addr.created_at|date:"M d, Y" }}</div>
+                    </div>
+                    <div class="mt-1">{{ addr.full_name }} • {{ addr.phone }}</div>
+                    <div class="small mt-1">{{ addr.address_line_1 }}{% if addr.address_line_2 %}, {{ addr.address_line_2 }}{% endif %}, {{ addr.city }}, {{ addr.state }} - {{ addr.pincode }}</div>
                   </div>
-                  <div>
-                    <a href="#" class="btn btn-sm btn-outline-secondary">Edit</a>
-                    <a href="#" class="btn btn-sm btn-outline-danger ms-1">Delete</a>
+
+                  <div class="d-flex flex-column align-items-end">
+                    <button class="btn btn-sm btn-outline-secondary mb-1" data-bs-toggle="collapse" data-bs-target="#editAddr{{ addr.id }}">Edit</button>
+
+                    <form method="post" action="{% url 'accounts:address_delete' addr.id %}" onsubmit="return confirm('Delete this address?');">
+                      {% csrf_token %}
+                      <button class="btn btn-sm btn-outline-danger mb-1">Delete</button>
+                    </form>
+
+                    <form method="post" action="{% url 'accounts:address_set_default' addr.id %}">
+                      {% csrf_token %}
+                      <button class="btn btn-sm btn-outline-primary" {% if addr.is_default %}disabled{% endif %}>Set Default</button>
+                    </form>
+                  </div>
+                </div>
+
+                <div class="collapse mt-3" id="editAddr{{ addr.id }}">
+                  <div class="card card-body">
+                    <form method="post" action="{% url 'accounts:address_edit' addr.id %}">
+                      {% csrf_token %}
+                      {{ form.as_p }}
+                      <div class="d-flex gap-2">
+                        <button class="btn btn-primary btn-sm">Save</button>
+                        <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#editAddr{{ addr.id }}">Cancel</button>
+                      </div>
+                    </form>
                   </div>
                 </div>
               </div>
@@ -183,7 +210,7 @@
           <h5>Contact Information</h5>
           <p class="mb-1"><strong>Email:</strong> {{ user.email }}</p>
           <p class="mb-1"><strong>Phone:</strong> {{ profile.phone|default:'Not added' }}</p>
-          <a href="{% url 'email_login' %}" class="btn btn-outline-secondary btn-sm">Change email/password</a>
+          <a href="{% url 'accounts:email_login' %}" class="btn btn-outline-secondary btn-sm">Change email/password</a>
         </div>
       </div>
 

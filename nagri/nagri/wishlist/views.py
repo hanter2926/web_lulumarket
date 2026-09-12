@@ -29,7 +29,7 @@ class WishlistViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 @require_POST
 def toggle_wishlist(request):
     try:
@@ -54,12 +54,12 @@ def toggle_wishlist(request):
     return JsonResponse({"success": True, "added": True, "count": Wishlist.objects.filter(user=request.user).count()})
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def wishlist_count_view(request):
     return JsonResponse({"count": Wishlist.objects.filter(user=request.user).count()})
 
 
-@login_required(login_url='login_page')
+@login_required(login_url='accounts:email_login')
 def wishlist_list_view(request):
     """Display user's wishlist"""
     wishlist_items = Wishlist.objects.filter(user=request.user).select_related('product')

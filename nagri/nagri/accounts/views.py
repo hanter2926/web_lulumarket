@@ -337,6 +337,9 @@ def account_settings(request):
         aform = AppearanceForm(initial={'appearance': profile.appearance})
         addr_form = AddressForm()
 
+    # Create address/form pairs for template rendering (allows per-address inline edit forms)
+    address_pairs = [(addr, AddressForm(instance=addr)) for addr in addresses]
+
     context = {
         'profile': profile,
         'pform': pform,
@@ -344,9 +347,71 @@ def account_settings(request):
         'aform': aform,
         'addr_form': addr_form,
         'addresses': addresses,
+        'address_pairs': address_pairs,
     }
 
     return render(request, 'accounts/settings.html', context)
+
+
+@login_required
+def edit_address(request, pk):
+    addr = get_object_or_404(Address, pk=pk)
+    if addr.user != request.user and not request.user.is_staff:
+        messages.error(request, 'You do not have permission to edit this address.')
+        return redirect('account_settings')
+
+    if request.method == 'POST':
+        form = AddressForm(request.POST, instance=addr)
+        if form.is_valid():
+            address = form.save()
+            if address.is_default:
+                Address.objects.filter(user=request.user).exclude(id=address.id).update(is_default=False)
+            messages.success(request, 'Address updated.')
+        else:
+            messages.error(request, 'Please correct the errors in the form.')
+
+    return redirect('account_settings')
+
+
+@login_required
+def delete_address(request, pk):
+    if request.method != 'POST':
+        return redirect('account_settings')
+
+    addr = get_object_or_404(Address, pk=pk)
+    if addr.user != request.user and not request.user.is_staff:
+        messages.error(request, 'You do not have permission to delete this address.')
+        return redirect('account_settings')
+
+    was_default = addr.is_default
+    addr.delete()
+    messages.success(request, 'Address deleted.')
+
+    # If deleted address was default, make another address default if exists
+    if was_default:
+        other = Address.objects.filter(user=request.user).order_by('-created_at').first()
+        if other:
+            other.is_default = True
+            other.save(update_fields=['is_default', 'updated_at'])
+
+    return redirect('account_settings')
+
+
+@login_required
+def set_default_address(request, pk):
+    if request.method != 'POST':
+        return redirect('account_settings')
+
+    addr = get_object_or_404(Address, pk=pk)
+    if addr.user != request.user and not request.user.is_staff:
+        messages.error(request, 'You do not have permission to update this address.')
+        return redirect('account_settings')
+
+    Address.objects.filter(user=request.user).exclude(id=addr.id).update(is_default=False)
+    addr.is_default = True
+    addr.save(update_fields=['is_default', 'updated_at'])
+    messages.success(request, 'Default address updated.')
+    return redirect('account_settings')
 
 
 class AddressViewSet(viewsets.ModelViewSet):
@@ -584,7 +649,7 @@ def email_login_view(request):
             return redirect("sellers:owner_dashboard")
         if getattr(user, "is_vendor", False):
             return redirect("sellers:dashboard")
-        return redirect("dashboard_page")
+        return redirect("accounts:dashboard_page")
 
     return render(request, "accounts/auth.html", {"active_tab": "login"})
 

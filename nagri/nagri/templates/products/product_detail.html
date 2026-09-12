@@ -141,7 +141,7 @@
                     data-product-id="{{ product.id }}"
                     data-cart-add-url="{% url 'cart_add' %}"
                     data-checkout-url="{% url 'checkout' %}"
-                    data-login-url="{% url 'login_page' %}"
+                    data-login-url="{% url 'accounts:email_login' %}"
                 >
                     <i class="fas fa-shopping-cart"></i> Add to Cart
                 </button>
@@ -150,7 +150,7 @@
                     class="btn btn-outline-primary btn-lg add-to-wishlist-btn"
                     data-product-id="{{ product.id }}"
                     data-wishlist-toggle-url="{% url 'wishlist_toggle' %}"
-                    data-login-url="{% url 'login_page' %}"
+                    data-login-url="{% url 'accounts:email_login' %}"
                     title="Add to Wishlist"
                 >
                     <i class="far fa-heart"></i>
@@ -161,7 +161,7 @@
                     data-product-id="{{ product.id }}"
                     data-cart-add-url="{% url 'cart_add' %}"
                     data-checkout-url="{% url 'checkout' %}"
-                    data-login-url="{% url 'login_page' %}"
+                    data-login-url="{% url 'accounts:email_login' %}"
                 >
                     <i class="fas fa-bolt"></i> Buy Now
                 </button>
@@ -175,7 +175,7 @@
                     class="btn btn-outline-primary btn-lg add-to-wishlist-btn"
                     data-product-id="{{ product.id }}"
                     data-wishlist-toggle-url="{% url 'wishlist_toggle' %}"
-                    data-login-url="{% url 'login_page' %}"
+                    data-login-url="{% url 'accounts:email_login' %}"
                     title="Add to Wishlist"
                 >
                     <i class="far fa-heart"></i> Notify Me
