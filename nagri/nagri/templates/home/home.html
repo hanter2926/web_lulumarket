@@ -314,18 +314,23 @@
                     </div>
 
                     <div class="mystery-reward-actions">
-                        <button
-                            type="button"
-                            class="mystery-reward-trigger"
-                            data-mystery-reward-open
-                            {% if not user.is_authenticated %}data-login-required="true"{% endif %}
-                        >
-                            {% if user.is_authenticated %}
+                        {% if user.is_authenticated %}
+                            <button
+                                type="button"
+                                class="mystery-reward-trigger"
+                                data-mystery-reward-open
+                            >
                                 {% if mystery_reward_current_claim %}View Reward{% else %}{{ mystery_reward_config.button_label }}{% endif %}
-                            {% else %}
-                                Login to Open
-                            {% endif %}
-                        </button>
+                            </button>
+                        {% else %}
+                            <a
+                                class="mystery-reward-trigger mystery-reward-login"
+                                href="{% url 'accounts:email_login' %}?next={{ request.get_full_path|urlencode }}"
+                                role="button"
+                            >
+                                🔐 Login to Open
+                            </a>
+                        {% endif %}
 
                         <p class="mystery-reward-note">One reward per day. Your reward will be saved to your account.</p>
                     </div>
