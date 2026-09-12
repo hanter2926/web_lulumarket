@@ -205,112 +205,99 @@ function initializeMysteryRewardWidget() {
     const claimUrl = widget.dataset.claimUrl;
     const loginUrl = widget.dataset.loginUrl || '/accounts/auth/';
     const trigger = widget.querySelector('[data-mystery-reward-open]');
-    const modal = document.getElementById('mysteryRewardModal');
-    const closeButtons = modal ? modal.querySelectorAll('[data-mystery-reward-close]') : [];
-    const claimButton = modal ? modal.querySelector('[data-mystery-reward-claim]') : null;
-    const box = modal ? modal.querySelector('[data-mystery-reward-box]') : null;
-    const titleNode = modal ? modal.querySelector('[data-mystery-reward-result-title]') : null;
-    const messageNode = modal ? modal.querySelector('[data-mystery-reward-result-message]') : null;
-    const detailsNode = modal ? modal.querySelector('[data-mystery-reward-result-details]') : null;
+    const result = widget.querySelector('[data-mystery-reward-result]');
+    const titleNode = result ? result.querySelector('[data-mystery-reward-result-title]') : null;
+    const messageNode = result ? result.querySelector('[data-mystery-reward-result-message]') : null;
+    const detailsNode = result ? result.querySelector('[data-mystery-reward-result-details]') : null;
+    const box = result ? result.querySelector('[data-mystery-reward-box]') : null;
     const existingClaim = widget.querySelector('.mystery-reward-status-panel');
     const isAuthenticated = !trigger?.dataset.loginRequired;
 
-    if (!trigger || !modal || !claimUrl) return;
+    if (!trigger || !claimUrl) return;
 
-    const openModal = () => {
-        modal.classList.add('is-open');
-        modal.setAttribute('aria-hidden', 'false');
-        document.body.style.overflow = 'hidden';
-    };
-
-    const closeModal = () => {
-        modal.classList.remove('is-open');
-        modal.setAttribute('aria-hidden', 'true');
-        document.body.style.overflow = '';
-        if (box) box.classList.remove('is-opening');
-    };
-
-    const renderClaim = (claim) => {
-        if (!detailsNode) return;
+    const renderClaim = (claim, fallbackMessage = 'Your reward is ready') => {
+        if (!result || !titleNode || !messageNode || !detailsNode) return;
+        result.hidden = false;
+        titleNode.textContent = fallbackMessage;
+        messageNode.textContent = claim?.reward_label || claim?.reward_name || 'Reward unlocked';
         detailsNode.innerHTML = [
-            `<span class="reward-detail-pill">Reward: ${claim.reward_label}</span>`,
-            `<span class="reward-detail-pill reward-detail-code">Code: ${claim.reward_code}</span>`,
-            `<span class="reward-detail-pill">Expires: ${new Date(claim.expires_at).toLocaleDateString()}</span>`,
+            `<span class="reward-detail-pill">Reward: ${claim?.reward_label || claim?.reward_name || 'Mystery Reward'}</span>`,
+            `<span class="reward-detail-pill reward-detail-code">Code: ${claim?.reward_code || '—'}</span>`,
+            `<span class="reward-detail-pill">Expires: ${claim?.expires_at ? new Date(claim.expires_at).toLocaleDateString() : 'Today'}</span>`,
         ].join('');
     };
 
-    if (claimButton) {
-        claimButton.addEventListener('click', async () => {
-            if (!isAuthenticated) {
-                window.location.href = loginUrl + '?next=' + encodeURIComponent(window.location.pathname + window.location.search);
-                return;
-            }
+    const showStoredClaim = () => {
+        if (!existingClaim || !titleNode || !messageNode || !detailsNode) return;
+        result.hidden = false;
+        titleNode.textContent = 'Your current reward';
+        messageNode.textContent = existingClaim.innerText.trim();
+        detailsNode.innerHTML = '';
+    };
 
-            try {
-                claimButton.disabled = true;
-                openModal();
-                if (box) {
-                    box.classList.add('is-opening');
-                }
-                if (titleNode) titleNode.textContent = 'Opening your mystery box...';
-                if (messageNode) messageNode.textContent = 'Please wait while we reveal your reward.';
-
-                const response = await fetchJson(claimUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({}),
-                });
-
-                if (response.success && response.claim) {
-                    if (titleNode) titleNode.textContent = response.message || 'Reward Claimed';
-                    if (messageNode) messageNode.textContent = response.claim.reward_label;
-                    renderClaim(response.claim);
-                    widget.classList.add('has-claim');
-                    if (existingClaim) {
-                        existingClaim.querySelector('.status-pill')?.textContent = response.claim.state || 'Active';
-                    }
-                    trigger.textContent = 'View Reward';
-                    return;
-                }
-
-                if (messageNode) messageNode.textContent = response.message || 'Unable to claim reward.';
-            } catch (error) {
-                if (error.message && error.message.toLowerCase().includes('already claimed')) {
-                    if (titleNode) titleNode.textContent = 'Reward already claimed';
-                    if (messageNode) messageNode.textContent = error.message;
-                } else if (titleNode) {
-                    titleNode.textContent = 'Reward unavailable';
-                    if (messageNode) messageNode.textContent = error.message || 'Please try again later.';
-                }
-            } finally {
-                claimButton.disabled = false;
-                if (box) {
-                    window.setTimeout(() => box.classList.remove('is-opening'), 900);
-                }
-            }
-        });
-    }
-
-    trigger.addEventListener('click', () => {
+    trigger.addEventListener('click', async () => {
         if (!isAuthenticated) {
             window.location.href = loginUrl + '?next=' + encodeURIComponent(window.location.pathname + window.location.search);
             return;
         }
-        openModal();
-        if (existingClaim && titleNode && messageNode) {
-            titleNode.textContent = 'Your current reward';
-            messageNode.textContent = existingClaim.innerText.trim();
-            if (detailsNode) detailsNode.innerHTML = '';
-        }
-    });
 
-    closeButtons.forEach((button) => button.addEventListener('click', closeModal));
-    modal.addEventListener('click', (event) => {
-        if (event.target === modal) closeModal();
-    });
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && modal.classList.contains('is-open')) {
-            closeModal();
+        if (widget.classList.contains('has-claim') && existingClaim) {
+            showStoredClaim();
+            return;
+        }
+
+        try {
+            trigger.disabled = true;
+            trigger.classList.add('is-loading');
+            trigger.textContent = 'Opening...';
+            if (result) result.hidden = false;
+            if (titleNode) titleNode.textContent = 'Opening your mystery box...';
+            if (messageNode) messageNode.textContent = 'Please wait while we reveal your reward.';
+            if (detailsNode) detailsNode.innerHTML = '';
+            if (box) box.classList.add('is-opening');
+
+            const response = await fetchJson(claimUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+
+            if (response.success && response.claim) {
+                renderClaim(response.claim, response.message || 'Reward Claimed');
+                widget.classList.add('has-claim');
+                trigger.textContent = 'View Reward';
+                if (existingClaim) {
+                    existingClaim.innerHTML = `
+                        <div class="status-pill status-pill-active">${response.claim.state || 'Active'}</div>
+                        <strong>${response.claim.reward_label || response.claim.reward_name || 'Mystery Reward'}</strong>
+                        <span>Code: ${response.claim.reward_code || '—'}</span>
+                        <span>Claimed: ${response.claim.claimed_date || 'Today'}</span>
+                    `;
+                }
+                return;
+            }
+
+            if (titleNode) titleNode.textContent = 'Reward unavailable';
+            if (messageNode) messageNode.textContent = response.message || 'Unable to claim reward.';
+        } catch (error) {
+            if (error.message && error.message.toLowerCase().includes('already claimed')) {
+                if (titleNode) titleNode.textContent = 'Reward already claimed';
+                if (messageNode) messageNode.textContent = error.message;
+                widget.classList.add('has-claim');
+                trigger.textContent = 'View Reward';
+            } else {
+                if (titleNode) titleNode.textContent = 'Reward unavailable';
+                if (messageNode) messageNode.textContent = error.message || 'Please try again later.';
+            }
+        } finally {
+            trigger.disabled = false;
+            trigger.classList.remove('is-loading');
+            if (box) {
+                window.setTimeout(() => box.classList.remove('is-opening'), 900);
+            }
+            if (!widget.classList.contains('has-claim') && trigger.textContent === 'Opening...') {
+                trigger.textContent = 'Open Mystery Box';
+            }
         }
     });
 }
