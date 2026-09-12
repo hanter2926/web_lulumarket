@@ -76,6 +76,13 @@ class UserProfile(models.Model):
     otp_expires_at = models.DateTimeField(blank=True, null=True)
     is_phone_verified = models.BooleanField(default=False)
     last_otp_sent_at = models.DateTimeField(blank=True, null=True)
+    # Notification preferences
+    notif_order_updates = models.BooleanField(default=True)
+    notif_promotions = models.BooleanField(default=False)
+    notif_important = models.BooleanField(default=True)
+    # Language and appearance preferences
+    language = models.CharField(max_length=10, blank=True, default='en')
+    appearance = models.CharField(max_length=20, blank=True, default='system')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,0 +1,286 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Account Settings{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/accounts/settings.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container py-4 account-settings">
+  <h1 class="mb-3">Account Settings</h1>
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card mb-3">
+        <div class="card-body d-flex gap-3 align-items-center">
+          <div class="avatar-area">
+            {% if profile.avatar %}
+              <img src="{{ profile.avatar.url }}" class="avatar-lg rounded-circle" alt="avatar">
+            {% elif user.avatar %}
+              <img src="{{ user.avatar.url }}" class="avatar-lg rounded-circle" alt="avatar">
+            {% else %}
+              <div class="avatar-placeholder avatar-lg rounded-circle"><i class="fas fa-user"></i></div>
+            {% endif %}
+          </div>
+          <div class="flex-fill">
+            <h4>{{ profile.full_name|default:user.get_full_name|default:user.email }}</h4>
+            <p class="text-muted mb-1">@{{ user.username }}</p>
+            <form method="post" enctype="multipart/form-data">{% csrf_token %}
+              {{ pform.avatar }}
+              <div class="mt-2">
+                <button class="btn btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#editProfile">Edit profile</button>
+              </div>
+              <div class="collapse mt-3" id="editProfile">
+                <div class="card card-body">
+                  <div class="mb-2"><label>Full name</label>{{ pform.full_name }}</div>
+                  <div class="mb-2"><label>Phone</label>{{ pform.phone }}</div>
+                  <div class="mb-2"><label>Avatar</label>{{ pform.avatar }}</div>
+                  <div class="mt-2">
+                    <button class="btn btn-primary" name="profile_submit">Save</button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5>Contact Information</h5>
+          <p><strong>Email:</strong> {{ user.email }}</p>
+          <p><strong>Phone:</strong> {{ profile.phone|default:'Not added' }}</p>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5>Address Management</h5>
+          <div class="addresses-list">
+            {% for addr in addresses %}
+              <div class="address-item p-3 mb-2 border rounded">
+                <div class="d-flex justify-content-between">
+                  <div>
+                    <strong>{{ addr.label }}</strong>
+                    {% if addr.is_default %}<span class="badge bg-primary ms-2">Default</span>{% endif %}
+                    <div>{{ addr.full_name }} • {{ addr.phone }}</div>
+                    <div>{{ addr.address_line_1 }}{% if addr.address_line_2 %}, {{ addr.address_line_2 }}{% endif %}</div>
+                    <div>{{ addr.city }}, {{ addr.state }} - {{ addr.pincode }}</div>
+                  </div>
+                  <div>
+                    <a href="#" class="btn btn-sm btn-outline-secondary">Edit</a>
+                    <a href="#" class="btn btn-sm btn-outline-danger ms-1">Delete</a>
+                  </div>
+                </div>
+              </div>
+            {% empty %}
+              <p class="text-muted">No saved addresses.</p>
+            {% endfor %}
+
+            <hr>
+            <h6>Add new address</h6>
+            <form method="post">{% csrf_token %}
+              {{ addr_form.as_p }}
+              <button class="btn btn-primary" name="address_submit">Add Address</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="col-lg-4">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h6>Account Security</h6>
+          <a href="{% url 'password_reset' %}" class="btn btn-outline-primary w-100 mb-2">Change Password</a>
+          <a href="{% url 'logout_page' %}" class="btn btn-outline-secondary w-100">Logout</a>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h6>Notifications</h6>
+          <form method="post">{% csrf_token %}
+            {{ nform.as_p }}
+            <button class="btn btn-primary w-100" name="notif_submit">Save</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h6>Appearance</h6>
+          <form method="post">{% csrf_token %}
+            {{ aform.as_p }}
+            <button class="btn btn-primary w-100" name="appearance_submit">Save</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h6>Danger Zone</h6>
+          <p class="text-muted small">Deleting your account is irreversible. All data will be removed.</p>
+          <a href="#" class="btn btn-danger w-100">Delete Account</a>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Minimal client enhancements are intentionally small; server-side saves are authoritative.
+</script>
+{% endblock %}
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Account Settings{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/accounts/settings.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container account-settings py-4">
+  <h1>Account Settings</h1>
+  <div class="settings-grid">
+    <div class="settings-column">
+      <!-- Profile Card -->
+      <div class="card settings-card mb-3">
+        <div class="card-body d-flex gap-3 align-items-center">
+          <div class="avatar-area">
+            {% if profile.avatar %}
+              <img src="{{ profile.avatar.url }}" alt="avatar" class="avatar-img-lg">
+            {% elif user.avatar %}
+              <img src="{{ user.avatar.url }}" alt="avatar" class="avatar-img-lg">
+            {% else %}
+              <div class="avatar-placeholder-lg"><i class="fas fa-user"></i></div>
+            {% endif %}
+          </div>
+          <div class="flex-grow-1">
+            <h4>{{ profile.full_name|default:user.get_full_name|default:user.email }}</h4>
+            <p class="text-muted mb-1">@{{ user.username }}</p>
+            <p class="text-muted small">{{ user.email }}</p>
+            <form method="post" enctype="multipart/form-data">
+              {% csrf_token %}
+              {{ pform.avatar }}
+              <div class="mt-2">
+                <button name="profile_submit" class="btn btn-primary btn-sm">Edit Profile</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contact Card -->
+      <div class="card settings-card mb-3">
+        <div class="card-body">
+          <h5>Contact Information</h5>
+          <p class="mb-1"><strong>Email:</strong> {{ user.email }}</p>
+          <p class="mb-1"><strong>Phone:</strong> {{ profile.phone|default:'Not added' }}</p>
+          <a href="{% url 'email_login' %}" class="btn btn-outline-secondary btn-sm">Change email/password</a>
+        </div>
+      </div>
+
+      <!-- Addresses -->
+      <div class="card settings-card mb-3">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5>Saved Addresses</h5>
+            <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#addAddress">+ Add Address</button>
+          </div>
+          <div class="addresses-list">
+            {% for a in addresses %}
+              <div class="address-row p-2 mb-2 border rounded">
+                <div class="d-flex justify-content-between">
+                  <div>
+                    <strong>{{ a.label }}</strong>
+                    {% if a.is_default %}<span class="badge bg-primary ms-2">Default</span>{% endif %}
+                    <div>{{ a.full_name }} • {{ a.phone }}</div>
+                    <div class="small">{{ a.address_line_1 }}{% if a.address_line_2 %}, {{ a.address_line_2 }}{% endif %}, {{ a.city }}, {{ a.state }} - {{ a.pincode }}</div>
+                  </div>
+                  <div class="address-actions d-flex flex-column align-items-end">
+                    <form method="post" action="{% url 'accounts:addresses-list' %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="address_id" value="{{ a.id }}">
+                      <button formaction="/accounts/addresses/{{ a.id }}/" class="btn btn-sm btn-outline-secondary mb-1">Edit</button>
+                      <button formaction="/accounts/addresses/{{ a.id }}/" formmethod="post" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            {% empty %}
+              <p class="text-muted">No saved addresses.</p>
+            {% endfor %}
+
+            <div class="collapse mt-2" id="addAddress">
+              <div class="card card-body">
+                <form method="post">
+                  {% csrf_token %}
+                  {{ addr_form.as_p }}
+                  <button name="address_submit" class="btn btn-primary btn-sm">Save Address</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="settings-column">
+      <!-- Security Card -->
+      <div class="card settings-card mb-3">
+        <div class="card-body">
+          <h5>Account Security</h5>
+          <p class="small text-muted">Change your account password and review active sessions.</p>
+          <a href="{% url 'password_reset' %}" class="btn btn-outline-secondary btn-sm">Change password</a>
+          <a href="{% url 'logout_page' %}" class="btn btn-outline-danger btn-sm ms-2">Logout</a>
+        </div>
+      </div>
+
+      <!-- Notifications -->
+      <div class="card settings-card mb-3">
+        <div class="card-body">
+          <h5>Notification Settings</h5>
+          <form method="post">
+            {% csrf_token %}
+            {{ nform.as_p }}
+            <button name="notif_submit" class="btn btn-primary btn-sm">Save</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Appearance -->
+      <div class="card settings-card mb-3">
+        <div class="card-body">
+          <h5>Appearance</h5>
+          <form method="post">
+            {% csrf_token %}
+            {{ aform.as_p }}
+            <button name="appearance_submit" class="btn btn-primary btn-sm">Save</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Danger Zone -->
+      <div class="card settings-card mb-3 border-danger">
+        <div class="card-body">
+          <h5 class="text-danger">Danger Zone</h5>
+          <p class="small text-muted">Deleting your account is permanent. This cannot be undone.</p>
+          <form method="post" action="/accounts/users/{{ user.id }}/">
+            {% csrf_token %}
+            <button formaction="/accounts/users/{{ user.id }}/" formmethod="delete" class="btn btn-danger">Delete Account</button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

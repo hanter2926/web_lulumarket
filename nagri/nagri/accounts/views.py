@@ -13,6 +13,7 @@ from orders.models import Order
 
 from .models import Address, CustomUser, PaymentMethod, UserProfile
 from .serializers import AddressSerializer, PaymentMethodSerializer, UserProfileSerializer, UserSerializer
+from .forms_account_settings import ProfileForm, NotificationForm, AppearanceForm, LanguageForm, AddressForm
 from .utils import (
     OTP_RESEND_COOLDOWN_SECONDS,
     OTP_TTL_MINUTES,
@@ -294,6 +295,58 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+@login_required
+def account_settings(request):
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    addresses = Address.objects.filter(user=request.user).order_by('-is_default', '-created_at')
+
+    if request.method == 'POST':
+        # handle profile update separately
+        if 'profile_submit' in request.POST:
+            pform = ProfileForm(request.POST, request.FILES, instance=profile)
+            if pform.is_valid():
+                pform.save()
+                messages.success(request, 'Profile updated.')
+                return redirect('account_settings')
+        elif 'notif_submit' in request.POST:
+            nform = NotificationForm(request.POST, instance=profile)
+            if nform.is_valid():
+                nform.save()
+                messages.success(request, 'Notification settings updated.')
+                return redirect('account_settings')
+        elif 'appearance_submit' in request.POST:
+            aform = AppearanceForm(request.POST, instance=profile)
+            if aform.is_valid():
+                aform.save()
+                messages.success(request, 'Appearance preference saved.')
+                return redirect('account_settings')
+        elif 'address_submit' in request.POST:
+            addr_form = AddressForm(request.POST)
+            if addr_form.is_valid():
+                addr = addr_form.save(commit=False)
+                addr.user = request.user
+                addr.save()
+                if addr.is_default:
+                    Address.objects.filter(user=request.user).exclude(id=addr.id).update(is_default=False)
+                messages.success(request, 'Address added.')
+                return redirect('account_settings')
+    else:
+        pform = ProfileForm(instance=profile)
+        nform = NotificationForm(instance=profile)
+        aform = AppearanceForm(initial={'appearance': profile.appearance})
+        addr_form = AddressForm()
+
+    context = {
+        'profile': profile,
+        'pform': pform,
+        'nform': nform,
+        'aform': aform,
+        'addr_form': addr_form,
+        'addresses': addresses,
+    }
+
+    return render(request, 'accounts/settings.html', context)
 
 
 class AddressViewSet(viewsets.ModelViewSet):

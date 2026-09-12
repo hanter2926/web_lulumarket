@@ -1,0 +1,12 @@
+.account-settings .avatar-lg{width:72px;height:72px;object-fit:cover}
+.avatar-placeholder{display:flex;align-items:center;justify-content:center;background:#e9ecef;color:#6c757d}
+.settings-grid{display:grid;grid-template-columns:1fr 360px;gap:20px}
+.settings-column{display:flex;flex-direction:column}
+.settings-card .avatar-area{width:72px}
+.address-item .address-actions button{min-width:72px}
+.addresses-list .address-item{background:#fff}
+.card.settings-card{box-shadow:0 1px 2px rgba(0,0,0,0.04)}
+
+@media (max-width: 991px){
+  .settings-grid{grid-template-columns:1fr}
+}
