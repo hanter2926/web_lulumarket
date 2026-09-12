@@ -74,7 +74,7 @@
             </div>
 
             <div class="alternative-login">
-                <a href="{% url 'otp_login_page' %}" class="btn btn-outline-primary w-100">
+                <a href="{% url 'accounts:otp_login_page' %}" class="btn btn-outline-primary w-100">
                     <i class="fas fa-mobile-alt"></i> Login with OTP
                 </a>
             </div>
@@ -82,10 +82,10 @@
             <div class="login-footer">
                 <p>
                     Don't have an account? 
-                    <a href="{% url 'signup_form' %}" class="signup-link">Sign Up</a>
+                    <a href="{% url 'accounts:signup_form' %}" class="signup-link">Sign Up</a>
                 </p>
                 <p>
-                    <a href="{% url 'password_reset' %}" class="forgot-link">Forgot Password?</a>
+                    <a href="{% url 'accounts:password_reset' %}" class="forgot-link">Forgot Password?</a>
                 </p>
             </div>
         </div>
