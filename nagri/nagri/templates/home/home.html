@@ -298,59 +298,53 @@
 {% if mystery_reward_config.is_enabled %}
 <section class="mystery-reward-section" data-mystery-reward-widget data-claim-url="{% url 'mystery_box_claim' %}" data-login-url="{% url 'login_page' %}">
     <div class="container">
-        <div class="mystery-reward-card {% if mystery_reward_current_claim %}has-claim{% endif %}" data-mystery-reward-card>
-            <div class="mystery-reward-visual" aria-hidden="true">
-                <div class="mystery-box-visual">
-                    <span class="box-spark box-spark-one"></span>
-                    <span class="box-spark box-spark-two"></span>
-                    <div class="box-lid"></div>
-                    <div class="box-body"></div>
+        <div class="mystery-reward-shell">
+            <div class="mystery-reward-card {% if mystery_reward_current_claim %}has-claim{% endif %}" data-mystery-reward-card>
+                <div class="mystery-reward-header">
+                    <h2>Daily Mystery Reward Box</h2>
+                    <p class="mystery-reward-description">Open today's box and claim a surprise reward.</p>
                 </div>
-            </div>
 
-            <div class="mystery-reward-copy">
-                <h2>{{ mystery_reward_config.display_title }}</h2>
-                <p class="mystery-reward-description">{{ mystery_reward_config.display_subtitle }}</p>
-
-                {% if user.is_authenticated and mystery_reward_current_claim %}
-                    <div class="mystery-reward-status-panel">
-                        <div class="status-pill status-pill-active">{{ mystery_reward_current_claim.display_state }}</div>
-                        <strong>{{ mystery_reward_current_claim.reward_type.reward_label }}</strong>
-                        <span>Code: {{ mystery_reward_current_claim.reward_code }}</span>
-                        <span>Claimed: {{ mystery_reward_current_claim.claimed_date }}</span>
-                    </div>
-                {% endif %}
-            </div>
-
-            <div class="mystery-reward-actions">
-                <button
-                    type="button"
-                    class="btn btn-primary mystery-reward-trigger"
-                    data-mystery-reward-open
-                    {% if not user.is_authenticated %}data-login-required="true"{% endif %}
-                >
-                    {% if user.is_authenticated %}
-                        {% if mystery_reward_current_claim %}View Reward{% else %}{{ mystery_reward_config.button_label }}{% endif %}
-                    {% else %}
-                        Login to Open
-                    {% endif %}
-                </button>
-                <p class="mystery-reward-note">One reward per day. Your reward will be saved to your account.</p>
-            </div>
-
-            <div class="mystery-reward-inline-result" data-mystery-reward-result hidden>
-                <div class="mystery-reward-inline-animation">
-                    <div class="mystery-box-inline" data-mystery-reward-box>
+                <div class="mystery-reward-body">
+                    <div class="mystery-box-visual" aria-hidden="true">
                         <span class="box-spark box-spark-one"></span>
                         <span class="box-spark box-spark-two"></span>
                         <div class="box-lid"></div>
                         <div class="box-body"></div>
                     </div>
-                </div>
-                <div class="mystery-reward-inline-copy">
-                    <h3 data-mystery-reward-result-title>Your reward is ready</h3>
-                    <p data-mystery-reward-result-message></p>
-                    <div class="mystery-reward-result-details" data-mystery-reward-result-details></div>
+
+                    <div class="mystery-reward-actions">
+                        <button
+                            type="button"
+                            class="mystery-reward-trigger"
+                            data-mystery-reward-open
+                            {% if not user.is_authenticated %}data-login-required="true"{% endif %}
+                        >
+                            {% if user.is_authenticated %}
+                                {% if mystery_reward_current_claim %}View Reward{% else %}{{ mystery_reward_config.button_label }}{% endif %}
+                            {% else %}
+                                Login to Open
+                            {% endif %}
+                        </button>
+
+                        <p class="mystery-reward-note">One reward per day. Your reward will be saved to your account.</p>
+                    </div>
+
+                    <div class="mystery-reward-inline-result" data-mystery-reward-result hidden>
+                        <div class="mystery-reward-inline-animation">
+                            <div class="mystery-box-inline" data-mystery-reward-box>
+                                <span class="box-spark box-spark-one"></span>
+                                <span class="box-spark box-spark-two"></span>
+                                <div class="box-lid"></div>
+                                <div class="box-body"></div>
+                            </div>
+                        </div>
+                        <div class="mystery-reward-inline-copy">
+                            <h3 data-mystery-reward-result-title>Your reward is ready</h3>
+                            <p data-mystery-reward-result-message></p>
+                            <div class="mystery-reward-result-details" data-mystery-reward-result-details></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
