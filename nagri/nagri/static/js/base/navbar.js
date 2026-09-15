@@ -12,8 +12,16 @@ document.addEventListener('DOMContentLoaded', function(){
     if (!drawer) {
         drawer = document.createElement('div');
         drawer.className = 'mobile-drawer';
-        drawer.innerHTML = '<div style="padding:16px"><button class="btn btn-sm btn-outline-secondary" id="closeDrawer">Close</button></div>' + document.querySelector('.cats-list')?.outerHTML || '';
+        const categories = document.querySelector('.cats-list');
+        drawer.innerHTML = '<div style="padding:16px"><button class="btn btn-sm btn-outline-secondary" id="closeDrawer" type="button">Close</button></div>' + (categories ? categories.outerHTML : '');
         document.body.appendChild(drawer);
+    }
+
+    const closeDrawer = drawer.querySelector('#closeDrawer');
+    if (closeDrawer) {
+        closeDrawer.addEventListener('click', function () {
+            drawer.classList.remove('open');
+        });
     }
 
     mobileBtn.addEventListener('click', function(){
@@ -27,15 +35,13 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 });
 
-// Ensure cats-list dropdowns toggle reliably (works alongside Bootstrap)
+// Ensure original and cloned mobile category lists share the same click behavior.
 document.addEventListener('DOMContentLoaded', function () {
-    const catsNav = document.querySelector('.cats-list');
-    if (!catsNav) return;
-
-    const toggles = Array.from(catsNav.querySelectorAll('.dropdown-toggle'));
+    const categoryLists = Array.from(document.querySelectorAll('.cats-list'));
+    if (!categoryLists.length) return;
 
     function closeAllDropdowns(exceptEl) {
-        toggles.forEach(t => {
+        categoryLists.flatMap(list => Array.from(list.querySelectorAll('.dropdown-toggle'))).forEach(t => {
             const parent = t.closest('.dropdown');
             const menu = parent && parent.querySelector('.dropdown-menu');
             if (!parent || !menu) return;
@@ -46,7 +52,8 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    toggles.forEach(function (t) {
+    categoryLists.forEach(function (catsNav) {
+        catsNav.querySelectorAll('.dropdown-toggle').forEach(function (t) {
         // Ensure aria attributes exist
         if (!t.hasAttribute('role')) t.setAttribute('role', 'button');
         if (!t.hasAttribute('aria-expanded')) t.setAttribute('aria-expanded', 'false');
@@ -72,6 +79,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 menu.classList.add('show');
                 t.setAttribute('aria-expanded', 'true');
             }
+        });
         });
     });
 

@@ -270,9 +270,7 @@ if any('test' in str(arg) for arg in sys.argv):
     STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
     # When Django uses the STORAGES setting (Django 4.2+), ensure test runner uses non-manifest storage for staticfiles.
     # Ensure STORAGES mapping is defined so ConfiguredStorage picks the test backend.
-    try:
-        STORAGES
-    except NameError:
+    if "STORAGES" not in globals():
         STORAGES = {}
     st = STORAGES.get('staticfiles') or {}
     st.setdefault('BACKEND', 'django.contrib.staticfiles.storage.StaticFilesStorage')
@@ -517,9 +515,21 @@ STORAGES = {
     },
 }
 
+# Keep test template rendering independent of a previously collected manifest.
+if any("test" in str(arg) for arg in sys.argv):
+    STORAGES["staticfiles"] = {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    }
+
 # Use Cloudinary as Django's default file storage when credentials are present
 if HAS_CLOUDINARY_CONFIG:
     DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 else:
     # Ensure DEFAULT_FILE_STORAGE is defined to the local filesystem storage when Cloudinary is not available
     DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+
+if any("test" in str(arg) for arg in sys.argv):
+    STORAGES["default"] = {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    }
+    DEFAULT_FILE_STORAGE = "django.core.files.storage.FileSystemStorage"

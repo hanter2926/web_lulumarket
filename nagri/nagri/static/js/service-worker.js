@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'nagri-static-v1';
-const PAGE_CACHE = 'nagri-pages-v1';
+const STATIC_CACHE = 'nagri-static-v4';
+const PAGE_CACHE = 'nagri-pages-v4';
 const OFFLINE_URL = '/offline/';
 const PRECACHE_URLS = [
   OFFLINE_URL,
@@ -36,7 +36,7 @@ function isPrivateRequest(request) {
 
 function documentCookieContainsPrivateSession(request) {
   const cookie = request.headers.get('cookie') || '';
-  return cookie.includes('sessionid=') || cookie.includes('csrftoken=');
+  return cookie.includes('sessionid=');
 }
 
 function isNavigation(request) {

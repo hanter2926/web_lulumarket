@@ -404,13 +404,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (!popup || !floatingBtn) return;
 
-    // Track whether popup was shown/closed during this page session (in-memory only)
-    let popupShownThisSession = false;
+    const popupStorageKey = 'nagri_whatsapp_popup_shown';
+    let popupShownThisSession = sessionStorage.getItem(popupStorageKey) === '1';
     let popupTimeoutId = null;
 
     function showPopupOnce() {
         if (popupShownThisSession) return;
         popupShownThisSession = true;
+        sessionStorage.setItem(popupStorageKey, '1');
         popup.setAttribute('aria-hidden', 'false');
 
         // Auto hide after 10 seconds
@@ -427,7 +428,7 @@ document.addEventListener('DOMContentLoaded', function () {
         popup.setAttribute('aria-hidden', 'true');
     }
 
-    // Show immediately on page load (only once per page session)
+    // Show once per browser session and hide automatically after 10 seconds.
     document.addEventListener('DOMContentLoaded', function () {
         // Slight microtask delay to ensure layout is ready
         setTimeout(showPopupOnce, 10);
@@ -438,6 +439,7 @@ document.addEventListener('DOMContentLoaded', function () {
         e.preventDefault();
         hidePopup();
         popupShownThisSession = true;
+        sessionStorage.setItem(popupStorageKey, '1');
     });
 
     // Clicking chat in popup opens wa link immediately (anchor handles it)

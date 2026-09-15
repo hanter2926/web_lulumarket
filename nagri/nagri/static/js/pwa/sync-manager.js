@@ -42,7 +42,14 @@
     }
 
     async function request(action) {
-        if (navigator.onLine) return sendAction(Object.assign({ client_id: createClientId() }, action));
+        if (navigator.onLine) {
+            try {
+                return await sendAction(Object.assign({ client_id: createClientId() }, action));
+            } catch (error) {
+                if (error instanceof TypeError) return queueAction(action);
+                throw error;
+            }
+        }
         return queueAction(action);
     }
 

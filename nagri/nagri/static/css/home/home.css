@@ -475,10 +475,6 @@
     }
 }
 
-/* Hide WhatsApp popup by default to avoid stray × in layouts */
-.whatsapp-popup { display: none !important; }
-
-
 @keyframes glowPulse {
     0%, 100% { transform: scale(0.98); opacity: 0.7; }
     50% { transform: scale(1.05); opacity: 1; }

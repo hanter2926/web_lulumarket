@@ -394,9 +394,8 @@
 }
 
 @media (max-width: 480px) {
-    /* Force exactly 3 columns on common mobile sizes while keeping other responsive rules for larger breakpoints */
     .products-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
         box-sizing: border-box;
     }
@@ -466,7 +465,7 @@
         width: 100%;
         height: auto;
         aspect-ratio: 1 / 1;
-        object-fit: cover;
+        object-fit: contain;
     }
 
     .product-info {
@@ -504,8 +503,6 @@
     }
 }
 
-/* Enforce exactly 3 products per row for all mobile widths up to 767px
-   Keep this after other responsive blocks to ensure it overrides them */
 @media (max-width: 767px) {
     .products-grid {
         display: grid !important;
@@ -528,5 +525,5 @@
         height: 120px !important;
     }
 
-    .product-card-image img { object-fit: cover; }
+    .product-card-image img { object-fit: contain; }
 }

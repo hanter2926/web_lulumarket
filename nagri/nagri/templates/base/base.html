@@ -48,7 +48,14 @@
 
                 <div class="topnav-links d-none d-lg-flex">
                     <a class="topnav-pill" href="{% url 'home' %}">Main Page</a>
-                    <a class="topnav-pill" href="{% url 'accounts:dashboard_page' %}">Dashboard</a>
+                    {% if user.is_owner %}
+                        <a class="topnav-pill" href="{% url 'sellers:owner_dashboard' %}">Owner Dashboard</a>
+                    {% elif user.is_vendor %}
+                        <a class="topnav-pill" href="{% url 'sellers:dashboard' %}">Seller Dashboard</a>
+                    {% else %}
+                        <a class="topnav-pill" href="{% url 'accounts:dashboard_page' %}">Dashboard</a>
+                        <a class="topnav-pill" href="{% url 'sellers:apply_start' %}">Become a Seller</a>
+                    {% endif %}
                 </div>
             </div>
 
@@ -107,7 +114,7 @@
             <ul class="cats-list">
                 <li><a href="{% url 'home' %}">Home</a></li>
                 <li class="dropdown">
-                    <a href="#" class="dropdown-toggle" data-bs-toggle="dropdown">Fashion <i class="fas fa-chevron-down"></i></a>
+                    <a href="#" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false">Fashion <i class="fas fa-chevron-down"></i></a>
                     <ul class="dropdown-menu">
                         {% for category in nav_fashion_categories %}
                             <li class="dropdown-submenu">
@@ -126,7 +133,7 @@
                     </ul>
                 </li>
                 <li class="dropdown">
-                    <a href="#" class="dropdown-toggle" data-bs-toggle="dropdown">Home &amp; Kitchen <i class="fas fa-chevron-down"></i></a>
+                    <a href="#" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false">Home &amp; Kitchen <i class="fas fa-chevron-down"></i></a>
                     <ul class="dropdown-menu">
                         {% for category in nav_home_categories %}
                             <li class="dropdown-submenu">
@@ -145,7 +152,7 @@
                     </ul>
                 </li>
                 <li class="dropdown">
-                    <a href="#" class="dropdown-toggle" data-bs-toggle="dropdown">Mobiles &amp; Tablets <i class="fas fa-chevron-down"></i></a>
+                    <a href="#" class="dropdown-toggle" aria-haspopup="true" aria-expanded="false">Mobiles &amp; Tablets <i class="fas fa-chevron-down"></i></a>
                     <ul class="dropdown-menu">
                         {% for category in nav_mobiles_categories %}
                             <li class="dropdown-submenu">

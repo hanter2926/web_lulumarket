@@ -137,6 +137,8 @@ def home(request):
     # Fetch active sliders using the actual model fields
     try:
         active_sliders = slider_model.objects.filter(is_active=True).order_by('display_order', 'created_at')
+        if not active_sliders.exists() and slider_model is AdminHomeSlider:
+            active_sliders = UnyanHomeSlider.objects.filter(is_active=True).order_by('display_order', 'created_at')
     except Exception:
         # As a safe fallback, return an empty queryset of the unyan model
         logger.exception('Error querying active sliders from %s', slider_model)
