@@ -47,6 +47,141 @@ def validate_seller_password(password, user=None):
         raise ValidationError(exc.messages[0])
 
 
+class Shopkeeper(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("active", "Active"),
+        ("inactive", "Inactive"),
+        ("suspended", "Suspended"),
+    ]
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="shopkeeper_profile")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="managed_shopkeepers")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    shop_name = models.CharField(max_length=150, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    pincode = models.CharField(max_length=20, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.shop_name or self.user.get_full_name() or self.user.email
+
+
+class Store(models.Model):
+    shopkeeper = models.ForeignKey(Shopkeeper, on_delete=models.CASCADE, related_name="stores")
+    name = models.CharField(max_length=200)
+    slug = models.SlugField(unique=True)
+    address = models.TextField(blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    pincode = models.CharField(max_length=20, blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class DeliveryWorker(models.Model):
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("inactive", "Inactive"),
+        ("on_leave", "On Leave"),
+        ("suspended", "Suspended"),
+    ]
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="delivery_worker_profile")
+    shopkeeper = models.ForeignKey(Shopkeeper, on_delete=models.CASCADE, related_name="delivery_workers")
+    store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="delivery_workers")
+    phone = models.CharField(max_length=20)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    is_available = models.BooleanField(default=True)
+    current_latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    current_longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_mobile_verified(self):
+        profile = getattr(self.user, "profile", None)
+        if profile is not None:
+            return bool(profile.is_phone_verified)
+        return bool(self.user.phone and self.user.phone == self.phone)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def clean(self):
+        if self.store_id and self.shopkeeper_id and self.store.shopkeeper_id != self.shopkeeper_id:
+            raise ValidationError({"store": "This store does not belong to the selected shopkeeper."})
+
+    def __str__(self):
+        return self.user.get_full_name() or self.user.email
+
+
+class DeliveryAssignment(models.Model):
+    STATUS_CHOICES = [
+        ("assigned", "Assigned"),
+        ("accepted", "Accepted"),
+        ("picked_up", "Picked Up"),
+        ("out_for_delivery", "Out for Delivery"),
+        ("delivered", "Delivered"),
+        ("delayed", "Delayed"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
+    ]
+
+    order = models.ForeignKey("orders.Order", on_delete=models.CASCADE, related_name="delivery_assignments")
+    store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="delivery_assignments")
+    shopkeeper = models.ForeignKey(Shopkeeper, on_delete=models.CASCADE, related_name="delivery_assignments")
+    worker = models.ForeignKey(DeliveryWorker, on_delete=models.CASCADE, related_name="assignments")
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="assigned")
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    picked_up_at = models.DateTimeField(blank=True, null=True)
+    delivered_at = models.DateTimeField(blank=True, null=True)
+    notes = models.TextField(blank=True)
+
+    VALID_TRANSITIONS = {
+        "assigned": {"accepted", "cancelled"},
+        "accepted": {"picked_up", "cancelled", "delayed"},
+        "picked_up": {"out_for_delivery", "delayed", "cancelled"},
+        "out_for_delivery": {"delivered", "delayed", "failed"},
+        "delayed": {"accepted", "picked_up", "out_for_delivery", "failed", "cancelled"},
+        "failed": {"assigned", "accepted", "cancelled"},
+        "delivered": set(),
+        "cancelled": set(),
+    }
+
+    class Meta:
+        ordering = ["-assigned_at"]
+
+    def clean(self):
+        if self.store_id and self.shopkeeper_id and self.store.shopkeeper_id != self.shopkeeper_id:
+            raise ValidationError({"store": "This store does not belong to the selected shopkeeper."})
+        if self.worker_id and self.shopkeeper_id and self.worker.shopkeeper_id != self.shopkeeper_id:
+            raise ValidationError({"worker": "This worker does not belong to the selected shopkeeper."})
+        if self.worker_id and self.store_id and self.worker.store_id != self.store_id:
+            raise ValidationError({"worker": "This worker is not assigned to this store."})
+
+    def can_transition_to(self, new_status):
+        return new_status in self.VALID_TRANSITIONS.get(self.status, set())
+
+    def __str__(self):
+        return f"Assignment for {self.order.order_number}"
+
+
 class SellerAuditLog(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="seller_audit_logs")
     seller_application = models.ForeignKey("SellerApplication", on_delete=models.CASCADE, related_name="audit_logs", null=True, blank=True)

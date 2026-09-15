@@ -14,8 +14,10 @@ from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from django.http import HttpResponseForbidden
+from rest_framework import permissions, viewsets
 
-from .models import SellerApplication
+from .models import DeliveryAssignment, DeliveryWorker, SellerApplication, Shopkeeper, Store
+from .serializers import DeliveryAssignmentSerializer, DeliveryWorkerSerializer, ShopkeeperSerializer, StoreSerializer
 from .forms import OTPVerifyForm, SellerDocumentsForm, CategorySelectionForm, SellerProductForm
 from .forms import TestEmailForm
 from accounts.models import CustomUser
@@ -38,6 +40,83 @@ def _seller_otp_wait_seconds(app):
 
 
 logger = logging.getLogger(__name__)
+
+
+class IsShopkeeperOwnerOrStaff(permissions.BasePermission):
+    message = "You do not have permission to access this shopkeeper resource."
+
+    def has_permission(self, request, view):
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return False
+        return bool(user.is_superuser or getattr(user, "is_owner", False) or user.is_staff or getattr(user, "is_vendor", False))
+
+    def has_object_permission(self, request, view, obj):
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or getattr(user, "is_owner", False) or user.is_staff:
+            return True
+
+        if isinstance(obj, Shopkeeper):
+            return bool(obj.user_id == user.id)
+        if isinstance(obj, Store):
+            return bool(obj.shopkeeper.user_id == user.id)
+        if isinstance(obj, DeliveryWorker):
+            return bool(obj.user_id == user.id or obj.shopkeeper.user_id == user.id)
+        if isinstance(obj, DeliveryAssignment):
+            return bool(obj.shopkeeper.user_id == user.id or obj.worker.user_id == user.id)
+        return False
+
+
+class ShopkeeperViewSet(viewsets.ModelViewSet):
+    queryset = Shopkeeper.objects.select_related("user", "owner").all()
+    serializer_class = ShopkeeperSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or getattr(user, "is_owner", False) or user.is_staff:
+            return self.queryset
+        return self.queryset.filter(user=user)
+
+
+class StoreViewSet(viewsets.ModelViewSet):
+    queryset = Store.objects.select_related("shopkeeper", "shopkeeper__user").all()
+    serializer_class = StoreSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or getattr(user, "is_owner", False) or user.is_staff:
+            return self.queryset
+        return self.queryset.filter(shopkeeper__user=user)
+
+
+class DeliveryWorkerViewSet(viewsets.ModelViewSet):
+    queryset = DeliveryWorker.objects.select_related("user", "shopkeeper", "shopkeeper__user", "store").all()
+    serializer_class = DeliveryWorkerSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or getattr(user, "is_owner", False) or user.is_staff:
+            return self.queryset
+        return self.queryset.filter(Q(shopkeeper__user=user) | Q(user=user))
+
+
+class DeliveryAssignmentViewSet(viewsets.ModelViewSet):
+    queryset = DeliveryAssignment.objects.select_related("order", "store", "shopkeeper", "shopkeeper__user", "worker", "worker__user").all()
+    serializer_class = DeliveryAssignmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser or getattr(user, "is_owner", False) or user.is_staff:
+            return self.queryset
+        if getattr(user, "delivery_worker_profile", None):
+            return self.queryset.filter(worker__user=user)
+        return self.queryset.filter(shopkeeper__user=user)
 
 
 @login_required
@@ -230,6 +309,61 @@ def _get_approved_seller_application(request):
         return app, None
 
     return None, redirect("sellers:status")
+
+
+def _get_shopkeeper_for_user(user):
+    if not user or not getattr(user, "is_authenticated", False):
+        return None
+    return Shopkeeper.objects.select_related("user", "owner").filter(user=user).first()
+
+
+def _get_user_shopkeeper_store_queryset(user):
+    shopkeeper = _get_shopkeeper_for_user(user)
+    if user.is_superuser or getattr(user, "is_owner", False) or user.is_staff:
+        return Store.objects.select_related("shopkeeper", "shopkeeper__user").all()
+    if shopkeeper is None:
+        return Store.objects.none()
+    return Store.objects.select_related("shopkeeper", "shopkeeper__user").filter(shopkeeper=shopkeeper)
+
+
+def _get_user_worker_queryset(user):
+    shopkeeper = _get_shopkeeper_for_user(user)
+    if user.is_superuser or getattr(user, "is_owner", False) or user.is_staff:
+        return DeliveryWorker.objects.select_related("user", "shopkeeper", "store").all()
+    if shopkeeper is None:
+        return DeliveryWorker.objects.none()
+    return DeliveryWorker.objects.select_related("user", "shopkeeper", "store").filter(shopkeeper=shopkeeper)
+
+
+def _get_owned_store_or_403(user, pk):
+    queryset = _get_user_shopkeeper_store_queryset(user)
+    store = queryset.filter(pk=pk).first()
+    if store is None:
+        return None, HttpResponseForbidden()
+    return store, None
+
+
+def _get_owned_worker_or_403(user, pk):
+    queryset = _get_user_worker_queryset(user)
+    worker = queryset.filter(pk=pk).first()
+    if worker is None:
+        return None, HttpResponseForbidden()
+    return worker, None
+
+
+def _get_owned_assignment_or_403(user, pk):
+    if user.is_superuser or getattr(user, "is_owner", False) or user.is_staff:
+        assignment = DeliveryAssignment.objects.select_related("order", "store", "shopkeeper", "worker").filter(pk=pk).first()
+        if assignment is None:
+            return None, HttpResponseForbidden()
+        return assignment, None
+    shopkeeper = _get_shopkeeper_for_user(user)
+    if shopkeeper is None:
+        return None, HttpResponseForbidden()
+    assignment = DeliveryAssignment.objects.select_related("order", "store", "shopkeeper", "worker").filter(pk=pk, shopkeeper=shopkeeper).first()
+    if assignment is None:
+        return None, HttpResponseForbidden()
+    return assignment, None
 
 
 def _is_marketplace_owner(user):
@@ -676,6 +810,301 @@ def dashboard(request):
     }
 
     return render(request, "sellers/dashboard.html", {"application": app, "metrics": metrics})
+
+
+@login_required
+def shopkeeper_dashboard(request):
+    if not request.user.is_authenticated:
+        return redirect("accounts:login")
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+
+    stores = Store.objects.filter(shopkeeper=shopkeeper).select_related("shopkeeper")
+    products = Product.objects.filter(seller=request.user, store__shopkeeper=shopkeeper).select_related("category", "inventory", "store")
+    workers = DeliveryWorker.objects.filter(shopkeeper=shopkeeper).select_related("user", "store")
+    assignments = DeliveryAssignment.objects.filter(shopkeeper=shopkeeper).select_related("order", "store", "worker", "worker__user")
+    pending_orders = Order.objects.filter(items__product__seller=request.user, status__in=["pending", "paid"]).distinct()[:10]
+
+    metrics = {
+        "stores": stores.count(),
+        "products": products.count(),
+        "workers": workers.count(),
+        "active_deliveries": assignments.filter(status__in=["accepted", "picked_up", "out_for_delivery"]).count(),
+        "pending_orders": pending_orders.count(),
+        "orders": Order.objects.filter(items__product__seller=request.user).distinct().count(),
+    }
+    return render(request, "sellers/shopkeeper_dashboard.html", {"shopkeeper": shopkeeper, "stores": stores, "products": products, "workers": workers, "assignments": assignments[:10], "pending_orders": pending_orders, "metrics": metrics})
+
+
+@login_required
+def shopkeeper_stores(request):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    stores = Store.objects.filter(shopkeeper=shopkeeper).select_related("shopkeeper").order_by("name")
+    return render(request, "sellers/shopkeeper_stores.html", {"shopkeeper": shopkeeper, "stores": stores})
+
+
+@login_required
+def shopkeeper_store_add(request):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    if request.method == "POST":
+        name = (request.POST.get("name") or "").strip()
+        address = (request.POST.get("address") or "").strip()
+        city = (request.POST.get("city") or "").strip()
+        state = (request.POST.get("state") or "").strip()
+        pincode = (request.POST.get("pincode") or "").strip()
+        phone = (request.POST.get("phone") or "").strip()
+        if not name:
+            messages.error(request, "Store name is required.")
+        else:
+            slug = name.lower().replace("&", "and").replace(" ", "-")
+            slug = re.sub(r"[^a-z0-9-]+", "-", slug).strip("-") or "store"
+            store = Store.objects.create(shopkeeper=shopkeeper, name=name, slug=slug, address=address, city=city, state=state, pincode=pincode, phone=phone)
+            messages.success(request, "Store created successfully.")
+            return redirect("sellers:shopkeeper_store_detail", pk=store.pk)
+    return render(request, "sellers/shopkeeper_store_form.html", {"shopkeeper": shopkeeper, "is_edit": False})
+
+
+@login_required
+def shopkeeper_store_detail(request, pk):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    store, forbidden = _get_owned_store_or_403(request.user, pk)
+    if forbidden is not None:
+        return forbidden
+    products = Product.objects.filter(store=store, seller=request.user).select_related("category", "inventory")
+    workers = DeliveryWorker.objects.filter(store=store, shopkeeper=shopkeeper).select_related("user")
+    orders = Order.objects.filter(items__product__store=store).distinct().order_by("-created_at")[:20]
+    return render(request, "sellers/shopkeeper_store_detail.html", {"shopkeeper": shopkeeper, "store": store, "products": products, "workers": workers, "orders": orders})
+
+
+@login_required
+def shopkeeper_store_edit(request, pk):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    store, forbidden = _get_owned_store_or_403(request.user, pk)
+    if forbidden is not None:
+        return forbidden
+    if request.method == "POST":
+        store.name = (request.POST.get("name") or store.name).strip()
+        store.address = (request.POST.get("address") or "").strip()
+        store.city = (request.POST.get("city") or "").strip()
+        store.state = (request.POST.get("state") or "").strip()
+        store.pincode = (request.POST.get("pincode") or "").strip()
+        store.phone = (request.POST.get("phone") or "").strip()
+        store.is_active = request.POST.get("is_active") == "on"
+        store.save(update_fields=["name", "address", "city", "state", "pincode", "phone", "is_active", "updated_at"])
+        messages.success(request, "Store updated successfully.")
+        return redirect("sellers:shopkeeper_store_detail", pk=store.pk)
+    return render(request, "sellers/shopkeeper_store_form.html", {"shopkeeper": shopkeeper, "store": store, "is_edit": True})
+
+
+@login_required
+def shopkeeper_products(request):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    products = Product.objects.filter(seller=request.user, store__shopkeeper=shopkeeper).select_related("category", "inventory", "store")
+    return render(request, "sellers/shopkeeper_products.html", {"shopkeeper": shopkeeper, "products": products})
+
+
+@login_required
+def shopkeeper_product_add(request):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    stores = Store.objects.filter(shopkeeper=shopkeeper)
+    if request.method == "POST":
+        form = SellerProductForm(request.POST, request.FILES)
+        category_id = request.POST.get("category")
+        store_id = request.POST.get("store")
+        if not category_id:
+            form.add_error("category", "Please select a category.")
+        store = stores.filter(pk=store_id).first() if store_id else None
+        if store is None and store_id:
+            form.add_error("store", "This store does not belong to your shop.")
+        if form.is_valid() and store is not None:
+            product = form.save(seller=request.user)
+            product.store = store
+            product.save(update_fields=["store", "updated_at"])
+            messages.success(request, "Product created successfully.")
+            return redirect("sellers:shopkeeper_product_edit", pk=product.pk)
+    else:
+        form = SellerProductForm()
+    return render(request, "sellers/shopkeeper_product_form.html", {"shopkeeper": shopkeeper, "form": form, "stores": stores, "is_edit": False})
+
+
+@login_required
+def shopkeeper_product_edit(request, pk):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    product = Product.objects.filter(pk=pk, seller=request.user, store__shopkeeper=shopkeeper).select_related("category", "inventory", "store").first()
+    if product is None:
+        return HttpResponseForbidden()
+    stores = Store.objects.filter(shopkeeper=shopkeeper)
+    if request.method == "POST":
+        form = SellerProductForm(request.POST, request.FILES, instance=product)
+        selected_store = stores.filter(pk=request.POST.get("store")).first()
+        if selected_store is None and request.POST.get("store"):
+            form.add_error("store", "This store does not belong to your shop.")
+        if form.is_valid() and (selected_store is not None or not request.POST.get("store")):
+            form.save(seller=request.user)
+            if selected_store is not None:
+                product.store = selected_store
+                product.save(update_fields=["store", "updated_at"])
+            messages.success(request, "Product updated successfully.")
+            return redirect("sellers:shopkeeper_product_edit", pk=product.pk)
+    else:
+        form = SellerProductForm(instance=product)
+    return render(request, "sellers/shopkeeper_product_form.html", {"shopkeeper": shopkeeper, "product": product, "form": form, "stores": stores, "is_edit": True})
+
+
+@login_required
+def shopkeeper_workers(request):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    workers = DeliveryWorker.objects.filter(shopkeeper=shopkeeper).select_related("user", "store")
+    return render(request, "sellers/shopkeeper_workers.html", {"shopkeeper": shopkeeper, "workers": workers})
+
+
+@login_required
+def shopkeeper_worker_add(request):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    stores = Store.objects.filter(shopkeeper=shopkeeper)
+    if request.method == "POST":
+        email = (request.POST.get("email") or "").strip()
+        phone = (request.POST.get("phone") or "").strip()
+        store_id = request.POST.get("store")
+        store = stores.filter(pk=store_id).first() if store_id else None
+        if not email or not phone or store is None:
+            messages.error(request, "Please provide valid worker data and assign a store.")
+        else:
+            user, created = CustomUser.objects.get_or_create(email=email.lower(), defaults={"username": email.lower().split("@")[0], "is_customer": True, "is_vendor": False, "phone": phone})
+            if not created:
+                user.phone = phone
+                user.save(update_fields=["phone", "updated_at"])
+            worker = DeliveryWorker.objects.create(user=user, shopkeeper=shopkeeper, store=store, phone=phone, status="active", is_available=True)
+            messages.success(request, "Worker added successfully.")
+            return redirect("sellers:shopkeeper_worker_edit", pk=worker.pk)
+    return render(request, "sellers/shopkeeper_worker_form.html", {"shopkeeper": shopkeeper, "stores": stores, "is_edit": False})
+
+
+@login_required
+def shopkeeper_worker_edit(request, pk):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    worker, forbidden = _get_owned_worker_or_403(request.user, pk)
+    if forbidden is not None:
+        return forbidden
+    stores = Store.objects.filter(shopkeeper=shopkeeper)
+    if request.method == "POST":
+        worker.phone = (request.POST.get("phone") or worker.phone).strip()
+        new_store = stores.filter(pk=request.POST.get("store")).first() if request.POST.get("store") else worker.store
+        if new_store is None and request.POST.get("store"):
+            messages.error(request, "This store does not belong to your shop.")
+        else:
+            worker.store = new_store or worker.store
+            worker.status = request.POST.get("status") or worker.status
+            worker.is_available = request.POST.get("is_available") == "on"
+            worker.save(update_fields=["phone", "store", "status", "is_available", "updated_at"])
+            messages.success(request, "Worker updated successfully.")
+            return redirect("sellers:shopkeeper_worker_edit", pk=worker.pk)
+    return render(request, "sellers/shopkeeper_worker_form.html", {"shopkeeper": shopkeeper, "worker": worker, "stores": stores, "is_edit": True})
+
+
+@login_required
+def shopkeeper_assignments(request):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    assignments = DeliveryAssignment.objects.filter(shopkeeper=shopkeeper).select_related("order", "store", "worker", "worker__user")
+    orders = Order.objects.filter(items__product__store__shopkeeper=shopkeeper).distinct().order_by("-created_at")
+    workers = DeliveryWorker.objects.filter(shopkeeper=shopkeeper, status="active", is_available=True).select_related("user", "store")
+    return render(request, "sellers/shopkeeper_assignments.html", {"shopkeeper": shopkeeper, "assignments": assignments, "orders": orders, "workers": workers})
+
+
+@login_required
+def shopkeeper_assignment_assign(request, pk):
+    shopkeeper = _get_shopkeeper_for_user(request.user)
+    if shopkeeper is None:
+        return HttpResponseForbidden()
+    order = Order.objects.filter(pk=pk, items__product__store__shopkeeper=shopkeeper).distinct().first()
+    if order is None:
+        return HttpResponseForbidden()
+    if request.method == "POST":
+        store_id = request.POST.get("store")
+        worker_id = request.POST.get("worker")
+        if not worker_id:
+            messages.error(request, "Please select a worker.")
+            return redirect("sellers:shopkeeper_assignments")
+        store = Store.objects.filter(pk=store_id, shopkeeper=shopkeeper).first() if store_id else None
+        worker = DeliveryWorker.objects.filter(pk=worker_id, shopkeeper=shopkeeper, status="active", is_available=True, store=store).first() if store else None
+        if worker is None:
+            messages.error(request, "Selected worker is not valid for this store.")
+            return redirect("sellers:shopkeeper_assignments")
+        assignment, created = DeliveryAssignment.objects.get_or_create(order=order, shopkeeper=shopkeeper, store=store, worker=worker, defaults={"status": "assigned"})
+        if not created:
+            assignment.status = "assigned"
+            assignment.save(update_fields=["status", "updated_at"])
+        messages.success(request, "Delivery assignment created successfully.")
+        return redirect("sellers:shopkeeper_assignments")
+    return render(request, "sellers/shopkeeper_assignment_form.html", {"shopkeeper": shopkeeper, "order": order, "stores": Store.objects.filter(shopkeeper=shopkeeper), "workers": DeliveryWorker.objects.filter(shopkeeper=shopkeeper, status="active", is_available=True)})
+
+
+@login_required
+def worker_dashboard(request):
+    worker = DeliveryWorker.objects.filter(user=request.user).select_related("shopkeeper", "store").first()
+    if worker is None:
+        return HttpResponseForbidden()
+    assignments = DeliveryAssignment.objects.filter(worker=worker).select_related("order", "store", "shopkeeper").order_by("-assigned_at")
+    return render(request, "sellers/worker_dashboard.html", {"worker": worker, "assignments": assignments})
+
+
+@login_required
+def worker_assignments(request):
+    worker = DeliveryWorker.objects.filter(user=request.user).select_related("shopkeeper", "store").first()
+    if worker is None:
+        return HttpResponseForbidden()
+    assignments = DeliveryAssignment.objects.filter(worker=worker).select_related("order", "store", "shopkeeper").order_by("-assigned_at")
+    return render(request, "sellers/worker_assignments.html", {"worker": worker, "assignments": assignments})
+
+
+@login_required
+def worker_assignment_update(request, pk):
+    worker = DeliveryWorker.objects.filter(user=request.user).select_related("shopkeeper", "store").first()
+    if worker is None:
+        return HttpResponseForbidden()
+    assignment = DeliveryAssignment.objects.filter(pk=pk, worker=worker).select_related("order", "store", "shopkeeper", "worker").first()
+    if assignment is None:
+        return HttpResponseForbidden()
+    if request.method == "POST":
+        new_status = request.POST.get("status")
+        if new_status not in dict(DeliveryAssignment.STATUS_CHOICES):
+            messages.error(request, "Invalid delivery status.")
+            return redirect("sellers:worker_assignments")
+        if not assignment.can_transition_to(new_status):
+            messages.error(request, "This status change is not allowed for the current assignment state.")
+            return redirect("sellers:worker_assignments")
+        assignment.status = new_status
+        if new_status == "picked_up":
+            assignment.picked_up_at = timezone.now()
+        if new_status == "delivered":
+            assignment.delivered_at = timezone.now()
+        assignment.save(update_fields=["status", "picked_up_at", "delivered_at"])
+        messages.success(request, "Delivery status updated.")
+        return redirect("sellers:worker_assignments")
+    return redirect("sellers:worker_assignments")
 
 
 @login_required

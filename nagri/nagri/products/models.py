@@ -31,6 +31,7 @@ class SubCategory(models.Model):
 
 class Product(models.Model):
     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="seller_products")
+    store = models.ForeignKey("sellers.Store", on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
     name = models.CharField(max_length=200, db_index=True)
     slug = models.SlugField(unique=True, db_index=True)
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="products", db_index=True)

@@ -1,0 +1,31 @@
+{% extends 'base/base.html' %}
+{% block title %}My Products{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">My Products</h2>
+        <a href="{% url 'sellers:shopkeeper_product_add' %}" class="btn btn-primary">Add Product</a>
+    </div>
+
+    {% if products %}
+        <div class="list-group">
+            {% for product in products %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ product.name }}</strong>
+                            <div class="small text-muted">{{ product.store.name|default:'Unassigned store' }} · ₹{{ product.price }}</div>
+                        </div>
+                        <div class="btn-group">
+                            <a href="{% url 'sellers:shopkeeper_product_edit' product.pk %}" class="btn btn-sm btn-outline-primary">Edit</a>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info">No products added yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -52,6 +52,10 @@
                         <a class="topnav-pill" href="{% url 'sellers:owner_dashboard' %}">Owner Dashboard</a>
                     {% elif user.is_vendor %}
                         <a class="topnav-pill" href="{% url 'sellers:dashboard' %}">Seller Dashboard</a>
+                    {% elif user.shopkeeper_profile %}
+                        <a class="topnav-pill" href="{% url 'sellers:shopkeeper_dashboard' %}">Shopkeeper Dashboard</a>
+                    {% elif user.delivery_worker_profile %}
+                        <a class="topnav-pill" href="{% url 'sellers:worker_dashboard' %}">Delivery Dashboard</a>
                     {% else %}
                         <a class="topnav-pill" href="{% url 'accounts:dashboard_page' %}">Dashboard</a>
                         <a class="topnav-pill" href="{% url 'sellers:apply_start' %}">Become a Seller</a>

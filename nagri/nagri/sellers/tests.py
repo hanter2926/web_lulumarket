@@ -1,3 +1,4 @@
+import re
 import smtplib
 from decimal import Decimal
 from unittest.mock import patch
@@ -8,6 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.core import mail
 from django.core.exceptions import ValidationError
+from rest_framework.test import APIClient
 
 from accounts.models import CustomUser
 from .models import SellerApplication, SellerPasswordChangeEvent, SellerOrderNotification
@@ -419,6 +421,71 @@ class SellerFlowTests(TestCase):
         self.assertNotIn('B Multi', content)
         self.assertNotIn('b-multi', content)
 
+
+class ShopkeeperStoreDeliveryBackendTests(TestCase):
+    def setUp(self):
+        self.user = CustomUser.objects.create_user(email='customer@example.com', username='customer', password='pass')
+        self.admin = CustomUser.objects.create_superuser(email='admin@example.com', username='admin', password='adminpass')
+        self.client = Client()
+
+    def test_shopkeeper_store_delivery_model_hierarchy_is_created(self):
+        from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
+
+        owner = CustomUser.objects.create_user(email='owner@example.com', username='owner', password='pass', is_owner=True)
+        shopkeeper = CustomUser.objects.create_user(email='shop@example.com', username='shopkeeper', password='pass')
+        worker = CustomUser.objects.create_user(email='worker@example.com', username='worker', password='pass')
+
+        shop = Shopkeeper.objects.create(user=shopkeeper, owner=owner, status='active')
+        store = Store.objects.create(shopkeeper=shop, name='Fresh Mart', slug='fresh-mart', address='Main Road', city='Bengaluru')
+        product = Product.objects.create(name='Spinach', slug='spinach', category=Category.objects.create(name='Groceries', slug='groceries'), price=Decimal('45.00'), seller=shopkeeper, store=store)
+        worker_profile = DeliveryWorker.objects.create(user=worker, shopkeeper=shop, store=store, status='active', phone='9999999999')
+        order = Order.objects.create(user=self.user, order_number='ORD-2001', total_amount=Decimal('45.00'), status='paid', payment_method='cod', is_paid=True)
+        assignment = DeliveryAssignment.objects.create(order=order, store=store, shopkeeper=shop, worker=worker_profile, status='assigned')
+
+        self.assertEqual(product.store, store)
+        self.assertEqual(store.shopkeeper, shop)
+        self.assertEqual(worker_profile.store, store)
+        self.assertEqual(assignment.worker, worker_profile)
+        self.assertEqual(assignment.store, store)
+
+    def test_store_and_worker_queries_are_isolated_by_shopkeeper(self):
+        from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
+
+        owner = CustomUser.objects.create_user(email='owner2@example.com', username='owner2', password='pass', is_owner=True)
+        shopkeeper_a = CustomUser.objects.create_user(email='shopa@example.com', username='shopa', password='pass')
+        shopkeeper_b = CustomUser.objects.create_user(email='shopb@example.com', username='shopb', password='pass')
+
+        shop_a = Shopkeeper.objects.create(user=shopkeeper_a, owner=owner, status='active')
+        shop_b = Shopkeeper.objects.create(user=shopkeeper_b, owner=owner, status='active')
+        store_a = Store.objects.create(shopkeeper=shop_a, name='Store A', slug='store-a', address='A', city='A')
+        store_b = Store.objects.create(shopkeeper=shop_b, name='Store B', slug='store-b', address='B', city='B')
+
+        worker_a = DeliveryWorker.objects.create(user=CustomUser.objects.create_user(email='worker-a@example.com', username='worker-a', password='pass'), shopkeeper=shop_a, store=store_a, status='active', phone='1111111111')
+        DeliveryWorker.objects.create(user=CustomUser.objects.create_user(email='worker-b@example.com', username='worker-b', password='pass'), shopkeeper=shop_b, store=store_b, status='active', phone='2222222222')
+
+        self.assertEqual(Store.objects.filter(shopkeeper=shop_a).count(), 1)
+        self.assertEqual(DeliveryWorker.objects.filter(shopkeeper=shop_a).count(), 1)
+        self.assertEqual(DeliveryWorker.objects.filter(store=store_a).count(), 1)
+        self.assertNotEqual(worker_a.store_id, store_b.id)
+
+    def test_delivery_assignment_requires_worker_and_store_from_same_shopkeeper(self):
+        from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
+
+        owner = CustomUser.objects.create_user(email='owner3@example.com', username='owner3', password='pass', is_owner=True)
+        shop_a = Shopkeeper.objects.create(user=CustomUser.objects.create_user(email='shopa3@example.com', username='shopa3', password='pass'), owner=owner, status='active')
+        shop_b = Shopkeeper.objects.create(user=CustomUser.objects.create_user(email='shopb3@example.com', username='shopb3', password='pass'), owner=owner, status='active')
+        store_a = Store.objects.create(shopkeeper=shop_a, name='SA', slug='sa', address='A1', city='X')
+        store_b = Store.objects.create(shopkeeper=shop_b, name='SB', slug='sb', address='B1', city='Y')
+        worker = DeliveryWorker.objects.create(user=CustomUser.objects.create_user(email='worker3@example.com', username='worker3', password='pass'), shopkeeper=shop_a, store=store_a, status='active', phone='3333333333')
+        order = Order.objects.create(user=self.user, order_number='ORD-2002', total_amount=Decimal('60.00'), status='paid', payment_method='cod', is_paid=True)
+
+        assignment = DeliveryAssignment(order=order, store=store_b, shopkeeper=shop_a, worker=worker)
+        with self.assertRaises(ValidationError):
+            assignment.clean()
+
+        valid_assignment = DeliveryAssignment(order=order, store=store_a, shopkeeper=shop_a, worker=worker)
+        valid_assignment.clean()
+
     def test_seller_revenue_includes_quantity(self):
         seller = CustomUser.objects.create_user(email='revenue@example.com', username='revenue', password='pass', is_vendor=True)
         category = Category.objects.create(name='Revenue Cat', slug='revenue-cat')
@@ -534,6 +601,8 @@ class SellerFlowTests(TestCase):
         self.assertEqual(item.fulfillment_status, 'pending')
 
     def test_customer_cannot_access_owner_dashboard(self):
+        customer = CustomUser.objects.create_user(email='customer-owner@example.com', username='customer-owner', password='pass')
+        self.client.force_login(customer)
         response = self.client.get(reverse('sellers:owner_dashboard'))
         self.assertEqual(response.status_code, 403)
 
@@ -647,3 +716,89 @@ class SellerFlowTests(TestCase):
         content = response.content.decode()
         self.assertIn('Rank A', content)
         self.assertIn('Rank B', content)
+
+    def test_shopkeeper_dashboard_and_store_access_are_scoped_by_owner(self):
+        from sellers.models import DeliveryWorker, Shopkeeper, Store
+
+        owner = CustomUser.objects.create_user(email='owner-dashboard@example.com', username='owner-dashboard', password='pass', is_owner=True)
+        shop_a_user = CustomUser.objects.create_user(email='shop-a-dashboard@example.com', username='shop-a-dashboard', password='pass')
+        shop_b_user = CustomUser.objects.create_user(email='shop-b-dashboard@example.com', username='shop-b-dashboard', password='pass')
+        shop_a = Shopkeeper.objects.create(user=shop_a_user, owner=owner, status='active', shop_name='One Basket')
+        shop_b = Shopkeeper.objects.create(user=shop_b_user, owner=owner, status='active', shop_name='Two Basket')
+        store_a = Store.objects.create(shopkeeper=shop_a, name='A Store', slug='a-store', city='City A')
+        Store.objects.create(shopkeeper=shop_b, name='B Store', slug='b-store', city='City B')
+
+        self.client.force_login(shop_a_user)
+        response = self.client.get(reverse('sellers:shopkeeper_dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Shopkeeper Dashboard')
+        self.assertContains(response, 'A Store')
+        self.assertNotContains(response, 'B Store')
+
+        response = self.client.get(reverse('sellers:shopkeeper_store_detail', args=[Store.objects.get(shopkeeper=shop_b).pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_worker_can_only_see_own_assignments_and_update_own_status(self):
+        from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
+
+        owner = CustomUser.objects.create_user(email='owner-worker@example.com', username='owner-worker', password='pass', is_owner=True)
+        shopkeeper_user = CustomUser.objects.create_user(email='shop-worker@example.com', username='shop-worker', password='pass')
+        worker_a_user = CustomUser.objects.create_user(email='worker-a-assign@example.com', username='worker-a-assign', password='pass')
+        worker_b_user = CustomUser.objects.create_user(email='worker-b-assign@example.com', username='worker-b-assign', password='pass')
+        shop = Shopkeeper.objects.create(user=shopkeeper_user, owner=owner, status='active', shop_name='Fast Delivery')
+        store = Store.objects.create(shopkeeper=shop, name='Fast Store', slug='fast-store', city='City Z')
+        worker_a = DeliveryWorker.objects.create(user=worker_a_user, shopkeeper=shop, store=store, status='active', phone='1111111111', is_available=True)
+        worker_b = DeliveryWorker.objects.create(user=worker_b_user, shopkeeper=shop, store=store, status='active', phone='2222222222', is_available=True)
+        order_a = Order.objects.create(user=self.user, order_number='ORD-WORKER-A', total_amount=Decimal('150.00'), status='paid', payment_method='cod', is_paid=True)
+        order_b = Order.objects.create(user=self.user, order_number='ORD-WORKER-B', total_amount=Decimal('200.00'), status='paid', payment_method='razorpay', is_paid=True)
+        assignment_a = DeliveryAssignment.objects.create(order=order_a, store=store, shopkeeper=shop, worker=worker_a, status='assigned')
+        assignment_b = DeliveryAssignment.objects.create(order=order_b, store=store, shopkeeper=shop, worker=worker_b, status='assigned')
+
+        self.client.force_login(worker_a_user)
+        response = self.client.get(reverse('sellers:worker_assignments'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'ORD-WORKER-A')
+        self.assertNotContains(response, 'ORD-WORKER-B')
+
+        response = self.client.post(reverse('sellers:worker_assignment_update', args=[assignment_b.pk]), {'status': 'accepted'})
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.post(reverse('sellers:worker_assignment_update', args=[assignment_a.pk]), {'status': 'accepted'})
+        self.assertEqual(response.status_code, 302)
+        assignment_a.refresh_from_db()
+        self.assertEqual(assignment_a.status, 'accepted')
+
+    def test_shopkeeper_api_is_scoped_by_user_and_worker_only_sees_own_assignments(self):
+        from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
+
+        owner = CustomUser.objects.create_user(email='api-owner@example.com', username='api-owner', password='pass', is_owner=True)
+        shop_a_user = CustomUser.objects.create_user(email='api-shop-a@example.com', username='api-shop-a', password='pass')
+        shop_b_user = CustomUser.objects.create_user(email='api-shop-b@example.com', username='api-shop-b', password='pass')
+        worker_a_user = CustomUser.objects.create_user(email='api-worker-a@example.com', username='api-worker-a', password='pass')
+        worker_b_user = CustomUser.objects.create_user(email='api-worker-b@example.com', username='api-worker-b', password='pass')
+
+        shop_a = Shopkeeper.objects.create(user=shop_a_user, owner=owner, status='active', shop_name='API Shop A')
+        shop_b = Shopkeeper.objects.create(user=shop_b_user, owner=owner, status='active', shop_name='API Shop B')
+        store_a = Store.objects.create(shopkeeper=shop_a, name='API Store A', slug='api-store-a', city='A')
+        store_b = Store.objects.create(shopkeeper=shop_b, name='API Store B', slug='api-store-b', city='B')
+        worker_a = DeliveryWorker.objects.create(user=worker_a_user, shopkeeper=shop_a, store=store_a, status='active', phone='3333333333', is_available=True)
+        worker_b = DeliveryWorker.objects.create(user=worker_b_user, shopkeeper=shop_b, store=store_b, status='active', phone='4444444444', is_available=True)
+        order_a = Order.objects.create(user=self.user, order_number='ORD-API-1', total_amount=Decimal('55.00'), status='paid', payment_method='cod', is_paid=True)
+        order_b = Order.objects.create(user=self.user, order_number='ORD-API-2', total_amount=Decimal('66.00'), status='paid', payment_method='cash', is_paid=True)
+        DeliveryAssignment.objects.create(order=order_a, store=store_a, shopkeeper=shop_a, worker=worker_a, status='assigned')
+        DeliveryAssignment.objects.create(order=order_b, store=store_b, shopkeeper=shop_b, worker=worker_b, status='assigned')
+
+        api = APIClient()
+        api.force_authenticate(user=shop_a_user)
+        response = api.get('/sellers/api/stores/')
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]['name'], 'API Store A')
+
+        api.force_authenticate(user=worker_a_user)
+        response = api.get('/sellers/api/assignments/')
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]['order_number'], 'ORD-API-1')

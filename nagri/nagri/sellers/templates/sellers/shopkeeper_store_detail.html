@@ -1,0 +1,63 @@
+{% extends 'base/base.html' %}
+{% block title %}{{ store.name }}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">{{ store.name }}</h2>
+            <p class="text-muted mb-0">{{ shopkeeper.shop_name|default:shopkeeper.user.email }}</p>
+        </div>
+        <div class="btn-group">
+            <a href="{% url 'sellers:shopkeeper_store_edit' store.pk %}" class="btn btn-primary">Edit Store</a>
+            <a href="{% url 'sellers:shopkeeper_stores' %}" class="btn btn-outline-primary">Back</a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card p-3 mb-4">
+                <h5>Store Info</h5>
+                <p class="mb-1"><strong>City:</strong> {{ store.city|default:'Not set' }}</p>
+                <p class="mb-1"><strong>Address:</strong> {{ store.address|default:'Not set' }}</p>
+                <p class="mb-0"><strong>Phone:</strong> {{ store.phone|default:'Not set' }}</p>
+            </div>
+            <div class="card p-3">
+                <h5>Products</h5>
+                {% if products %}
+                    <div class="list-group">
+                        {% for product in products %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between">
+                                    <strong>{{ product.name }}</strong>
+                                    <span class="badge {% if product.is_active %}bg-success{% else %}bg-secondary{% endif %}">{% if product.is_active %}Active{% else %}Inactive{% endif %}</span>
+                                </div>
+                                <div class="small text-muted">₹{{ product.price }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted mb-0">No products assigned to this store.</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card p-3">
+                <h5>Workers</h5>
+                {% if workers %}
+                    <div class="list-group">
+                        {% for worker in workers %}
+                            <div class="list-group-item">
+                                <strong>{{ worker.user.email }}</strong>
+                                <div class="small text-muted">{{ worker.status }} · {% if worker.is_available %}Available{% else %}Unavailable{% endif %}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted mb-0">No workers assigned.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

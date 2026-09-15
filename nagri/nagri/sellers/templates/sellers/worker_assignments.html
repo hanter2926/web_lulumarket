@@ -1,0 +1,36 @@
+{% extends 'base/base.html' %}
+{% block title %}Delivery Assignments{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <h2 class="mb-4">My Assignments</h2>
+    {% if assignments %}
+        <div class="list-group">
+            {% for assignment in assignments %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ assignment.order.order_number }}</strong>
+                            <div class="small text-muted">{{ assignment.store.name }} · {{ assignment.shopkeeper.shop_name }}</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-primary">{{ assignment.status }}</span>
+                            <form method="post" action="{% url 'sellers:worker_assignment_update' assignment.pk %}">
+                                {% csrf_token %}
+                                <select name="status" class="form-select form-select-sm">
+                                    {% for value, label in assignment.STATUS_CHOICES %}
+                                        <option value="{{ value }}" {% if assignment.status == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-outline-primary mt-2">Update</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info">No assignments found for your delivery account.</div>
+    {% endif %}
+</div>
+{% endblock %}

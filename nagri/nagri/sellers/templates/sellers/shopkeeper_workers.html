@@ -1,0 +1,31 @@
+{% extends 'base/base.html' %}
+{% block title %}Delivery Workers{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Delivery Workers</h2>
+        <a href="{% url 'sellers:shopkeeper_worker_add' %}" class="btn btn-primary">Add Worker</a>
+    </div>
+
+    {% if workers %}
+        <div class="list-group">
+            {% for worker in workers %}
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ worker.user.email }}</strong>
+                            <div class="small text-muted">{{ worker.store.name }} · {{ worker.status }} · {% if worker.is_available %}Available{% else %}Unavailable{% endif %}</div>
+                        </div>
+                        <div class="btn-group">
+                            <a href="{% url 'sellers:shopkeeper_worker_edit' worker.pk %}" class="btn btn-sm btn-outline-primary">Edit</a>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info">No workers added yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

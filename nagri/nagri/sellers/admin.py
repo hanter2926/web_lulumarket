@@ -1,7 +1,35 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import SellerApplication
+from .models import DeliveryAssignment, DeliveryWorker, SellerApplication, Shopkeeper, Store
+
+
+@admin.register(Shopkeeper)
+class ShopkeeperAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "owner", "status", "shop_name", "created_at")
+    list_filter = ("status", "owner")
+    search_fields = ("user__email", "shop_name", "phone")
+
+
+@admin.register(Store)
+class StoreAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "shopkeeper", "city", "is_active")
+    list_filter = ("is_active", "shopkeeper")
+    search_fields = ("name", "slug", "city")
+
+
+@admin.register(DeliveryWorker)
+class DeliveryWorkerAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "shopkeeper", "store", "status", "is_available")
+    list_filter = ("status", "is_available", "shopkeeper")
+    search_fields = ("user__email", "phone")
+
+
+@admin.register(DeliveryAssignment)
+class DeliveryAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("id", "order", "store", "shopkeeper", "worker", "status", "assigned_at")
+    list_filter = ("status", "shopkeeper", "store")
+    search_fields = ("order__order_number", "worker__user__email")
 
 
 @admin.register(SellerApplication)

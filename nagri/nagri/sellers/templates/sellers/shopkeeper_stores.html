@@ -1,0 +1,26 @@
+{% extends 'base/base.html' %}
+{% block title %}My Stores{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">My Stores</h2>
+        <a href="{% url 'sellers:shopkeeper_store_add' %}" class="btn btn-primary">Add Store</a>
+    </div>
+    {% if stores %}
+        <div class="list-group">
+            {% for store in stores %}
+                <a href="{% url 'sellers:shopkeeper_store_detail' store.pk %}" class="list-group-item list-group-item-action">
+                    <div class="d-flex justify-content-between">
+                        <strong>{{ store.name }}</strong>
+                        <span class="badge {% if store.is_active %}bg-success{% else %}bg-secondary{% endif %}">{% if store.is_active %}Active{% else %}Inactive{% endif %}</span>
+                    </div>
+                    <div class="small text-muted">{{ store.city|default:'No city set' }}</div>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info">No stores created yet.</div>
+    {% endif %}
+</div>
+{% endblock %}
