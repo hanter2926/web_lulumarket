@@ -1,5 +1,33 @@
 // Register service worker at root-scoped URL and handle install prompt UI
 (function(){
+  const statusElement = document.getElementById('pwa-status');
+  const statusLabels = {
+    online: '🟢 Online',
+    offline: '🟠 Offline - using saved data',
+    syncing: '🔄 Syncing...',
+    synced: '✅ Synced'
+  };
+  function setStatus(state) {
+    if (!statusElement) return;
+    statusElement.dataset.state = state;
+    statusElement.textContent = statusLabels[state] || statusLabels.online;
+  }
+  function refreshStatus() { setStatus(navigator.onLine ? 'online' : 'offline'); }
+  window.addEventListener('online', function () {
+    setStatus('syncing');
+    if (window.NAGRISyncManager) window.NAGRISyncManager.flush().catch(function () { setStatus('online'); });
+  });
+  window.addEventListener('offline', function () { setStatus('offline'); });
+  window.addEventListener('nagri-sync-status', function (event) { setStatus(event.detail); });
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', function (event) {
+      if (event.data && event.data.type === 'nagri-sync' && window.NAGRISyncManager) {
+        window.NAGRISyncManager.flush().catch(function () {});
+      }
+    });
+  }
+  refreshStatus();
+
   // Service worker registration
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).then(function(reg){
@@ -9,6 +37,13 @@
     }).catch(function(err){
       console.warn('SW registration failed:', err);
     });
+  }
+
+  if (window.NAGRISyncManager) {
+    window.setInterval(function () {
+      if (navigator.onLine) window.NAGRISyncManager.flush().catch(function () {});
+    }, 30000);
+    if (navigator.onLine) window.NAGRISyncManager.flush().catch(function () {});
   }
 
   // Install prompt handling

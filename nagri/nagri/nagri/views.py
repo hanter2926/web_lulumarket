@@ -30,3 +30,7 @@ def service_worker(request):
     with open(sw_path, 'rb') as fh:
         content = fh.read()
     return HttpResponse(content, content_type='application/javascript')
+
+
+def offline_page(request):
+    return render(request, "pwa/offline.html")

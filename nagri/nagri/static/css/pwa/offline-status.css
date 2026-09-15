@@ -1,0 +1,5 @@
+.pwa-status { position: fixed; right: 12px; bottom: 12px; z-index: 1050; max-width: calc(100vw - 24px); padding: 7px 11px; border: 1px solid rgba(16, 42, 67, .14); border-radius: 999px; background: rgba(255, 255, 255, .96); box-shadow: 0 4px 14px rgba(16, 42, 67, .12); color: #102a43; font: 600 12px/1.2 Arial, sans-serif; }
+.pwa-status[data-state="offline"] { color: #a85d00; }
+.pwa-status[data-state="syncing"] { color: #155b8a; }
+.pwa-status[data-state="synced"] { color: #18794e; }
+@media (max-width: 480px) { .pwa-status { right: 8px; bottom: 8px; font-size: 11px; } }

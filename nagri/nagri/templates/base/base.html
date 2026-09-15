@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="{% static 'css/navbar.css' %}">
     <link rel="stylesheet" href="{% static 'css/navbar-responsive.css' %}">
     <link rel="stylesheet" href="{% static 'css/base/footer.css' %}">
+    <link rel="stylesheet" href="{% static 'css/pwa/offline-status.css' %}">
     <!-- PWA manifest and theme -->
     <link rel="manifest" href="{% static 'manifest.json' %}">
     <meta name="theme-color" content="#0d6efd">
@@ -31,6 +32,7 @@
     
 </head>
 <body>
+    <div id="pwa-status" class="pwa-status" data-state="online" role="status" aria-live="polite">🟢 Online</div>
     <!-- Top Navigation (Premium) -->
     <nav class="nagri-topnav site-header navbar-sticky">
         <div class="topnav-inner container-fluid">
@@ -277,6 +279,8 @@
     <script src="{% static 'js/base/main.js' %}"></script>
     <script src="{% static 'js/base/navbar.js' %}"></script>
     <!-- PWA JS -->
+    <script src="{% static 'js/pwa/indexeddb.js' %}"></script>
+    <script src="{% static 'js/pwa/sync-manager.js' %}"></script>
     <script src="{% static 'js/pwa/pwa.js' %}"></script>
     <!-- Page-specific JS -->
     {% block extra_js %}{% endblock %}

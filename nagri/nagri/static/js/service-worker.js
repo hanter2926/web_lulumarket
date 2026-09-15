@@ -1,84 +1,106 @@
-const CACHE_NAME = 'nagri-cache-v2';
-
-// Static resources we want to pre-cache (manifest + icons)
+const STATIC_CACHE = 'nagri-static-v1';
+const PAGE_CACHE = 'nagri-pages-v1';
+const OFFLINE_URL = '/offline/';
 const PRECACHE_URLS = [
+  OFFLINE_URL,
   '/static/manifest.json',
+  '/static/css/base/base.css',
+  '/static/css/base/navbar.css',
+  '/static/css/base/footer.css',
+  '/static/css/navbar.css',
+  '/static/css/navbar-responsive.css',
+  '/static/css/pwa/offline.css',
+  '/static/css/pwa/offline-status.css',
+  '/static/js/base/main.js',
+  '/static/js/base/navbar.js',
+  '/static/js/pwa/indexeddb.js',
+  '/static/js/pwa/sync-manager.js',
+  '/static/js/pwa/pwa.js',
   '/static/images/icons/icon-192x192.png',
   '/static/images/icons/icon-512x512.png'
 ];
 
-// Simple offline fallback HTML (used when network is down)
-const OFFLINE_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Offline</title></head><body><h1>Offline</h1><p>You appear to be offline. Please check your connection.</p></body></html>`;
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_URLS).catch(() => {});
-    })
-  );
-  // Activate new SW as soon as it's finished installing
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  // Clean up old caches and take control of clients immediately
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(
-      keys.map((key) => { if (key !== CACHE_NAME) return caches.delete(key); return null; })
-    ))
-    .then(() => self.clients.claim())
-  );
-});
-
-// Helper: return true for navigation requests (HTML page navigations)
-function isNavigationRequest(request){
-  return request.mode === 'navigate' || (request.headers && request.headers.get && request.headers.get('accept') && request.headers.get('accept').includes('text/html'));
+function isPrivateRequest(request) {
+  const url = new URL(request.url);
+  return url.pathname.startsWith('/admin/') ||
+    url.pathname.startsWith('/accounts/') ||
+    url.pathname.startsWith('/cart/') ||
+    url.pathname.startsWith('/checkout/') ||
+    url.pathname.startsWith('/orders/') ||
+    url.pathname.startsWith('/payment/') ||
+    url.pathname.startsWith('/wishlist/') ||
+    url.pathname.startsWith('/sellers/') ||
+    url.pathname.startsWith('/api/') ||
+    documentCookieContainsPrivateSession(request);
 }
 
-self.addEventListener('fetch', (event) => {
-  // Only handle GET requests in the SW
-  if (event.request.method !== 'GET') return;
+function documentCookieContainsPrivateSession(request) {
+  const cookie = request.headers.get('cookie') || '';
+  return cookie.includes('sessionid=') || cookie.includes('csrftoken=');
+}
 
-  // Network-first for navigations (HTML pages)
-  if (isNavigationRequest(event.request)){
-    event.respondWith((async () => {
-      try{
-        // Try network first (include credentials for Django pages)
-        const netResp = await fetch(event.request, { credentials: 'same-origin' });
-        // Don't cache HTML navigation responses (avoid serving a cached '/' for other URLs)
-        return netResp;
-      }catch(err){
-        // Network failed — try to find a cached response for the exact request (if any)
-        const cache = await caches.open(CACHE_NAME);
-        const cached = await cache.match(event.request);
-        if (cached) return cached;
-        // Return a simple offline page instead of returning the cached home page
-        return new Response(OFFLINE_HTML, { headers: { 'Content-Type': 'text/html' } });
+function isNavigation(request) {
+  return request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html');
+}
+
+self.addEventListener('install', function (event) {
+  event.waitUntil(caches.open(STATIC_CACHE).then(function (cache) {
+    return Promise.all(PRECACHE_URLS.map(function (url) {
+      return cache.add(url).catch(function () { return null; });
+    }));
+  }).then(function () { return self.skipWaiting(); }));
+});
+
+self.addEventListener('activate', function (event) {
+  event.waitUntil(caches.keys().then(function (keys) {
+    return Promise.all(keys.filter(function (key) {
+      return ![STATIC_CACHE, PAGE_CACHE].includes(key);
+    }).map(function (key) { return caches.delete(key); }));
+  }).then(function () { return self.clients.claim(); }));
+});
+
+self.addEventListener('fetch', function (event) {
+  const request = event.request;
+  if (request.method !== 'GET') return;
+
+  if (isNavigation(request)) {
+    if (isPrivateRequest(request)) return;
+    event.respondWith(fetch(request).then(function (response) {
+      if (response.ok) {
+        const copy = response.clone();
+        caches.open(PAGE_CACHE).then(function (cache) { return cache.put(request, copy); });
       }
-    })());
+      return response;
+    }).catch(function () {
+      return caches.match(request).then(function (cached) {
+        return cached || caches.match(OFFLINE_URL);
+      });
+    }));
     return;
   }
 
-  // For other requests (static assets), use cache-first then network, and cache static resources
-  event.respondWith((async () => {
-    const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(event.request);
-    if (cached) return cached;
-    try{
-      const response = await fetch(event.request, { credentials: 'same-origin' });
-      // Only cache non-HTML same-origin static assets (js, css, images, manifest)
-      const contentType = response.headers.get('Content-Type') || '';
-      const isHTML = contentType.includes('text/html');
-      const isSameOrigin = new URL(event.request.url).origin === self.location.origin;
-      if (!isHTML && isSameOrigin){
-        try{ cache.put(event.request, response.clone()); } catch(e){}
-      }
-      return response;
-    }catch(err){
-      // If fetch fails, attempt to return an icon or manifest from cache as best-effort
-      const fallback = await cache.match('/static/images/icons/icon-192x192.png');
-      if (fallback) return fallback;
-      return new Response('', { status: 503, statusText: 'Service Unavailable' });
-    }
-  })());
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/static/')) {
+    event.respondWith(caches.match(request).then(function (cached) {
+      return cached || fetch(request).then(function (response) {
+        if (response.ok) {
+          caches.open(STATIC_CACHE).then(function (cache) {
+            return cache.put(request, response.clone());
+          });
+        }
+        return response;
+      });
+    }));
+  }
+});
+
+self.addEventListener('sync', function (event) {
+  if (event.tag === 'nagri-sync') {
+    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clients) {
+      clients.forEach(function (client) {
+        client.postMessage({ type: 'nagri-sync' });
+      });
+    }));
+  }
 });

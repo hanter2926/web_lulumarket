@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Offline - NAGRI</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/pwa/offline.css' %}">
+</head>
+<body>
+    <main class="offline-page" role="main">
+        <section class="offline-panel" aria-labelledby="offline-title">
+            <div class="offline-mark" aria-hidden="true">N</div>
+            <p class="offline-kicker">NAGRI</p>
+            <h1 id="offline-title">📡 You're Offline</h1>
+            <p class="offline-copy">NAGRI is currently using saved information.</p>
+            <p class="offline-status" role="status">🟠 Offline - using saved data</p>
+            <button type="button" class="offline-retry" id="offline-retry">Retry Connection</button>
+            <a class="offline-home" href="/">Return to NAGRI</a>
+        </section>
+    </main>
+    <script>
+        document.getElementById('offline-retry').addEventListener('click', function () {
+            window.location.reload();
+        });
+    </script>
+</body>
+</html>
