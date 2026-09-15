@@ -5,12 +5,18 @@ from django.conf.urls.static import static
 
 
 from nagri import views as site_views
+from accounts import views as account_views
 
 urlpatterns = [
     # Service worker must be served at the site root for proper scope
     path('service-worker.js', site_views.service_worker),
     path('offline/', site_views.offline_page, name='offline'),
     path("admin/", admin.site.urls),
+    path("owner/sliders/", account_views.owner_sliders_list, name="owner_sliders_list"),
+    path("owner/sliders/add/", account_views.owner_sliders_add, name="owner_sliders_add"),
+    path("owner/sliders/<int:pk>/edit/", account_views.owner_sliders_edit, name="owner_sliders_edit"),
+    path("owner/sliders/<int:pk>/delete/", account_views.owner_sliders_delete, name="owner_sliders_delete"),
+    path("owner/sliders/<int:pk>/toggle/", account_views.owner_sliders_toggle, name="owner_sliders_toggle"),
     path("", include("unyan.urls")),
     path("accounts/", include("accounts.urls")),
     # Include Django's built-in authentication URLs (login/logout/password reset)
