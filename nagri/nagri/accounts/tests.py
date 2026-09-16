@@ -168,6 +168,34 @@ class RoleBasedNavbarTests(TestCase):
         resp = self.client.get(reverse("home"))
         self.assertContains(resp, "Owner Dashboard")
 
+    def test_anonymous_user_sees_sign_in_without_logout(self):
+        resp = self.client.get(reverse("home"))
+        self.assertContains(resp, "Sign In")
+        self.assertNotContains(resp, "Logout")
+
+    def test_authenticated_roles_see_account_menu_and_logout(self):
+        for user in (self.customer, self.seller, self.owner):
+            with self.subTest(user=user.email):
+                self._login(user)
+                resp = self.client.get(reverse("home"))
+                for menu_item in ("My Account", "My Orders", "Wishlist", "Saved Addresses", "Settings", "Logout"):
+                    self.assertContains(resp, menu_item)
+                self.assertContains(resp, reverse("accounts:logout_page"))
+                self.client.logout()
+
+    def test_logout_clears_session_and_protects_dashboard(self):
+        self._login(self.customer)
+
+        response = self.client.get(reverse("accounts:logout_page"))
+
+        self.assertRedirects(response, reverse("home"))
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        dashboard_response = self.client.get(reverse("accounts:dashboard_page"))
+        self.assertRedirects(
+            dashboard_response,
+            f"{reverse('accounts:login_page')}?next={reverse('accounts:dashboard_page')}",
+        )
+
     def test_login_redirects_by_role(self):
         resp = self.client.post(reverse("accounts:email_login"), {"email": "seller@example.com", "password": "pass123"})
         # Should redirect to seller dashboard

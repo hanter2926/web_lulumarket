@@ -41,6 +41,13 @@ button, input { font: inherit; }
 .icon-btn { width:44px; height:44px; border-radius:50%; background:var(--white); display:flex; align-items:center; justify-content:center; color:var(--nagri-navy); box-shadow:0 4px 12px rgba(0,0,0,0.08); }
 .icon-btn.small { width:36px; height:36px; }
 .icon-label { margin-top:6px; font-weight:600; font-size:12px; color:var(--white); }
+.account-menu { position:relative; }
+.account-toggle { border:0; background:transparent; cursor:pointer; }
+.account-menu .dropdown-menu { min-width:210px; margin-top:8px; padding:8px; border:0; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.16); }
+.account-menu .dropdown-item { color:var(--nagri-navy); padding:9px 12px; border-radius:6px; }
+.account-menu .dropdown-item:hover, .account-menu .dropdown-item:focus { color:var(--nagri-navy); background:#f1f4f8; }
+.account-menu .account-logout { color:#b42318; }
+.account-menu .account-logout:hover, .account-menu .account-logout:focus { color:#8f1d14; background:#fff1f0; }
 .badge { position:relative; }
 .badge .badge-count { position:absolute; top:-6px; right:-6px; background:#e63946; color:#fff; font-size:11px; padding:4px 6px; border-radius:999px; box-shadow:0 2px 6px rgba(0,0,0,0.18); }
 

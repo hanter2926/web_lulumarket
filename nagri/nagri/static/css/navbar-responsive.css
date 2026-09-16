@@ -115,3 +115,6 @@
 }
 .mobile-drawer .drawer-list { padding:12px; }
 .mobile-drawer .drawer-list a { display:block; padding:10px 8px; color:var(--nagri-navy); border-radius:6px; }
+.mobile-drawer .drawer-account { padding:12px; border-top:1px solid #f0f0f0; }
+.mobile-drawer .drawer-account-title { padding:0 8px 6px; color:var(--nagri-navy); font-weight:700; }
+.mobile-drawer .drawer-account-menu { display:block; position:static; min-width:0; padding:0; border:0; box-shadow:none; }

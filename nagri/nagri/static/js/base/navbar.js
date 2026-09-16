@@ -22,6 +22,17 @@ document.addEventListener('DOMContentLoaded', function(){
             drawerCategories.classList.add('mobile-drawer-categories');
             drawer.appendChild(drawerCategories);
         }
+        const accountMenu = document.querySelector('.account-menu .dropdown-menu');
+        if (accountMenu) {
+            const drawerAccount = document.createElement('div');
+            drawerAccount.className = 'drawer-account';
+            drawerAccount.innerHTML = '<div class="drawer-account-title">Account</div>';
+            const drawerAccountMenu = accountMenu.cloneNode(true);
+            drawerAccountMenu.classList.remove('dropdown-menu-end');
+            drawerAccountMenu.classList.add('drawer-account-menu');
+            drawerAccount.appendChild(drawerAccountMenu);
+            drawer.appendChild(drawerAccount);
+        }
         document.body.appendChild(drawer);
     }
 
