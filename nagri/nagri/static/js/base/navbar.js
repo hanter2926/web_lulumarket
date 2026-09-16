@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', function(){
         drawer = document.createElement('div');
         drawer.className = 'mobile-drawer';
         const categories = document.querySelector('.cats-list');
-        drawer.innerHTML = '<div style="padding:16px"><button class="btn btn-sm btn-outline-secondary" id="closeDrawer" type="button">Close</button></div>' + (categories ? categories.outerHTML : '');
+        drawer.innerHTML = '<div style="padding:16px"><button class="btn btn-sm btn-outline-secondary" id="closeDrawer" type="button">Close</button></div>' + (categories ? categories.outerHTML.replace('class="cats-list"', 'class="cats-list mobile-drawer-categories"') : '');
         document.body.appendChild(drawer);
     }
 
@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function closeAllDropdowns(exceptEl) {
         categoryLists.flatMap(list => Array.from(list.querySelectorAll('.dropdown-toggle'))).forEach(t => {
             const parent = t.closest('.dropdown');
-            const menu = parent && parent.querySelector('.dropdown-menu');
+            const menu = parent && parent.querySelector(':scope > .dropdown-menu');
             if (!parent || !menu) return;
             if (t === exceptEl) return;
             parent.classList.remove('show');
@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', function () {
             ev.stopPropagation();
             const parent = t.closest('.dropdown');
             if (!parent) return;
-            const menu = parent.querySelector('.dropdown-menu');
+            const menu = parent.querySelector(':scope > .dropdown-menu');
             if (!menu) return;
 
             const isOpen = parent.classList.contains('show') || menu.classList.contains('show');
@@ -89,6 +89,10 @@ document.addEventListener('DOMContentLoaded', function () {
             closeAllDropdowns();
         }
     }, true);
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeAllDropdowns();
+    });
 });
 
 // Mobile search panel toggle

@@ -53,6 +53,15 @@ button, input { font: inherit; }
 .cats-list .dropdown-menu { background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.12); margin-top:8px; padding:8px; }
 .cats-list .dropdown-menu .dropdown-item { color:var(--nagri-navy); padding:8px 12px; display:block; }
 
+/* Keep opened menus above the page instead of clipping them inside the nav strip. */
+.category-navbar .cats-list { overflow:visible; }
+.category-navbar .dropdown { position:relative; }
+.category-navbar .dropdown > .dropdown-menu { display:none; position:absolute; top:100%; left:0; z-index:1100; }
+.category-navbar .dropdown.show > .dropdown-menu,
+.category-navbar .dropdown > .dropdown-menu.show { display:block; }
+.category-navbar .dropdown-submenu { position:relative; }
+.category-navbar .dropdown-submenu > .dropdown-menu { top:0; left:100%; margin-top:-8px; }
+
 /* Caret */
 .cats-list .dropdown-toggle i { display: inline-block; }
 .dropdown-toggle::after { display: none !important; }
