@@ -1,0 +1,55 @@
+{% extends 'base/base.html' %}
+{% load static %}
+{% block title %}Report Delivery Problem{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Report Delivery Problem</h2>
+            <p class="text-muted mb-0">{% if assignment %}{{ assignment.order.order_number }} · {% endif %}{{ area.name|default:'Your operational area' }}</p>
+        </div>
+        <a href="{% url 'sellers:worker_dashboard' %}" class="btn btn-outline-primary">Back</a>
+    </div>
+
+    <form method="post" class="card p-4" id="worker-incident-form" data-sync-endpoint="{% url 'sellers:incidents-list' %}">
+        {% csrf_token %}
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" for="incident_type">Problem type</label>
+                <select id="incident_type" name="incident_type" class="form-select" required>
+                    {% for value, label in incident_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="severity">Severity</label>
+                <select id="severity" name="severity" class="form-select" required>
+                    {% for value, label in severities %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="title">Title</label>
+                <input id="title" name="title" class="form-control" maxlength="200" required>
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="description">Description</label>
+                <textarea id="description" name="description" class="form-control" rows="5" required></textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="latitude">Latitude (optional)</label>
+                <input id="latitude" name="latitude" class="form-control" inputmode="decimal">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="longitude">Longitude (optional)</label>
+                <input id="longitude" name="longitude" class="form-control" inputmode="decimal">
+            </div>
+        </div>
+        <div class="mt-4 d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Report Problem</button>
+            <a href="{% url 'sellers:worker_dashboard' %}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+        <div id="incident-sync-status" class="small text-muted mt-3" aria-live="polite"></div>
+    </form>
+</div>
+    <script src="{% static 'js/sellers/worker-incidents.js' %}"></script>
+{% endblock %}

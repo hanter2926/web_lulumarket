@@ -14,10 +14,19 @@ from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from django.http import HttpResponseForbidden
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status, viewsets
+from rest_framework.response import Response
 
-from .models import DeliveryAssignment, DeliveryWorker, SellerApplication, Shopkeeper, Store
-from .serializers import DeliveryAssignmentSerializer, DeliveryWorkerSerializer, ShopkeeperSerializer, StoreSerializer
+from .models import Area, DeliveryAssignment, DeliveryIncident, DeliveryWorker, RouteIssue, SellerApplication, Shopkeeper, Store
+from .serializers import (
+    AreaSerializer,
+    DeliveryAssignmentSerializer,
+    DeliveryIncidentSerializer,
+    DeliveryWorkerSerializer,
+    RouteIssueSerializer,
+    ShopkeeperSerializer,
+    StoreSerializer,
+)
 from .forms import OTPVerifyForm, SellerDocumentsForm, CategorySelectionForm, SellerProductForm
 from .forms import TestEmailForm
 from accounts.models import CustomUser
@@ -67,6 +76,132 @@ class IsShopkeeperOwnerOrStaff(permissions.BasePermission):
         if isinstance(obj, DeliveryAssignment):
             return bool(obj.shopkeeper.user_id == user.id or obj.worker.user_id == user.id)
         return False
+
+
+def _is_privileged_user(user):
+    return bool(user.is_superuser or getattr(user, "is_owner", False) or user.is_staff)
+
+
+class AreaPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        return request.method in permissions.SAFE_METHODS or _is_privileged_user(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        if _is_privileged_user(request.user):
+            return True
+        if request.method not in permissions.SAFE_METHODS:
+            return False
+        worker = getattr(request.user, "delivery_worker_profile", None)
+        if worker and worker.area_id == obj.id:
+            return True
+        return Store.objects.filter(area=obj, shopkeeper__user=request.user).exists()
+
+
+class DeliveryIncidentPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        if request.method == "POST":
+            return hasattr(request.user, "delivery_worker_profile")
+        return request.method in permissions.SAFE_METHODS or _is_privileged_user(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        if _is_privileged_user(request.user):
+            return True
+        if request.method not in permissions.SAFE_METHODS:
+            return False
+        worker = getattr(request.user, "delivery_worker_profile", None)
+        if worker and (obj.reported_by_id == worker.id or obj.area_id == worker.area_id):
+            return True
+        return obj.reported_by.shopkeeper.user_id == request.user.id
+
+
+class RouteIssuePermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        if request.method == "POST":
+            return hasattr(request.user, "delivery_worker_profile") or _is_privileged_user(request.user)
+        return request.method in permissions.SAFE_METHODS or _is_privileged_user(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        if _is_privileged_user(request.user):
+            return True
+        if request.method not in permissions.SAFE_METHODS:
+            return False
+        worker = getattr(request.user, "delivery_worker_profile", None)
+        if worker and obj.area_id == worker.area_id:
+            return True
+        return Store.objects.filter(area=obj.area, shopkeeper__user=request.user).exists()
+
+
+class AreaViewSet(viewsets.ModelViewSet):
+    queryset = Area.objects.all()
+    serializer_class = AreaSerializer
+    permission_classes = [AreaPermission]
+
+    def get_queryset(self):
+        user = self.request.user
+        if _is_privileged_user(user):
+            return self.queryset
+        worker = getattr(user, "delivery_worker_profile", None)
+        if worker:
+            return self.queryset.filter(pk=worker.area_id, is_active=True)
+        return self.queryset.filter(stores__shopkeeper__user=user, is_active=True).distinct()
+
+
+class DeliveryIncidentViewSet(viewsets.ModelViewSet):
+    queryset = DeliveryIncident.objects.select_related("area", "reported_by", "reported_by__user", "reported_by__shopkeeper", "delivery_assignment__order").all()
+    serializer_class = DeliveryIncidentSerializer
+    permission_classes = [DeliveryIncidentPermission]
+
+    def get_queryset(self):
+        user = self.request.user
+        if _is_privileged_user(user):
+            return self.queryset
+        worker = getattr(user, "delivery_worker_profile", None)
+        if worker:
+            return self.queryset.filter(Q(reported_by=worker) | Q(area_id=worker.area_id)).distinct()
+        return self.queryset.filter(reported_by__shopkeeper__user=user)
+
+    def perform_create(self, serializer):
+        worker = self.request.user.delivery_worker_profile
+        assignment = serializer.validated_data.get("delivery_assignment")
+        area = serializer.validated_data.get("area") or (assignment.store.area if assignment else None) or worker.area or worker.store.area
+        serializer.save(reported_by=worker, area=area)
+
+    def create(self, request, *args, **kwargs):
+        client_id = request.data.get("client_id")
+        if client_id:
+            existing = DeliveryIncident.objects.filter(client_id=client_id).select_related("reported_by__user").first()
+            if existing:
+                worker = getattr(request.user, "delivery_worker_profile", None)
+                if not (_is_privileged_user(request.user) or (worker and existing.reported_by_id == worker.id)):
+                    return Response({"detail": "This client ID is already associated with another incident."}, status=status.HTTP_409_CONFLICT)
+                return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+        return super().create(request, *args, **kwargs)
+
+
+class RouteIssueViewSet(viewsets.ModelViewSet):
+    queryset = RouteIssue.objects.select_related("area", "reported_by", "reported_by__user", "delivery_assignment__order").all()
+    serializer_class = RouteIssueSerializer
+    permission_classes = [RouteIssuePermission]
+
+    def get_queryset(self):
+        user = self.request.user
+        if _is_privileged_user(user):
+            return self.queryset
+        worker = getattr(user, "delivery_worker_profile", None)
+        if worker:
+            return self.queryset.filter(area_id=worker.area_id)
+        return self.queryset.filter(area__stores__shopkeeper__user=user).distinct()
+
+    def perform_create(self, serializer):
+        worker = getattr(self.request.user, "delivery_worker_profile", None)
+        area = serializer.validated_data.get("area") or (worker.area if worker else None) or (worker.store.area if worker else None)
+        serializer.save(reported_by=worker, area=area)
 
 
 class ShopkeeperViewSet(viewsets.ModelViewSet):
@@ -824,6 +959,9 @@ def shopkeeper_dashboard(request):
     products = Product.objects.filter(seller=request.user, store__shopkeeper=shopkeeper).select_related("category", "inventory", "store")
     workers = DeliveryWorker.objects.filter(shopkeeper=shopkeeper).select_related("user", "store")
     assignments = DeliveryAssignment.objects.filter(shopkeeper=shopkeeper).select_related("order", "store", "worker", "worker__user")
+    area_ids = stores.exclude(area_id=None).values_list("area_id", flat=True)
+    active_route_issues = RouteIssue.objects.filter(area_id__in=area_ids, status__in=["active", "monitoring"]).select_related("area")[:10]
+    recent_incidents = DeliveryIncident.objects.filter(area_id__in=area_ids).select_related("area", "reported_by").exclude(status="rejected")[:10]
     pending_orders = Order.objects.filter(items__product__seller=request.user, status__in=["pending", "paid"]).distinct()[:10]
 
     metrics = {
@@ -834,7 +972,7 @@ def shopkeeper_dashboard(request):
         "pending_orders": pending_orders.count(),
         "orders": Order.objects.filter(items__product__seller=request.user).distinct().count(),
     }
-    return render(request, "sellers/shopkeeper_dashboard.html", {"shopkeeper": shopkeeper, "stores": stores, "products": products, "workers": workers, "assignments": assignments[:10], "pending_orders": pending_orders, "metrics": metrics})
+    return render(request, "sellers/shopkeeper_dashboard.html", {"shopkeeper": shopkeeper, "stores": stores, "products": products, "workers": workers, "assignments": assignments[:10], "pending_orders": pending_orders, "metrics": metrics, "active_route_issues": active_route_issues, "recent_incidents": recent_incidents})
 
 
 @login_required
@@ -1068,7 +1206,44 @@ def worker_dashboard(request):
     if worker is None:
         return HttpResponseForbidden()
     assignments = DeliveryAssignment.objects.filter(worker=worker).select_related("order", "store", "shopkeeper").order_by("-assigned_at")
-    return render(request, "sellers/worker_dashboard.html", {"worker": worker, "assignments": assignments})
+    area = worker.area or worker.store.area
+    route_issues = RouteIssue.objects.filter(area=area, status__in=["active", "monitoring"]).select_related("area")[:10] if area else RouteIssue.objects.none()
+    incidents = DeliveryIncident.objects.filter(reported_by=worker).select_related("area", "delivery_assignment")[:10]
+    return render(request, "sellers/worker_dashboard.html", {"worker": worker, "assignments": assignments, "area": area, "route_issues": route_issues, "incidents": incidents})
+
+
+@login_required
+def worker_report_incident(request, assignment_id=None):
+    worker = DeliveryWorker.objects.filter(user=request.user).select_related("store", "area").first()
+    if worker is None:
+        return HttpResponseForbidden()
+    assignment = DeliveryAssignment.objects.filter(worker=worker, pk=assignment_id).select_related("store", "store__area").first() if assignment_id else None
+    if assignment_id and assignment is None:
+        return HttpResponseForbidden()
+    if request.method == "POST":
+        area = (assignment.store.area if assignment else None) or worker.area or worker.store.area
+        if area is None:
+            messages.error(request, "Your store does not have an operational area yet.")
+        else:
+            incident = DeliveryIncident(
+                area=area,
+                delivery_assignment=assignment,
+                reported_by=worker,
+                incident_type=request.POST.get("incident_type", "other"),
+                title=(request.POST.get("title") or "Delivery problem").strip(),
+                description=(request.POST.get("description") or "").strip(),
+                severity=request.POST.get("severity", "medium"),
+                latitude=request.POST.get("latitude") or None,
+                longitude=request.POST.get("longitude") or None,
+            )
+            try:
+                incident.full_clean()
+                incident.save()
+                messages.success(request, "Incident reported successfully.")
+                return redirect("sellers:worker_dashboard")
+            except ValidationError as exc:
+                messages.error(request, "; ".join(exc.messages))
+    return render(request, "sellers/worker_incident_form.html", {"worker": worker, "assignment": assignment, "area": (assignment.store.area if assignment else None) or worker.area or worker.store.area, "incident_types": DeliveryIncident.INCIDENT_TYPES, "severities": DeliveryIncident.SEVERITY_CHOICES})
 
 
 @login_required

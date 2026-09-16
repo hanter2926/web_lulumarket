@@ -25,6 +25,7 @@
 
     async function queueAction(action) {
         const record = Object.assign({ client_id: createClientId(), action_type: 'request', method: 'POST', payload: null, created_at: new Date().toISOString(), retry_count: 0, status: 'pending' }, action);
+        record.payload = Object.assign({}, record.payload || {}, { client_id: record.client_id });
         const existing = await window.NAGRIIndexedDB.list(STORE);
         const duplicate = existing.find(function (item) { return item.client_id === record.client_id; });
         if (duplicate) return duplicate;
@@ -35,22 +36,29 @@
     }
 
     async function sendAction(action) {
+        const csrfCookie = document.cookie.split('; ').find(function (row) { return row.startsWith('csrftoken='); });
         const headers = { 'Content-Type': 'application/json', 'X-NAGRI-Idempotency-Key': action.client_id };
+        if (csrfCookie) headers['X-CSRFToken'] = decodeURIComponent(csrfCookie.split('=')[1]);
         const response = await fetch(action.endpoint, { method: action.method, headers: headers, body: action.payload == null ? undefined : JSON.stringify(action.payload), credentials: 'same-origin' });
         if (!response.ok) throw new Error('Sync failed with HTTP ' + response.status);
         return response;
     }
 
     async function request(action) {
+        const clientId = action.client_id || createClientId();
+        const requestAction = Object.assign({}, action, {
+            client_id: clientId,
+            payload: Object.assign({}, action.payload || {}, { client_id: clientId })
+        });
         if (navigator.onLine) {
             try {
-                return await sendAction(Object.assign({ client_id: createClientId() }, action));
+                return await sendAction(requestAction);
             } catch (error) {
-                if (error instanceof TypeError) return queueAction(action);
+                if (error instanceof TypeError) return queueAction(requestAction);
                 throw error;
             }
         }
-        return queueAction(action);
+        return queueAction(requestAction);
     }
 
     async function flush() {

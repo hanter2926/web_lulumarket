@@ -1,7 +1,14 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import DeliveryAssignment, DeliveryWorker, SellerApplication, Shopkeeper, Store
+from .models import Area, DeliveryAssignment, DeliveryIncident, DeliveryWorker, RouteIssue, SellerApplication, Shopkeeper, Store
+
+
+@admin.register(Area)
+class AreaAdmin(admin.ModelAdmin):
+    list_display = ("name", "code", "city", "state", "is_active")
+    list_filter = ("is_active", "city", "state")
+    search_fields = ("name", "code", "city", "state", "postal_code")
 
 
 @admin.register(Shopkeeper)
@@ -30,6 +37,22 @@ class DeliveryAssignmentAdmin(admin.ModelAdmin):
     list_display = ("id", "order", "store", "shopkeeper", "worker", "status", "assigned_at")
     list_filter = ("status", "shopkeeper", "store")
     search_fields = ("order__order_number", "worker__user__email")
+
+
+@admin.register(DeliveryIncident)
+class DeliveryIncidentAdmin(admin.ModelAdmin):
+    list_display = ("title", "area", "reported_by", "incident_type", "severity", "status", "created_at")
+    list_filter = ("status", "severity", "incident_type", "area", "created_at")
+    search_fields = ("title", "description", "reported_by__user__email", "area__name")
+    readonly_fields = ("client_id", "reported_by", "created_at", "updated_at")
+
+
+@admin.register(RouteIssue)
+class RouteIssueAdmin(admin.ModelAdmin):
+    list_display = ("title", "area", "issue_type", "severity", "status", "starts_at", "expected_end_at")
+    list_filter = ("status", "severity", "issue_type", "area", "starts_at")
+    search_fields = ("title", "description", "area__name", "reported_by__user__email")
+    readonly_fields = ("reported_by", "created_at", "updated_at")
 
 
 @admin.register(SellerApplication)

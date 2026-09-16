@@ -802,3 +802,76 @@ class ShopkeeperStoreDeliveryBackendTests(TestCase):
         payload = response.json()
         self.assertEqual(len(payload), 1)
         self.assertEqual(payload[0]['order_number'], 'ORD-API-1')
+
+    def test_phase3_area_incident_and_route_issue_security(self):
+        from sellers.models import Area, DeliveryAssignment, DeliveryIncident, DeliveryWorker, RouteIssue, Shopkeeper, Store
+
+        owner = CustomUser.objects.create_user(email='phase3-owner@example.com', username='phase3-owner', password='pass', is_owner=True)
+        shop_a_user = CustomUser.objects.create_user(email='phase3-shop-a@example.com', username='phase3-shop-a', password='pass')
+        shop_b_user = CustomUser.objects.create_user(email='phase3-shop-b@example.com', username='phase3-shop-b', password='pass')
+        worker_a_user = CustomUser.objects.create_user(email='phase3-worker-a@example.com', username='phase3-worker-a', password='pass')
+        worker_b_user = CustomUser.objects.create_user(email='phase3-worker-b@example.com', username='phase3-worker-b', password='pass')
+        area_a = Area.objects.create(name='North Market', code='NORTH-MKT', city='Bengaluru', state='Karnataka')
+        area_b = Area.objects.create(name='South Market', code='SOUTH-MKT', city='Bengaluru', state='Karnataka')
+        shop_a = Shopkeeper.objects.create(user=shop_a_user, owner=owner, status='active')
+        shop_b = Shopkeeper.objects.create(user=shop_b_user, owner=owner, status='active')
+        store_a = Store.objects.create(shopkeeper=shop_a, area=area_a, name='North Store', slug='north-store', city='Bengaluru')
+        store_b = Store.objects.create(shopkeeper=shop_b, area=area_b, name='South Store', slug='south-store', city='Bengaluru')
+        worker_a = DeliveryWorker.objects.create(user=worker_a_user, shopkeeper=shop_a, store=store_a, area=area_a, status='active', phone='1111111111')
+        worker_b = DeliveryWorker.objects.create(user=worker_b_user, shopkeeper=shop_b, store=store_b, area=area_b, status='active', phone='2222222222')
+        order_a = Order.objects.create(user=self.user, order_number='ORD-PHASE3-A', total_amount=Decimal('25.00'), status='paid', payment_method='cod', is_paid=True)
+        assignment_a = DeliveryAssignment.objects.create(order=order_a, store=store_a, shopkeeper=shop_a, worker=worker_a, status='assigned')
+
+        api = APIClient()
+        api.force_authenticate(user=worker_a_user)
+        response = api.post('/sellers/api/local/incidents/', {
+            'area': area_b.id,
+            'delivery_assignment': assignment_a.id,
+            'incident_type': 'road_blocked',
+            'title': 'Road blocked',
+            'description': 'North route blocked',
+            'severity': 'high',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+        response = api.post('/sellers/api/local/incidents/', {
+            'delivery_assignment': assignment_a.id,
+            'incident_type': 'road_blocked',
+            'title': 'Road blocked',
+            'description': 'North route blocked',
+            'severity': 'high',
+            'client_id': '11111111-1111-1111-1111-111111111111',
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        incident = DeliveryIncident.objects.get(client_id='11111111-1111-1111-1111-111111111111')
+        self.assertEqual(incident.reported_by_id, worker_a.id)
+        self.assertEqual(incident.area_id, area_a.id)
+
+        response = api.patch(f'/sellers/api/local/incidents/{incident.id}/', {'status': 'resolved'}, format='json')
+        self.assertEqual(response.status_code, 403)
+
+        api.force_authenticate(user=shop_b_user)
+        response = api.get('/sellers/api/local/incidents/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+        api.force_authenticate(user=owner)
+        response = api.patch(f'/sellers/api/local/incidents/{incident.id}/', {'status': 'acknowledged'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        incident.refresh_from_db()
+        self.assertEqual(incident.status, 'acknowledged')
+
+        response = api.post('/sellers/api/local/route-issues/', {
+            'area': area_a.id,
+            'title': 'Construction',
+            'description': 'Temporary road work',
+            'issue_type': 'construction',
+            'severity': 'medium',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        route_issue = RouteIssue.objects.get(pk=response.json()['id'])
+        self.assertIsNone(route_issue.reported_by_id)
+
+        api.force_authenticate(user=self.user)
+        response = api.post('/sellers/api/local/incidents/', {'title': 'No access'}, format='json')
+        self.assertEqual(response.status_code, 403)

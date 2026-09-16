@@ -93,5 +93,22 @@
             </div>
         </div>
     </div>
+
+    <div class="row g-4 mt-1">
+        <div class="col-lg-6">
+            <div class="card p-3 h-100">
+                <h5>Area Status</h5>
+                {% for store in stores %}{% if store.area %}<div class="small border-bottom py-2"><strong>{{ store.area.name }}</strong> · {{ store.area.city }} · {{ store.name }}</div>{% endif %}{% empty %}<p class="text-muted mb-0">No store areas assigned.</p>{% endfor %}
+                <h6 class="mt-3">Active Route Issues</h6>
+                {% for issue in active_route_issues %}<div class="small border-bottom py-2"><strong>{{ issue.title }}</strong> · {{ issue.area.name }} · {{ issue.severity }}</div>{% empty %}<p class="text-muted small mb-0">No active route issues.</p>{% endfor %}
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card p-3 h-100">
+                <h5>Recent Delivery Incidents</h5>
+                {% for incident in recent_incidents %}<div class="small border-bottom py-2"><strong>{{ incident.title }}</strong> · {{ incident.area.name }} · {{ incident.status }}</div>{% empty %}<p class="text-muted mb-0">No recent incidents.</p>{% endfor %}
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

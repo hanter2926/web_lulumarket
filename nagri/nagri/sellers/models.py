@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db import models, transaction
 from django.utils import timezone
+from uuid import uuid4
 
 from products.models import Category
 
@@ -47,6 +48,27 @@ def validate_seller_password(password, user=None):
         raise ValidationError(exc.messages[0])
 
 
+class Area(models.Model):
+    name = models.CharField(max_length=150)
+    code = models.CharField(max_length=50, unique=True)
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    postal_code = models.CharField(max_length=20, blank=True)
+    description = models.TextField(blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["city", "name"]
+        indexes = [models.Index(fields=["city", "state", "is_active"])]
+
+    def __str__(self):
+        return f"{self.name}, {self.city}"
+
+
 class Shopkeeper(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
@@ -76,6 +98,7 @@ class Shopkeeper(models.Model):
 
 class Store(models.Model):
     shopkeeper = models.ForeignKey(Shopkeeper, on_delete=models.CASCADE, related_name="stores")
+    area = models.ForeignKey("Area", on_delete=models.SET_NULL, null=True, blank=True, related_name="stores")
     name = models.CharField(max_length=200)
     slug = models.SlugField(unique=True)
     address = models.TextField(blank=True, null=True)
@@ -105,6 +128,7 @@ class DeliveryWorker(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="delivery_worker_profile")
     shopkeeper = models.ForeignKey(Shopkeeper, on_delete=models.CASCADE, related_name="delivery_workers")
     store = models.ForeignKey(Store, on_delete=models.CASCADE, related_name="delivery_workers")
+    area = models.ForeignKey("Area", on_delete=models.SET_NULL, null=True, blank=True, related_name="delivery_workers")
     phone = models.CharField(max_length=20)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
     is_available = models.BooleanField(default=True)
@@ -126,6 +150,8 @@ class DeliveryWorker(models.Model):
     def clean(self):
         if self.store_id and self.shopkeeper_id and self.store.shopkeeper_id != self.shopkeeper_id:
             raise ValidationError({"store": "This store does not belong to the selected shopkeeper."})
+        if self.area_id and self.store_id and self.store.area_id and self.store.area_id != self.area_id:
+            raise ValidationError({"area": "This area does not match the worker's store area."})
 
     def __str__(self):
         return self.user.get_full_name() or self.user.email
@@ -180,6 +206,103 @@ class DeliveryAssignment(models.Model):
 
     def __str__(self):
         return f"Assignment for {self.order.order_number}"
+
+
+class DeliveryIncident(models.Model):
+    INCIDENT_TYPES = [
+        ("road_blocked", "Road Blocked"),
+        ("accident", "Accident"),
+        ("waterlogging", "Waterlogging/Flood"),
+        ("traffic", "Traffic"),
+        ("vehicle_problem", "Vehicle Problem"),
+        ("weather_problem", "Weather Problem"),
+        ("safety_problem", "Safety Problem"),
+        ("other", "Other"),
+    ]
+    SEVERITY_CHOICES = [(value, label) for value, label in (("low", "Low"), ("medium", "Medium"), ("high", "High"), ("critical", "Critical"))]
+    STATUS_CHOICES = [
+        ("reported", "Reported"),
+        ("acknowledged", "Acknowledged"),
+        ("in_progress", "In Progress"),
+        ("resolved", "Resolved"),
+        ("rejected", "Rejected"),
+    ]
+    client_id = models.UUIDField(default=uuid4, unique=True, editable=False)
+    area = models.ForeignKey("Area", on_delete=models.PROTECT, related_name="incidents")
+    delivery_assignment = models.ForeignKey(DeliveryAssignment, on_delete=models.SET_NULL, null=True, blank=True, related_name="incidents")
+    reported_by = models.ForeignKey(DeliveryWorker, on_delete=models.PROTECT, related_name="reported_incidents")
+    incident_type = models.CharField(max_length=30, choices=INCIDENT_TYPES)
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default="medium")
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="reported")
+    occurred_at = models.DateTimeField(default=timezone.now)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["area", "status"]), models.Index(fields=["severity", "created_at"])]
+
+    def clean(self):
+        if self.delivery_assignment_id:
+            assignment = self.delivery_assignment
+            if assignment.worker_id != self.reported_by_id:
+                raise ValidationError({"delivery_assignment": "The assignment must belong to the reporting worker."})
+            if assignment.store.area_id and assignment.store.area_id != self.area_id:
+                raise ValidationError({"area": "The incident area must match the assignment store area."})
+        if self.reported_by_id and self.reported_by.area_id and self.reported_by.area_id != self.area_id:
+            raise ValidationError({"area": "The incident area must match the worker area."})
+
+    def __str__(self):
+        return self.title
+
+
+class RouteIssue(models.Model):
+    ISSUE_TYPES = [
+        ("road_closed", "Road Closed"),
+        ("bad_road", "Bad Road"),
+        ("heavy_traffic", "Heavy Traffic"),
+        ("construction", "Construction"),
+        ("waterlogging", "Waterlogging"),
+        ("accident", "Accident"),
+        ("unsafe_route", "Unsafe Route"),
+        ("weather", "Weather"),
+        ("other", "Other"),
+    ]
+    SEVERITY_CHOICES = DeliveryIncident.SEVERITY_CHOICES
+    STATUS_CHOICES = [("active", "Active"), ("monitoring", "Monitoring"), ("resolved", "Resolved"), ("expired", "Expired")]
+    area = models.ForeignKey("Area", on_delete=models.PROTECT, related_name="route_issues")
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    issue_type = models.CharField(max_length=30, choices=ISSUE_TYPES)
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default="medium")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    reported_by = models.ForeignKey(DeliveryWorker, on_delete=models.SET_NULL, null=True, blank=True, related_name="reported_route_issues")
+    delivery_assignment = models.ForeignKey(DeliveryAssignment, on_delete=models.SET_NULL, null=True, blank=True, related_name="route_issues")
+    starts_at = models.DateTimeField(default=timezone.now)
+    expected_end_at = models.DateTimeField(blank=True, null=True)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["area", "status"]), models.Index(fields=["severity", "created_at"])]
+
+    def clean(self):
+        if self.delivery_assignment_id and self.reported_by_id and self.delivery_assignment.worker_id != self.reported_by_id:
+            raise ValidationError({"reported_by": "The route issue reporter must own the assignment."})
+        if self.delivery_assignment_id and self.delivery_assignment.store.area_id and self.delivery_assignment.store.area_id != self.area_id:
+            raise ValidationError({"area": "The route issue area must match the assignment store area."})
+
+    def __str__(self):
+        return self.title
 
 
 class SellerAuditLog(models.Model):
