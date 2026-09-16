@@ -32,8 +32,13 @@ class OrderSerializer(serializers.ModelSerializer):
             "razorpay_order_id",
             "razorpay_payment_id",
             "razorpay_signature",
+            "cancellation_reason",
+            "cancellation_comment",
+            "cancelled_at",
             "items",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["user", "created_at", "updated_at"]
+        read_only_fields = [
+            "user", "created_at", "updated_at", "cancellation_reason", "cancellation_comment", "cancelled_at",
+        ]

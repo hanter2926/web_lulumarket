@@ -37,6 +37,20 @@ class Order(models.Model):
         ("cod", "Cash on Delivery"),
     ]
 
+    CANCELLATION_REASON_CHOICES = [
+        ("ORDERED_BY_MISTAKE", "I ordered by mistake"),
+        ("NOT_NEEDED", "I don't need the product anymore"),
+        ("BETTER_PRICE", "I found a better price elsewhere"),
+        ("DELIVERY_DELAY", "Delivery is taking too long"),
+        ("CHANGE_ADDRESS", "I want to change my delivery address"),
+        ("CHANGE_MOBILE", "I want to change my mobile number"),
+        ("WRONG_PRODUCT_QUANTITY", "I ordered the wrong product or quantity"),
+        ("PAYMENT_ISSUE", "Payment issue"),
+        ("NO_LONGER_REQUIRED", "Product is no longer required"),
+        ("OTHER", "Other reason"),
+    ]
+    CANCELLABLE_STATUSES = {"pending", "processing"}
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="orders")
     order_number = models.CharField(max_length=50, unique=True)
     
@@ -76,6 +90,12 @@ class Order(models.Model):
     razorpay_order_id = models.CharField(max_length=255, blank=True, null=True)
     razorpay_payment_id = models.CharField(max_length=255, blank=True, null=True)
     razorpay_signature = models.CharField(max_length=255, blank=True, null=True)
+
+    # Cancellation details are retained on the order for customer support and auditability.
+    cancellation_reason = models.CharField(max_length=30, choices=CANCELLATION_REASON_CHOICES, blank=True)
+    cancellation_comment = models.TextField(max_length=500, blank=True)
+    cancelled_at = models.DateTimeField(blank=True, null=True)
+    cancelled_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="cancelled_orders")
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)

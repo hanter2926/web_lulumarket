@@ -10,11 +10,12 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Q, Count
+from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 import logging
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 
 from cart.models import Cart
 from products.models import Product
@@ -51,6 +52,7 @@ def order_list_view(request):
         'completed_count': completed_count,
         'pending_count': pending_count,
         'cancelled_count': cancelled_count,
+        'cancellation_reasons': Order.CANCELLATION_REASON_CHOICES,
     }
     return render(request, 'orders/order_list.html', context)
 
@@ -64,6 +66,7 @@ def order_detail_view(request, order_id):
     context = {
         'order': order,
         'items': items,
+        'cancellation_reasons': Order.CANCELLATION_REASON_CHOICES,
     }
     return render(request, 'orders/order_detail.html', context)
 
@@ -654,14 +657,32 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["patch"], url_path="cancel")
     def cancel(self, request, pk=None):
-        """Cancel an order if it is in a cancellable state (pending/processing)."""
+        """Cancel an owned order with a validated customer reason."""
         order = self.get_object()
-        # Allow cancellation only for pending or processing orders
-        if order.status not in ["pending", "processing"]:
+        if order.status == "cancelled":
+            return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)
+        if order.status not in Order.CANCELLABLE_STATUSES:
             return Response({"detail": "Only pending or processing orders can be cancelled."}, status=status.HTTP_400_BAD_REQUEST)
 
-        order.status = "cancelled"
-        order.save(update_fields=["status", "updated_at"])
+        reason = request.data.get("reason")
+        comment = request.data.get("comment", "")
+        valid_reasons = dict(Order.CANCELLATION_REASON_CHOICES)
+        if reason not in valid_reasons:
+            return Response({"reason": "Please select a valid cancellation reason."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(comment, str):
+            return Response({"comment": "Cancellation comment must be text."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(comment) > 500:
+            return Response({"comment": "Cancellation comment cannot exceed 500 characters."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            order.status = "cancelled"
+            order.cancellation_reason = reason
+            order.cancellation_comment = comment.strip()
+            order.cancelled_at = timezone.now()
+            order.cancelled_by = request.user
+            order.save(update_fields=[
+                "status", "cancellation_reason", "cancellation_comment", "cancelled_at", "cancelled_by", "updated_at",
+            ])
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)

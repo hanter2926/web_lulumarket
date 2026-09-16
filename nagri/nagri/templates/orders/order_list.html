@@ -5,6 +5,7 @@
 
 {% block extra_css %}
     <link rel="stylesheet" href="{% static 'css/orders/order_list.css' %}">
+    <link rel="stylesheet" href="{% static 'css/orders/cancellation.css' %}">
 {% endblock %}
 
 {% block content %}
@@ -55,13 +56,21 @@
                         <a href="{% url 'order_detail' order.id %}" class="btn btn-sm btn-primary">
                             <i class="fas fa-eye"></i> View Details
                         </a>
-                        {% if order.status == 'pending' %}
-                            <button class="btn btn-sm btn-warning" onclick="cancelOrder(event, {{ order.id }})">
+                        {% if order.status in 'pending,processing' %}
+                            <button type="button" class="btn btn-sm btn-warning cancel-order-trigger" data-order-id="{{ order.id }}">
                                 <i class="fas fa-times"></i> Cancel
                             </button>
                         {% endif %}
                     </div>
                 </div>
+
+                {% if order.status == 'cancelled' %}
+                    <div class="cancellation-summary" role="status">
+                        <strong>Order Cancelled</strong>
+                        <span>Cancellation reason: {{ order.get_cancellation_reason_display }}</span>
+                        {% if order.cancellation_comment %}<small>{{ order.cancellation_comment }}</small>{% endif %}
+                    </div>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -105,67 +114,10 @@
     {% endif %}
 </div>
 
+{% include 'orders/_cancellation_modal.html' %}
+
 {% endblock %}
 
 {% block extra_js %}
-<script>
-    function getCookie(name) {
-        const cookie = document.cookie.split('; ').find((row) => row.startsWith(name + '='));
-        return cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
-    }
-
-    async function cancelOrder(event, orderId) {
-        event.preventDefault();
-        if (!confirm('Are you sure you want to cancel this order?')) return;
-
-        const url = `/orders/orders/${orderId}/cancel/`;
-        const csrftoken = getCookie('csrftoken');
-
-        try {
-            const resp = await fetch(url, {
-                method: 'PATCH',
-                credentials: 'same-origin',
-                headers: {
-                    'X-CSRFToken': csrftoken || '',
-                    'Accept': 'application/json',
-                },
-            });
-
-            if (!resp.ok) {
-                const txt = await resp.text();
-                let err = txt;
-                try { err = JSON.parse(txt).detail || txt; } catch (e) {}
-                alert('Unable to cancel order: ' + err);
-                return;
-            }
-
-            const data = await resp.json();
-
-            // Update the order card UI
-            const card = document.querySelector(`[data-order-id="${orderId}"]`);
-            if (card) {
-                const badge = card.querySelector('.status-badge');
-                if (badge) {
-                    const statusText = (data.status || 'cancelled').replace(/_/g, ' ');
-                    badge.textContent = statusText.charAt(0).toUpperCase() + statusText.slice(1);
-                    badge.className = 'status-badge status-cancelled';
-                }
-
-                // Remove cancel button
-                const btn = card.querySelector('button');
-                if (btn && btn.textContent.trim().toLowerCase().includes('cancel')) btn.remove();
-            }
-
-            // Update summary counts
-            const cancelledNode = document.getElementById('cancelled-count');
-            const pendingNode = document.getElementById('pending-count');
-            if (cancelledNode) cancelledNode.textContent = Number(cancelledNode.textContent || 0) + 1;
-            if (pendingNode) pendingNode.textContent = Math.max(0, Number(pendingNode.textContent || 0) - 1);
-
-        } catch (err) {
-            console.error('Cancel order failed', err);
-            alert('An error occurred while cancelling the order. Please try again.');
-        }
-    }
-</script>
+<script src="{% static 'js/orders/cancellation.js' %}"></script>
 {% endblock %}

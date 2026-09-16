@@ -45,5 +45,12 @@ class UpiPaymentSubmissionAdmin(admin.ModelAdmin):
 	reject_submission.short_description = "Reject selected UPI submissions"
 
 
-admin.site.register(Order)
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+	list_display = ("order_number", "user", "status", "is_paid", "cancellation_reason", "cancelled_at", "cancelled_by")
+	list_filter = ("status", "payment_method", "is_paid", "cancellation_reason", "cancelled_at")
+	search_fields = ("order_number", "user__email", "cancellation_comment", "cancelled_by__email")
+	readonly_fields = ("cancelled_at", "cancelled_by")
+
+
 admin.site.register(OrderItem)

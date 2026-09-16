@@ -1,0 +1,129 @@
+.cancellation-dialog {
+    width: min(92vw, 520px);
+    max-width: 520px;
+    border: 0;
+    border-radius: 12px;
+    padding: 0;
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, .25);
+}
+
+.cancellation-dialog::backdrop {
+    background: rgba(16, 24, 40, .62);
+}
+
+.cancellation-dialog__panel {
+    position: relative;
+    padding: 1.5rem;
+    background: #fff;
+}
+
+.cancellation-dialog__panel h2 {
+    margin: 0 2rem .5rem 0;
+    font-size: 1.25rem;
+}
+
+.cancellation-dialog__panel > p,
+.cancellation-dialog__step > p {
+    color: #667085;
+}
+
+.cancellation-dialog__close {
+    position: absolute;
+    top: .75rem;
+    right: .9rem;
+    border: 0;
+    background: transparent;
+    color: #667085;
+    font-size: 1.75rem;
+    line-height: 1;
+}
+
+.cancellation-dialog fieldset {
+    display: grid;
+    gap: .5rem;
+    margin: 1rem 0;
+    padding: 0;
+    border: 0;
+}
+
+.cancellation-reason {
+    display: flex;
+    gap: .65rem;
+    align-items: flex-start;
+    padding: .65rem .75rem;
+    border: 1px solid #eaecf0;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.cancellation-reason:has(input:checked) {
+    border-color: #dc3545;
+    background: #fff5f5;
+}
+
+.cancellation-reason input {
+    margin-top: .2rem;
+}
+
+.cancellation-guidance {
+    margin: .75rem 0;
+    padding: .75rem;
+    border-left: 3px solid #0d6efd;
+    background: #f1f6ff;
+    color: #344054;
+    font-size: .9rem;
+}
+
+.cancellation-comment {
+    display: grid;
+    gap: .4rem;
+    margin-top: 1rem;
+    font-weight: 600;
+}
+
+.cancellation-comment textarea {
+    min-height: 86px;
+    resize: vertical;
+}
+
+.cancellation-error {
+    min-height: 1.4rem;
+    margin: .75rem 0 0;
+    color: #b42318;
+    font-size: .9rem;
+}
+
+.cancellation-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .65rem;
+    margin-top: .75rem;
+}
+
+.cancellation-summary {
+    display: grid;
+    gap: .25rem;
+    margin: 0 1.5rem 1.5rem;
+    padding: .9rem 1rem;
+    border-left: 4px solid #dc3545;
+    background: #fff5f5;
+    color: #344054;
+}
+
+.cancellation-summary small {
+    color: #667085;
+}
+
+@media (max-width: 576px) {
+    .cancellation-dialog__panel {
+        padding: 1.25rem;
+    }
+
+    .cancellation-dialog__actions {
+        flex-direction: column-reverse;
+    }
+
+    .cancellation-dialog__actions .btn {
+        width: 100%;
+    }
+}

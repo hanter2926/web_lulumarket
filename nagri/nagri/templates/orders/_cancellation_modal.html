@@ -1,0 +1,37 @@
+<dialog class="cancellation-dialog" id="cancellation-dialog" aria-labelledby="cancellation-dialog-title">
+    <form method="dialog" class="cancellation-dialog__panel" id="cancellation-form">
+        <button type="button" class="cancellation-dialog__close" data-cancel-dialog aria-label="Close cancellation dialog">&times;</button>
+        <div class="cancellation-dialog__step" data-cancellation-step="reason">
+            <h2 id="cancellation-dialog-title">Why do you want to cancel this order?</h2>
+            <p>Please select a reason for cancelling your order.</p>
+            <fieldset>
+                <legend class="visually-hidden">Cancellation reason</legend>
+                {% for value, label in cancellation_reasons %}
+                    <label class="cancellation-reason">
+                        <input type="radio" name="reason" value="{{ value }}">
+                        <span>{{ label }}</span>
+                    </label>
+                {% endfor %}
+            </fieldset>
+            <div class="cancellation-guidance" data-guidance="CHANGE_ADDRESS">You can update your address from your account before placing a new order.</div>
+            <div class="cancellation-guidance" data-guidance="CHANGE_MOBILE">You can update your mobile number from your account before placing a new order.</div>
+            <label class="cancellation-comment" for="cancellation-comment">Tell us a little more (optional)
+                <textarea id="cancellation-comment" name="comment" maxlength="500" placeholder="Tell us a little more (optional)"></textarea>
+            </label>
+            <p class="cancellation-error" data-cancellation-error role="alert"></p>
+            <div class="cancellation-dialog__actions">
+                <button type="button" class="btn btn-light" data-cancel-dialog>Keep Order</button>
+                <button type="submit" class="btn btn-danger">Continue</button>
+            </div>
+        </div>
+        <div class="cancellation-dialog__step" data-cancellation-step="confirm" hidden>
+            <h2>Are you sure you want to cancel this order?</h2>
+            <p>Your cancellation will be submitted with the selected reason.</p>
+            <p class="cancellation-error" data-cancellation-error role="alert"></p>
+            <div class="cancellation-dialog__actions">
+                <button type="button" class="btn btn-light" data-cancellation-back>Keep Order</button>
+                <button type="button" class="btn btn-danger" data-cancellation-confirm>Cancel Order</button>
+            </div>
+        </div>
+    </form>
+</dialog>
