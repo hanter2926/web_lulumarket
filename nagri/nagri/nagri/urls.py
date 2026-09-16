@@ -11,6 +11,7 @@ urlpatterns = [
     # Service worker must be served at the site root for proper scope
     path('service-worker.js', site_views.service_worker),
     path('offline/', site_views.offline_page, name='offline'),
+    path('health/', site_views.health, name='health'),
     path("admin/", admin.site.urls),
     path("owner/sliders/", account_views.owner_sliders_list, name="owner_sliders_list"),
     path("owner/sliders/add/", account_views.owner_sliders_add, name="owner_sliders_add"),

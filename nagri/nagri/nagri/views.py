@@ -1,7 +1,11 @@
 from django.shortcuts import render
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, Http404, JsonResponse
 from django.conf import settings
 import os
+
+
+def health(request):
+    return JsonResponse({"status": "ok"})
 
 
 def bad_request(request, exception=None):
