@@ -1,5 +1,9 @@
-from django.test import TestCase, Client
+from django.core import mail
+from django.test import TestCase, Client, override_settings
 from django.urls import reverse
+from unittest.mock import patch
+from urllib.parse import urlparse
+import re
 
 from .models import Address, CustomUser, UserProfile
 from .utils import generate_otp, normalize_phone_number
@@ -125,6 +129,153 @@ class AccountSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("accounts:dashboard_page"), response.url)
+
+
+class SignupFlowTests(TestCase):
+    signup_data = {
+        "full_name": "New Customer",
+        "email": "new-customer@example.com",
+        "phone": "9876543210",
+        "password": "StrongSignupPass123!",
+        "confirm_password": "StrongSignupPass123!",
+        "terms": "on",
+    }
+
+    def test_signup_page_loads(self):
+        response = self.client.get(reverse("accounts:signup_form"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Create Account")
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_valid_signup_creates_hashed_user_and_profile_and_starts_otp_flow(self, send_otp):
+        response = self.client.post(reverse("accounts:signup_form"), self.signup_data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Account created. OTP sent to your phone.")
+        user = CustomUser.objects.get(email=self.signup_data["email"])
+        self.assertFalse(user.is_active)
+        self.assertTrue(user.check_password(self.signup_data["password"]))
+        self.assertNotEqual(user.password, self.signup_data["password"])
+        profile = UserProfile.objects.get(user=user)
+        self.assertFalse(profile.is_phone_verified)
+        self.assertEqual(profile.phone, "+919876543210")
+        send_otp.assert_called_once()
+
+    def test_duplicate_email_is_rejected_with_login_guidance(self):
+        CustomUser.objects.create_user(
+            email=self.signup_data["email"], username="existing", password="StrongPass123!"
+        )
+
+        response = self.client.post(reverse("accounts:signup_form"), self.signup_data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "This email is already registered. Please login or use Forgot Password.")
+        self.assertEqual(CustomUser.objects.filter(email=self.signup_data["email"]).count(), 1)
+
+    def test_signup_rejects_invalid_email_and_password_mismatch(self):
+        invalid_email = {**self.signup_data, "email": "not-an-email"}
+        response = self.client.post(reverse("accounts:signup_form"), invalid_email)
+        self.assertContains(response, "Enter a valid email address.")
+
+        mismatch = {**self.signup_data, "confirm_password": "DifferentPass123!"}
+        response = self.client.post(reverse("accounts:signup_form"), mismatch)
+        self.assertContains(response, "The two password fields didn't match.")
+
+    def test_signup_rejects_invalid_password_and_missing_required_fields(self):
+        weak_password = {**self.signup_data, "password": "short", "confirm_password": "short"}
+        response = self.client.post(reverse("accounts:signup_form"), weak_password)
+        self.assertContains(response, "This password is too short")
+
+        missing_terms = {key: value for key, value in self.signup_data.items() if key != "terms"}
+        response = self.client.post(reverse("accounts:signup_form"), missing_terms)
+        self.assertContains(response, "This field is required.")
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="noreply@example.com",
+    SITE_URL="https://web-lulumarket.onrender.com",
+)
+class PasswordResetFlowTests(TestCase):
+    def setUp(self):
+        self.user = CustomUser.objects.create_user(
+            email="reset@example.com",
+            username="reset-user",
+            password="OldStrongPass123!",
+            is_active=True,
+        )
+        UserProfile.objects.create(
+            user=self.user,
+            phone="+919876543210",
+            is_phone_verified=True,
+        )
+
+    def test_password_reset_page_loads(self):
+        response = self.client.get(reverse("accounts:password_reset"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Send reset link")
+
+    def test_existing_user_gets_one_reset_email_with_production_link(self):
+        response = self.client.post(
+            reverse("accounts:password_reset"), {"email": self.user.email}
+        )
+
+        self.assertRedirects(response, reverse("accounts:password_reset_done"))
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[0].body
+        reset_match = re.search(
+            r"https://web-lulumarket\.onrender\.com/accounts/reset/[^\s]+", body
+        )
+        self.assertIsNotNone(reset_match)
+        self.reset_path = urlparse(reset_match.group(0)).path
+        self.assertIn("/accounts/reset/", self.reset_path)
+
+    def test_reset_token_sets_new_password_and_old_password_fails(self):
+        self.client.post(reverse("accounts:password_reset"), {"email": self.user.email})
+        body = mail.outbox[0].body
+        reset_url = re.search(
+            r"https://web-lulumarket\.onrender\.com/accounts/reset/[^\s]+", body
+        ).group(0)
+        reset_path = urlparse(reset_url).path
+
+        response = self.client.post(
+            reset_path,
+            {
+                "new_password1": "NewStrongPass456!",
+                "new_password2": "NewStrongPass456!",
+            },
+        )
+        self.assertRedirects(response, reverse("accounts:password_reset_complete"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("NewStrongPass456!"))
+
+        old_login = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": self.user.email, "password": "OldStrongPass123!"},
+        )
+        self.assertContains(old_login, "Invalid email or password.")
+        new_login = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": self.user.email, "password": "NewStrongPass456!"},
+        )
+        self.assertRedirects(new_login, reverse("accounts:dashboard_page"))
+
+    def test_unknown_email_does_not_reveal_account_or_send_email(self):
+        response = self.client.post(
+            reverse("accounts:password_reset"), {"email": "unknown@example.com"}
+        )
+
+        self.assertRedirects(response, reverse("accounts:password_reset_done"))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_invalid_reset_token_is_rejected(self):
+        response = self.client.get(
+            reverse(
+                "accounts:password_reset_confirm",
+                kwargs={"uidb64": "invalid", "token": "invalid-token"},
+            )
+        )
+        self.assertContains(response, "invalid or expired", status_code=200)
 
 
 class RoleBasedNavbarTests(TestCase):

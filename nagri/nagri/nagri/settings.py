@@ -157,26 +157,6 @@ USE_SQLITE = os.environ.get("USE_SQLITE", "True").strip().lower() in {
     "on",
 }
 
-# if USE_SQLITE:
-#     DATABASES = {
-#         "default": {
-#             "ENGINE": "django.db.backends.sqlite3",
-#             "NAME": BASE_DIR / "db.sqlite3",
-#         }
-#     }
-# else:
-# DATABASES = {
-#         "default": {
-#             "ENGINE": "django.db.backends.mysql",
-#             "NAME": os.environ.get("DB_NAME", "unyan"),
-#             "USER": os.environ.get("DB_USER", "root"),
-#             "PASSWORD": os.environ.get("DB_PASSWORD", "Vikram12345"),
-#             "HOST": os.environ.get("DB_HOST", "localhost"),
-#             "PORT": os.environ.get("DB_PORT", "3306"),
-#         }
-# }
-
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if DATABASE_URL:
     # Parse the DATABASE_URL (e.g. postgres://user:pass@host:port/dbname)

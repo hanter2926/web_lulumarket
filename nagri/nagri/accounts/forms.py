@@ -1,14 +1,55 @@
 from django import forms
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+
+from .models import CustomUser
 
 
-class AccountRegistrationForm(UserCreationForm):
+class SignupForm(forms.Form):
+    full_name = forms.CharField(max_length=150, required=True)
     email = forms.EmailField(required=True)
+    phone = forms.CharField(max_length=20, required=True)
+    password = forms.CharField(widget=forms.PasswordInput, required=True)
+    confirm_password = forms.CharField(widget=forms.PasswordInput, required=True)
+    terms = forms.BooleanField(required=True)
 
-    class Meta:
-        model = User
-        fields = ("username", "email", "password1", "password2")
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        if CustomUser.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError(
+                "This email is already registered. Please login or use Forgot Password."
+            )
+        return email
+
+    def clean_phone(self):
+        from .utils import normalize_phone_number
+
+        phone = normalize_phone_number(self.cleaned_data["phone"])
+        if not phone:
+            raise forms.ValidationError("Enter a valid phone number.")
+        if CustomUser.objects.filter(phone__iexact=phone).exists():
+            raise forms.ValidationError("An account with this phone number already exists.")
+        return phone
+
+    def clean_password(self):
+        password = self.cleaned_data["password"]
+        candidate = CustomUser(
+            email=self.data.get("email", "").strip().lower(),
+            username=self.data.get("email", "").strip().lower(),
+        )
+        try:
+            validate_password(password, candidate)
+        except ValidationError as exc:
+            raise forms.ValidationError(exc.messages)
+        return password
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password = cleaned_data.get("password")
+        confirmation = cleaned_data.get("confirm_password")
+        if password and confirmation and password != confirmation:
+            self.add_error("confirm_password", "The two password fields didn't match.")
+        return cleaned_data
 
 
 from .models import HomeSlider

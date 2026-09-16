@@ -31,23 +31,39 @@
         {% if error and active_tab == 'signup' %}
             <p style="color: #b91c1c;">{{ error }}</p>
         {% endif %}
-        <form method="post" action="/accounts/register/">
+        {% if form.non_field_errors and active_tab == 'signup' %}
+            {% for error in form.non_field_errors %}<p style="color: #b91c1c;">{{ error }}</p>{% endfor %}
+        {% endif %}
+        <form method="post" action="{% url 'accounts:signup_form' %}">
             {% csrf_token %}
             <div style="margin-bottom: 14px;">
                 <label for="full_name">Full Name</label><br>
-                <input id="full_name" name="full_name" type="text" style="width: 100%; padding: 10px; margin-top: 6px;">
+                <input id="full_name" name="full_name" type="text" value="{{ form.full_name.value|default:'' }}" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                {% if form.full_name.errors %}<p style="color: #b91c1c;">{{ form.full_name.errors.0 }}</p>{% endif %}
             </div>
             <div style="margin-bottom: 14px;">
                 <label for="signup_email">Email</label><br>
-                <input id="signup_email" name="email" type="email" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                <input id="signup_email" name="email" type="email" value="{{ form.email.value|default:'' }}" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                {% if form.email.errors %}<p style="color: #b91c1c;">{{ form.email.errors.0 }}</p>{% endif %}
             </div>
             <div style="margin-bottom: 14px;">
                 <label for="signup_phone">Phone Number</label><br>
-                <input id="signup_phone" name="phone" type="tel" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                <input id="signup_phone" name="phone" type="tel" value="{{ form.phone.value|default:'' }}" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                {% if form.phone.errors %}<p style="color: #b91c1c;">{{ form.phone.errors.0 }}</p>{% endif %}
             </div>
             <div style="margin-bottom: 14px;">
                 <label for="signup_password">Password</label><br>
                 <input id="signup_password" name="password" type="password" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                {% if form.password.errors %}<p style="color: #b91c1c;">{{ form.password.errors.0 }}</p>{% endif %}
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="signup_confirm_password">Confirm Password</label><br>
+                <input id="signup_confirm_password" name="confirm_password" type="password" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                {% if form.confirm_password.errors %}<p style="color: #b91c1c;">{{ form.confirm_password.errors.0 }}</p>{% endif %}
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label><input type="checkbox" name="terms" required> I agree to the Terms &amp; Conditions</label>
+                {% if form.terms.errors %}<p style="color: #b91c1c;">{{ form.terms.errors.0 }}</p>{% endif %}
             </div>
             <button type="submit" style="width: 100%; padding: 11px; background: #2563eb; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Create Account</button>
         </form>

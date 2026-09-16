@@ -31,7 +31,7 @@ from django.urls import reverse_lazy
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib import messages
 from .models import HomeSlider
-from .forms import HomeSliderForm
+from .forms import HomeSliderForm, SignupForm
 from .decorators import owner_required
 from .forms import SafePasswordResetForm
 from urllib.parse import urlparse
@@ -227,7 +227,7 @@ class PasswordResetView(auth_views.PasswordResetView):
     email_template_name = 'registration/password_reset_email.html'
     subject_template_name = 'registration/password_reset_subject.txt'
     form_class = SafePasswordResetForm
-    success_url = reverse_lazy('password_reset_done')
+    success_url = reverse_lazy('accounts:password_reset_done')
     
     def form_valid(self, form):
         # Attempt to send the password reset email and surface failures in logs.
@@ -262,7 +262,7 @@ class PasswordResetView(auth_views.PasswordResetView):
             messages.error(self.request, "Unable to send password reset email right now. Please try again later.")
             return self.form_invalid(form)
 
-        return super().form_valid(form)
+        return redirect(self.get_success_url())
 
 
 class PasswordResetDoneView(auth_views.PasswordResetDoneView):
@@ -271,7 +271,7 @@ class PasswordResetDoneView(auth_views.PasswordResetDoneView):
 
 class PasswordResetConfirmView(auth_views.PasswordResetConfirmView):
     template_name = 'registration/password_reset_confirm.html'
-    success_url = reverse_lazy('password_reset_complete')
+    success_url = reverse_lazy('accounts:password_reset_complete')
 
 
 class PasswordResetCompleteView(auth_views.PasswordResetCompleteView):
@@ -660,18 +660,12 @@ def logout_view(request):
 
 
 def signup_form_view(request):
-    if request.method == "POST":
-        email = (request.POST.get("email") or "").strip()
-        password = request.POST.get("password") or ""
-        raw_phone = (request.POST.get("phone") or "").strip()
-        phone = normalize_phone_number(raw_phone)
-        full_name = (request.POST.get("full_name") or "").strip()
-
-        if not email or not password or not phone:
-            return render(request, "accounts/auth.html", {"active_tab": "signup", "error": "Email, password, and phone number are required."})
-
-        if CustomUser.objects.filter(email__iexact=email).exists():
-            return render(request, "accounts/auth.html", {"active_tab": "signup", "error": "An account with this email already exists."})
+    form = SignupForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        email = form.cleaned_data["email"]
+        password = form.cleaned_data["password"]
+        phone = form.cleaned_data["phone"]
+        full_name = form.cleaned_data["full_name"].strip()
 
         user = CustomUser.objects.create_user(
             email=email,
@@ -723,7 +717,7 @@ def signup_form_view(request):
         profile.save(update_fields=["last_otp_sent_at", "updated_at"])
         return render(request, "accounts/otp_login.html", {"phone": phone, "message": "Account created. OTP sent to your phone."})
 
-    return render(request, "accounts/auth.html", {"active_tab": "signup"})
+    return render(request, "accounts/auth.html", {"active_tab": "signup", "form": form})
 
 
 @api_view(["GET"])
