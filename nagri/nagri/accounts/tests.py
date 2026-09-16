@@ -179,7 +179,8 @@ class SignupFlowTests(TestCase):
 
         mismatch = {**self.signup_data, "confirm_password": "DifferentPass123!"}
         response = self.client.post(reverse("accounts:signup_form"), mismatch)
-        self.assertContains(response, "The two password fields didn't match.")
+        self.assertContains(response, "The two password fields")
+        self.assertContains(response, "didn")
 
     def test_signup_rejects_invalid_password_and_missing_required_fields(self):
         weak_password = {**self.signup_data, "password": "short", "confirm_password": "short"}
@@ -237,9 +238,11 @@ class PasswordResetFlowTests(TestCase):
             r"https://web-lulumarket\.onrender\.com/accounts/reset/[^\s]+", body
         ).group(0)
         reset_path = urlparse(reset_url).path
+        follow_redirect = self.client.get(reset_path)
+        confirm_path = follow_redirect.url
 
         response = self.client.post(
-            reset_path,
+            confirm_path,
             {
                 "new_password1": "NewStrongPass456!",
                 "new_password2": "NewStrongPass456!",

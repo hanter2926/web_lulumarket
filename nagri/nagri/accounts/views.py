@@ -230,7 +230,9 @@ class PasswordResetView(auth_views.PasswordResetView):
     success_url = reverse_lazy('accounts:password_reset_done')
     
     def form_valid(self, form):
-        # Attempt to send the password reset email and surface failures in logs.
+        # Django's PasswordResetView.form_valid() already calls form.save() once.
+        # We only need to preserve the project-specific SITE_URL override and
+        # surface SMTP/send failures without triggering a second email send.
         try:
             site_url = getattr(settings, "SITE_URL", None) or None
             domain_override = None
@@ -258,7 +260,7 @@ class PasswordResetView(auth_views.PasswordResetView):
             messages.error(self.request, "Unable to send password reset email right now. Please try again later.")
             return self.form_invalid(form)
 
-        return super().form_valid(form)
+        return redirect(self.get_success_url())
 
 
 class PasswordResetDoneView(auth_views.PasswordResetDoneView):
