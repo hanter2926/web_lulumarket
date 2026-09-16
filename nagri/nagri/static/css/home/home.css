@@ -1182,8 +1182,120 @@
     }
     
     .products-grid {
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 15px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .products-grid .product-card {
+        min-width: 0;
+        height: 100%;
+        transform: none;
+    }
+
+    .products-grid .product-image {
+        width: 100%;
+        height: clamp(112px, 31vw, 155px);
+        min-width: 0;
+    }
+
+    .products-grid .product-image img {
+        object-fit: contain;
+        padding: 8px;
+    }
+
+    .products-grid .product-badges {
+        top: 6px;
+        left: 6px;
+        right: auto;
+        align-items: flex-start;
+    }
+
+    .products-grid .product-badges .badge {
+        font-size: .58rem;
+        padding: 3px 5px;
+    }
+
+    .products-grid .product-info {
+        min-width: 0;
+        padding: 9px;
+    }
+
+    .products-grid .product-name {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        white-space: normal;
+        line-height: 1.25;
+        min-height: 2.5em;
+        overflow: hidden;
+    }
+
+    .products-grid .product-category {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 1;
+        line-clamp: 1;
+        overflow: hidden;
+        white-space: normal;
+    }
+
+    .products-grid .product-rating {
+        min-width: 0;
+        gap: 3px;
+        font-size: .72rem;
+    }
+
+    .products-grid .stars {
+        gap: 1px;
+    }
+
+    .products-grid .stars i {
+        font-size: .68rem;
+    }
+
+    .products-grid .rating-value {
+        font-size: .68rem;
+        white-space: nowrap;
+    }
+
+    .products-grid .product-prices {
+        gap: 4px;
+        min-width: 0;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    }
+
+    .products-grid .price {
+        font-size: clamp(.85rem, 3.5vw, 1.1rem);
+    }
+
+    .products-grid .original-price,
+    .products-grid .discount {
+        font-size: .68rem;
+    }
+
+    .products-grid .product-actions {
+        flex-direction: row;
+        gap: 5px;
+        min-width: 0;
+    }
+
+    .products-grid .product-actions .btn {
+        min-width: 0;
+        padding: 6px 4px;
+        font-size: .65rem;
+        white-space: nowrap;
+    }
+
+    .products-grid .product-actions .add-to-cart {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .products-grid .product-actions .add-to-wishlist {
+        flex: 0 0 32px;
+        padding: 6px 0;
     }
     
     /* On mobile keep benefits in one horizontal row of 4 equal columns without horizontal scroll */
@@ -1240,8 +1352,8 @@
     }
     
     .products-grid {
-        grid-template-columns: 1fr;
-        gap: 15px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
     }
     
     .benefits-grid {
@@ -1277,22 +1389,17 @@
         line-height: 1.25;
     }
     
-    .product-card {
-        display: flex;
-        flex-direction: row;
+    .products-grid .product-image {
+        height: clamp(104px, 30vw, 132px);
     }
-    
-    .product-image {
-        width: 100px;
-        height: 100px;
-        min-width: 100px;
+
+    .products-grid .product-info {
+        padding: 7px;
     }
-    
-    .product-info {
-        padding: 10px;
-    }
-    
-    .product-actions {
-        flex-direction: column;
+
+    .products-grid .product-actions .btn {
+        font-size: .58rem;
+        padding-left: 2px;
+        padding-right: 2px;
     }
 }
