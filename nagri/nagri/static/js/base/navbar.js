@@ -13,7 +13,15 @@ document.addEventListener('DOMContentLoaded', function(){
         drawer = document.createElement('div');
         drawer.className = 'mobile-drawer';
         const categories = document.querySelector('.cats-list');
-        drawer.innerHTML = '<div style="padding:16px"><button class="btn btn-sm btn-outline-secondary" id="closeDrawer" type="button">Close</button></div>' + (categories ? categories.outerHTML.replace('class="cats-list"', 'class="cats-list mobile-drawer-categories"') : '');
+        const drawerHeader = document.createElement('div');
+        drawerHeader.className = 'drawer-header';
+        drawerHeader.innerHTML = '<button class="btn btn-sm btn-outline-secondary" id="closeDrawer" type="button">Close</button>';
+        drawer.appendChild(drawerHeader);
+        if (categories) {
+            const drawerCategories = categories.cloneNode(true);
+            drawerCategories.classList.add('mobile-drawer-categories');
+            drawer.appendChild(drawerCategories);
+        }
         document.body.appendChild(drawer);
     }
 
