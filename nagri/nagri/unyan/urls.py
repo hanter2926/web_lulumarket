@@ -21,4 +21,5 @@ urlpatterns = [
     path("owner/sliders/<int:slider_id>/edit/", views.slider_edit, name="slider_edit"),
     path("owner/sliders/<int:slider_id>/delete/", views.slider_delete, name="slider_delete"),
     path("owner/sliders/<int:slider_id>/toggle/", views.slider_toggle, name="slider_toggle"),
+
 ]
