@@ -232,17 +232,14 @@ class PasswordResetView(auth_views.PasswordResetView):
     def form_valid(self, form):
         # Attempt to send the password reset email and surface failures in logs.
         try:
-            # Determine domain/protocol for the reset link. Prefer SITE_URL when configured.
             site_url = getattr(settings, "SITE_URL", None) or None
             domain_override = None
             use_https = False
             if site_url:
                 try:
                     parsed = urlparse(site_url)
-                    # If SITE_URL included scheme, use its scheme to determine https
                     if parsed.scheme:
                         use_https = parsed.scheme.lower() == "https"
-                    # Build domain_override as host[:port]
                     domain_override = parsed.netloc or parsed.path
                 except Exception:
                     domain_override = None
@@ -256,13 +253,12 @@ class PasswordResetView(auth_views.PasswordResetView):
                 use_https=use_https,
             )
         except Exception:
-            # Log the real exception for debugging (do NOT log secrets or tokens)
             email = form.cleaned_data.get('email') if hasattr(form, 'cleaned_data') else None
             logger.exception("Failed to send password reset email for recipient=%s", email)
             messages.error(self.request, "Unable to send password reset email right now. Please try again later.")
             return self.form_invalid(form)
 
-        return redirect(self.get_success_url())
+        return super().form_valid(form)
 
 
 class PasswordResetDoneView(auth_views.PasswordResetDoneView):

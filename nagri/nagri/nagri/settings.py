@@ -26,9 +26,8 @@ SECRET_KEY = os.environ.get(
     "django-insecure-change-this-secret-key"
 )
 
-SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
-
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
+SITE_URL = os.environ.get("SITE_URL") or ("https://web-lulumarket.onrender.com" if not DEBUG else "http://localhost:8000")
 
 ALLOWED_HOSTS = [
     "web-lulumarket.onrender.com",

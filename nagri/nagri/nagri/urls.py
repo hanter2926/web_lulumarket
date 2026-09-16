@@ -19,8 +19,6 @@ urlpatterns = [
     path("owner/sliders/<int:pk>/toggle/", account_views.owner_sliders_toggle, name="owner_sliders_toggle"),
     path("", include("unyan.urls")),
     path("accounts/", include("accounts.urls")),
-    # Include Django's built-in authentication URLs (login/logout/password reset)
-    path("accounts/", include("django.contrib.auth.urls")),
     path("products/", include("products.urls")),
     path("rewards/", include("rewards.urls")),
     path("sellers/", include(("sellers.urls", "sellers"), namespace="sellers")),
