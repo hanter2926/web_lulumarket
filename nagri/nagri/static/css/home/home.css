@@ -1189,8 +1189,8 @@
     /* On mobile keep benefits in one horizontal row of 4 equal columns without horizontal scroll */
     .benefits-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: clamp(3px, 1.5vw, 8px);
         width: 100%;
         overflow: hidden;
         align-items: stretch;
@@ -1245,8 +1245,36 @@
     }
     
     .benefits-grid {
-        grid-template-columns: 1fr;
-        gap: 15px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 4px;
+    }
+
+    .benefits-section {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+
+    .benefit-card {
+        padding: 6px 2px;
+    }
+
+    .benefit-icon {
+        font-size: 1.35rem;
+        margin-bottom: 5px;
+    }
+
+    .benefit-card h4 {
+        font-size: clamp(.65rem, 2.7vw, .82rem);
+        line-height: 1.15;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        overflow-wrap: anywhere;
+    }
+
+    .benefit-card p {
+        font-size: clamp(.58rem, 2.2vw, .7rem);
+        line-height: 1.25;
     }
     
     .product-card {
