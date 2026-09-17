@@ -1,39 +1,82 @@
 {% extends 'base/base.html' %}
 
-{% block title %}OTP Login{% endblock %}
+{% block title %}Verify your phone | NAGRI{% endblock %}
+
+{% block extra_css %}
+<style>
+    .otp-page { min-height: 62vh; padding: clamp(2rem, 6vw, 4.5rem) 1rem; background: linear-gradient(135deg, #f3faf6 0%, #f8fbff 100%); }
+    .otp-card { width: min(100%, 30rem); margin: 0 auto; padding: clamp(1.5rem, 5vw, 2.75rem); background: #fff; border: 1px solid #dcebe2; border-radius: 18px; box-shadow: 0 18px 45px rgba(26, 74, 48, .1); text-align: center; }
+    .otp-success-icon { width: 4.25rem; height: 4.25rem; margin: 0 auto 1.25rem; display: grid; place-items: center; border-radius: 50%; background: #dff7e8; color: #16834a; font-size: 2rem; box-shadow: 0 0 0 .5rem #effbf3; }
+    .otp-card h1 { margin-bottom: .6rem; color: #17231e; font-size: clamp(1.65rem, 5vw, 2.2rem); }
+    .otp-copy { margin: 0 auto 1.4rem; max-width: 32rem; color: #60706a; }
+    .otp-phone { margin: 0 0 1.5rem; color: #17231e; font-weight: 700; letter-spacing: .04em; }
+    .otp-label { display: block; margin-bottom: .5rem; color: #31423a; font-weight: 600; text-align: left; }
+    .otp-input { width: 100%; box-sizing: border-box; padding: .8rem 1rem; border: 1px solid #bdd3c5; border-radius: 10px; color: #17231e; font-size: 1.35rem; letter-spacing: .45em; text-align: center; }
+    .otp-input:focus { outline: 3px solid rgba(22, 131, 74, .16); border-color: #16834a; }
+    .otp-button { width: 100%; margin-top: 1rem; padding: .8rem 1rem; border: 0; border-radius: 10px; background: #16834a; color: #fff; font-weight: 700; cursor: pointer; }
+    .otp-button:hover { background: #10683a; }
+    .otp-resend { margin: 1.1rem 0 0; padding: .35rem .5rem; border: 0; background: transparent; color: #1769aa; font-weight: 600; cursor: pointer; }
+    .otp-resend:disabled { color: #87958e; cursor: not-allowed; }
+    .otp-alert { margin-bottom: 1.2rem; padding: .75rem 1rem; border-radius: 9px; background: #fff0f0; color: #a32323; text-align: left; }
+    .otp-success-message { margin-bottom: 1.2rem; padding: .75rem 1rem; border-radius: 9px; background: #edf9f1; color: #17683d; }
+    .otp-start { text-align: left; }
+    @media (max-width: 480px) { .otp-page { padding: 2rem .75rem; } .otp-card { border-radius: 14px; } }
+</style>
+{% endblock %}
 
 {% block content %}
-<div style="max-width: 500px; margin: 40px auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
-    <h2>Login with Phone OTP</h2>
-    {% if message %}
-        <p style="color: #166534; background: #ecfdf5; padding: 10px; border-radius: 8px;">{{ message }}</p>
-    {% endif %}
-    <form method="post" action="{% url 'accounts:request_otp' %}">
-        {% csrf_token %}
-        <div style="margin-bottom: 16px;">
-            <label for="phone">Phone Number</label><br>
-            <input type="text" id="phone" name="phone" value="{{ phone|default:'' }}" placeholder="e.g. 9876543210" style="width: 100%; padding: 10px; margin-top: 6px;">
-        </div>
-        <button type="submit" style="width: 100%; padding: 10px; background: #111827; color: #fff; border: none; border-radius: 8px; cursor: pointer;">
-            Send OTP
-        </button>
-    </form>
+<main class="otp-page">
+    <section class="otp-card" aria-labelledby="otp-title">
+        {% if phone and otp_sent %}
+            <div class="otp-success-icon" aria-hidden="true"><i class="fas fa-check"></i></div>
+            <h1 id="otp-title">OTP Sent Successfully!</h1>
+            <p class="otp-copy">A 6-digit OTP has been sent via SMS to</p>
+            <p class="otp-phone" aria-label="OTP sent to masked phone number">{{ phone|slice:":3" }} {{ phone|slice:"3:6" }}*****{{ phone|slice:"-3:" }}</p>
 
-    <hr style="margin: 24px 0;">
+            {% if error %}<div class="otp-alert" role="alert">{{ error }}</div>{% endif %}
+            {% if message %}<div class="otp-success-message" role="status">{{ message }}</div>{% endif %}
 
-    <form method="post" action="{% url 'accounts:verify_otp' %}">
-        {% csrf_token %}
-        <div style="margin-bottom: 16px;">
-            <label for="otp_phone">Phone Number</label><br>
-            <input type="text" id="otp_phone" name="phone" value="{{ phone|default:'' }}" placeholder="Same phone number" style="width: 100%; padding: 10px; margin-top: 6px;">
-        </div>
-        <div style="margin-bottom: 16px;">
-            <label for="otp">OTP</label><br>
-            <input type="text" id="otp" name="otp" maxlength="6" placeholder="Enter 6-digit OTP" style="width: 100%; padding: 10px; margin-top: 6px;">
-        </div>
-        <button type="submit" style="width: 100%; padding: 10px; background: #2563eb; color: #fff; border: none; border-radius: 8px; cursor: pointer;">
-            Verify OTP
-        </button>
-    </form>
-</div>
+            <form method="post" action="{% url 'accounts:verify_otp' %}">
+                {% csrf_token %}
+                <label class="otp-label" for="otp">Enter your 6-digit OTP</label>
+                <input class="otp-input" type="text" id="otp" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus>
+                <button class="otp-button" type="submit">Verify OTP</button>
+            </form>
+
+            <form method="post" action="{% url 'accounts:request_otp' %}">
+                {% csrf_token %}
+                <button class="otp-resend" id="resend-otp" type="submit" data-seconds="{{ resend_available_in|default:0 }}">Resend OTP<span id="resend-countdown"></span></button>
+            </form>
+        {% else %}
+            <div class="otp-start">
+                <h1 id="otp-title">Login with Phone OTP</h1>
+                {% if error %}<div class="otp-alert" role="alert">{{ error }}</div>{% endif %}
+                <form method="post" action="{% url 'accounts:request_otp' %}">
+                    {% csrf_token %}
+                    <label class="otp-label" for="phone">Phone Number</label>
+                    <input class="otp-input" type="tel" id="phone" name="phone" placeholder="e.g. 9876543210" autocomplete="tel" required>
+                    <button class="otp-button" type="submit">Send OTP</button>
+                </form>
+            </div>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+{% if phone %}
+<script>
+    (() => {
+        const button = document.getElementById('resend-otp');
+        const countdown = document.getElementById('resend-countdown');
+        let seconds = Number(button.dataset.seconds || 0);
+        const update = () => {
+            button.disabled = seconds > 0;
+            countdown.textContent = seconds > 0 ? ` (${seconds}s)` : '';
+            if (seconds > 0) { seconds -= 1; window.setTimeout(update, 1000); }
+        };
+        update();
+    })();
+</script>
+{% endif %}
 {% endblock %}

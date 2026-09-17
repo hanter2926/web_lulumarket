@@ -5,8 +5,9 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, renderer_classes
 from rest_framework.response import Response
+from rest_framework.renderers import BrowsableAPIRenderer, JSONRenderer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from orders.models import Order
@@ -442,24 +443,42 @@ class PaymentMethodViewSet(viewsets.ModelViewSet):
             PaymentMethod.objects.filter(user=self.request.user).exclude(id=method.id).update(is_default=False)
 
 
+def _is_browser_form_request(request):
+    accept = request.META.get("HTTP_ACCEPT", "")
+    return request.content_type in {"application/x-www-form-urlencoded", "multipart/form-data"} and (
+        "text/html" in accept or not accept
+    )
+
+
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
+@renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 def request_otp(request):
+    browser_request = _is_browser_form_request(request)
     payload = getattr(request, "data", request.POST)
     raw_phone = (payload.get("phone") or "").strip()
     phone = normalize_phone_number(raw_phone)
 
     if not raw_phone:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"error": "Phone number is required."}, status=400)
         return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
     if not phone:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": raw_phone, "error": "Enter a valid phone number."}, status=400)
         return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
 
     user = find_user_by_phone(phone)
     if not user:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "No account found with this phone number. Please register first."}, status=404)
         return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
     if profile.last_otp_sent_at and timezone.now() - profile.last_otp_sent_at < timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS):
+        if browser_request:
+            remaining = OTP_RESEND_COOLDOWN_SECONDS - int((timezone.now() - profile.last_otp_sent_at).total_seconds())
+            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": f"Please wait {max(1, remaining)} seconds before requesting another OTP.", "resend_available_in": max(1, remaining)}, status=429)
         return Response({"detail": f"Please wait {OTP_RESEND_COOLDOWN_SECONDS} seconds before requesting another OTP."}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
     profile.phone = phone
@@ -485,6 +504,8 @@ def request_otp(request):
             profile.otp_expires_at = None
             profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
             logger.warning("OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+            if browser_request:
+                return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": False, "error": "Unable to send OTP right now. Please try again later."}, status=500)
             return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
 
     except Exception:
@@ -492,6 +513,8 @@ def request_otp(request):
         profile.otp_expires_at = None
         profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
         logger.exception("Failed to send registration phone OTP for phone=%s", phone)
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": False, "error": "Unable to send OTP right now. Please try again later."}, status=500)
         return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
 
     # Delivery succeeded — record send timestamp
@@ -501,6 +524,9 @@ def request_otp(request):
     user.phone = phone
     user.save(update_fields=["phone", "updated_at"])
 
+    if browser_request:
+        request.session["otp_phone"] = phone
+        return redirect("accounts:otp_login_page")
     return Response({"detail": "OTP sent successfully.", "phone": phone})
 
 
@@ -579,28 +605,44 @@ def signup_submit(request):
 
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
+@renderer_classes([JSONRenderer, BrowsableAPIRenderer])
 def verify_otp(request):
+    browser_request = _is_browser_form_request(request)
     payload = getattr(request, "data", request.POST)
     raw_phone = (payload.get("phone") or "").strip()
+    if browser_request and not raw_phone:
+        raw_phone = (request.session.get("otp_phone") or "").strip()
     phone = normalize_phone_number(raw_phone)
     otp = (payload.get("otp") or "").strip()
 
     if not raw_phone:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"error": "Phone number is required."}, status=400)
         return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
     if not phone:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": raw_phone, "error": "Enter a valid phone number."}, status=400)
         return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
     if not otp:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "Enter the 6-digit OTP sent to your phone."}, status=400)
         return Response({"detail": "Phone number and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
 
     user = find_user_by_phone(phone)
     if not user:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "No account found with this phone number. Please register first."}, status=404)
         return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
     profile = UserProfile.objects.filter(user=user).first()
     if not profile or not profile.otp or profile.otp != otp:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "That OTP is incorrect. Please check the code and try again."}, status=400)
         return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
     if profile.otp_expires_at and timezone.now() > profile.otp_expires_at:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "This OTP has expired. Please request a new one."}, status=400)
         return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
 
     if not getattr(user, "is_active", True):
@@ -613,6 +655,9 @@ def verify_otp(request):
     profile.save(update_fields=["is_phone_verified", "otp", "otp_expires_at", "updated_at"])
 
     auth_login(request, user)
+    if browser_request:
+        request.session.pop("otp_phone", None)
+        return redirect("accounts:dashboard_page")
     refresh = RefreshToken.for_user(user)
     return Response({
         "detail": "Phone number verified successfully.",
@@ -713,7 +758,8 @@ def signup_form_view(request):
 
         profile.last_otp_sent_at = timezone.now()
         profile.save(update_fields=["last_otp_sent_at", "updated_at"])
-        return render(request, "accounts/otp_login.html", {"phone": phone, "message": "Account created. OTP sent to your phone."})
+        request.session["otp_phone"] = phone
+        return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "message": "Account created. OTP sent to your phone.", "resend_available_in": OTP_RESEND_COOLDOWN_SECONDS})
 
     return render(request, "accounts/auth.html", {"active_tab": "signup", "form": form})
 
@@ -748,7 +794,22 @@ def signup_page(request):
 
 
 def otp_login_page(request):
-    return render(request, "accounts/otp_login.html")
+    phone = request.session.get("otp_phone", "")
+    profile = None
+    if phone:
+        user = find_user_by_phone(phone)
+        profile = UserProfile.objects.filter(user=user).first() if user else None
+
+    resend_available_in = 0
+    if profile and profile.last_otp_sent_at:
+        elapsed = int((timezone.now() - profile.last_otp_sent_at).total_seconds())
+        resend_available_in = max(0, OTP_RESEND_COOLDOWN_SECONDS - elapsed)
+
+    return render(request, "accounts/otp_login.html", {
+        "phone": phone,
+        "otp_sent": bool(phone),
+        "resend_available_in": resend_available_in,
+    })
 
 
 @login_required(login_url="/accounts/auth/")

@@ -2,7 +2,7 @@ from django.core import mail
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from unittest.mock import patch
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 import re
 
 from .models import Address, CustomUser, UserProfile
@@ -89,6 +89,55 @@ class AccountTests(TestCase):
         response = self.client.post("/accounts/request-otp/", {"phone": "9999999999"}, content_type="application/json")
         self.assertEqual(response.status_code, 404)
         self.assertIn("No account found with this phone number. Please register first.", response.json()["detail"])
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_browser_request_redirects_to_masked_otp_page(self, send_otp):
+        user = CustomUser.objects.create_user(
+            email="browser-otp@example.com",
+            username="browser-otp-user",
+            password="StrongPass123",
+            phone="+919876543210",
+        )
+        UserProfile.objects.get_or_create(user=user)
+
+        response = self.client.post(
+            reverse("accounts:request_otp"),
+            urlencode({"phone": "9876543210"}),
+            content_type="application/x-www-form-urlencoded",
+            HTTP_ACCEPT="text/html",
+        )
+
+        self.assertRedirects(response, reverse("accounts:otp_login_page"))
+        page = self.client.get(reverse("accounts:otp_login_page"))
+        self.assertContains(page, "OTP Sent Successfully!")
+        self.assertContains(page, "+91 987*****210")
+        self.assertNotContains(page, "+919876543210")
+        send_otp.assert_called_once()
+
+    @patch("accounts.views.send_otp_to_phone", side_effect=RuntimeError("Twilio unavailable"))
+    def test_browser_request_does_not_show_success_when_delivery_fails(self, send_otp):
+        user = CustomUser.objects.create_user(
+            email="failed-otp@example.com",
+            username="failed-otp-user",
+            password="StrongPass123",
+            phone="+919876543211",
+        )
+        UserProfile.objects.get_or_create(user=user)
+
+        response = self.client.post(
+            reverse("accounts:request_otp"),
+            urlencode({"phone": "9876543211"}),
+            content_type="application/x-www-form-urlencoded",
+            HTTP_ACCEPT="text/html",
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertContains(response, "Unable to send OTP right now", status_code=500)
+        self.assertNotIn("OTP Sent Successfully!", response.content.decode())
+        profile = UserProfile.objects.get(user=user)
+        self.assertFalse(profile.otp)
+        self.assertIsNone(profile.otp_expires_at)
+        send_otp.assert_called_once()
 
 
 class AccountSecurityTests(TestCase):
