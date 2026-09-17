@@ -1,10 +1,15 @@
 {% extends 'base/base.html' %}
+{% load static %}
 
 {% block title %}Login / Register{% endblock %}
 
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'css/accounts/auth.css' %}">
+{% endblock %}
+
 {% block content %}
-<div style="max-width: 980px; margin: 40px auto; display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-    <div style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
+<div class="auth-layout" data-active-panel="{{ active_tab|default:'login' }}" style="max-width: 980px; margin: 40px auto; display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <div class="auth-panel auth-panel--login" data-auth-panel="login" style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
         <h2>Login</h2>
         {% if error and active_tab == 'login' %}
             <p style="color: #b91c1c;">{{ error }}</p>
@@ -24,9 +29,15 @@
             </div>
             <button type="submit" style="width: 100%; padding: 11px; background: #111827; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Login</button>
         </form>
+
+        <div class="auth-mobile-switcher" aria-label="Account options">
+            <span>New to NAGRI?</span>
+            <button type="button" data-auth-switch="register">Register</button>
+            <button type="button" data-auth-switch="signup">Signup</button>
+        </div>
     </div>
 
-    <div style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
+    <div class="auth-panel auth-panel--signup" data-auth-panel="signup" style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
         <h2>Register / Signup</h2>
         {% if error and active_tab == 'signup' %}
             <p style="color: #b91c1c;">{{ error }}</p>
@@ -67,6 +78,42 @@
             </div>
             <button type="submit" style="width: 100%; padding: 11px; background: #2563eb; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Create Account</button>
         </form>
+
+        <button type="button" class="auth-back-button" data-auth-switch="login">Back to Login</button>
+    </div>
+
+    <div class="auth-panel auth-panel--register" data-auth-panel="register" style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
+        <h2>Register</h2>
+        <form method="post" action="{% url 'accounts:signup_form' %}">
+            {% csrf_token %}
+            <div style="margin-bottom: 14px;">
+                <label for="register_full_name">Full Name</label><br>
+                <input id="register_full_name" name="full_name" type="text" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="register_email">Email</label><br>
+                <input id="register_email" name="email" type="email" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="register_phone">Phone Number</label><br>
+                <input id="register_phone" name="phone" type="tel" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="register_password">Password</label><br>
+                <input id="register_password" name="password" type="password" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label for="register_confirm_password">Confirm Password</label><br>
+                <input id="register_confirm_password" name="confirm_password" type="password" required style="width: 100%; padding: 10px; margin-top: 6px;">
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label><input type="checkbox" name="terms" required> I agree to the Terms &amp; Conditions</label>
+            </div>
+            <button type="submit" style="width: 100%; padding: 11px; background: #2563eb; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Register</button>
+        </form>
+
+        <button type="button" class="auth-back-button" data-auth-switch="login">Back to Login</button>
     </div>
 </div>
+<script src="{% static 'js/accounts/auth.js' %}" defer></script>
 {% endblock %}

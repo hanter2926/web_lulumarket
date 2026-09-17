@@ -1,0 +1,62 @@
+.auth-mobile-switcher,
+.auth-back-button {
+    display: none;
+}
+
+.auth-panel--register {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    .auth-layout {
+        display: block !important;
+        margin: 20px auto !important;
+        padding: 0 16px;
+    }
+
+    .auth-layout .auth-panel {
+        display: none !important;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 20px !important;
+    }
+
+    .auth-layout .auth-panel.is-active {
+        display: block !important;
+    }
+
+    .auth-mobile-switcher {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 10px 16px;
+        margin-top: 22px;
+        font-size: 0.95rem;
+    }
+
+    .auth-mobile-switcher button,
+    .auth-back-button {
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: #2563eb;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: underline;
+    }
+
+    .auth-back-button {
+        display: block;
+        width: 100%;
+        margin-top: 18px;
+        text-align: center;
+    }
+
+    .auth-panel input:not([type="checkbox"]),
+    .auth-panel button[type="submit"] {
+        box-sizing: border-box;
+        min-height: 44px;
+    }
+}
