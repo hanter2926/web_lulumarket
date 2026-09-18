@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="{% static 'css/navbar.css' %}">
     <link rel="stylesheet" href="{% static 'css/navbar-responsive.css' %}">
     <link rel="stylesheet" href="{% static 'css/base/footer.css' %}">
+    <link rel="stylesheet" href="{% static 'css/base/modern.css' %}">
     <link rel="stylesheet" href="{% static 'css/pwa/offline-status.css' %}">
     <!-- PWA manifest and theme -->
     <link rel="manifest" href="{% static 'manifest.json' %}">
@@ -78,6 +79,11 @@
                             <option value="hi">हिं</option>
                         </select>
                     </div>
+
+                    <a class="icon-wrap location-action d-none d-md-flex" href="{% url 'product_list' %}" title="Shop near you">
+                        <div class="icon-btn"><i class="fas fa-location-dot"></i></div>
+                        <div class="icon-label">Near you</div>
+                    </a>
 
                     <a class="icon-wrap badge" href="{% url 'wishlist_list' %}" title="Wishlist">
                         <div class="icon-btn"><i class="fas fa-heart"></i></div>
@@ -207,6 +213,14 @@
     <main class="main-content">
         {% block content %}{% endblock %}
     </main>
+
+    <nav class="mobile-bottom-nav" aria-label="Mobile navigation">
+        <a href="{% url 'home' %}"><i class="fas fa-house"></i><span>Home</span></a>
+        <a href="{% url 'product_list' %}"><i class="fas fa-th-large"></i><span>Categories</span></a>
+        <a href="{% url 'cart_detail' %}"><i class="fas fa-bag-shopping"></i><span>Cart</span></a>
+        <a href="{% url 'order_list' %}"><i class="fas fa-box"></i><span>Orders</span></a>
+        <a href="{% url 'accounts:dashboard_page' %}"><i class="fas fa-user"></i><span>Account</span></a>
+    </nav>
 
     <!-- Footer -->
     <footer class="footer bg-dark text-white mt-5 py-5">
