@@ -120,3 +120,101 @@
 .mobile-drawer .drawer-account { padding:12px; border-top:1px solid #f0f0f0; }
 .mobile-drawer .drawer-account-title { padding:0 8px 6px; color:var(--nagri-navy); font-weight:700; }
 .mobile-drawer .drawer-account-menu { display:block; position:static; min-width:0; padding:0; border:0; box-shadow:none; }
+
+/* Compact mobile header: keep every action in one stable row. */
+@media (max-width: 768px) {
+    :root { --mobile-header-height: 64px; }
+
+    .nagri-topnav,
+    .site-header {
+        background: #fff !important;
+        border-bottom: 1px solid var(--nagri-line, #e6ebf2);
+        box-shadow: 0 3px 14px rgba(20, 45, 85, 0.1);
+        overflow: hidden;
+    }
+
+    .topnav-inner {
+        width: 100%;
+        min-width: 0;
+        flex-wrap: nowrap !important;
+        gap: 0.25rem;
+        padding: 0.5rem 0.6rem;
+    }
+
+    .topnav-left,
+    .topnav-right,
+    .topnav-actions {
+        min-width: 0;
+        flex-shrink: 0;
+        gap: 0.2rem;
+    }
+
+    .topnav-left { gap: 0.35rem; }
+    .brand { flex-shrink: 0; }
+    .brand-logo {
+        width: 42px;
+        height: 42px !important;
+        flex: 0 0 42px;
+        object-fit: contain;
+        border-radius: 8px;
+        padding: 0;
+    }
+
+    .menu-grid,
+    .mobile-search-btn,
+    .topnav-actions .icon-btn {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 34px;
+        padding: 0;
+        color: var(--nagri-ink, #152238) !important;
+        background: #fff !important;
+        border: 1px solid var(--nagri-line, #e6ebf2);
+        box-shadow: none;
+    }
+
+    .menu-grid i,
+    .mobile-search-btn i,
+    .topnav-actions .icon-btn i { font-size: 1rem; }
+    .topnav-actions .icon-wrap { width: 34px; flex: 0 0 34px; }
+    .topnav-actions .icon-label,
+    .account-toggle .icon-label { display: none; }
+    .badge-count { top: -4px; right: -4px; }
+    .main-content { padding-top: var(--mobile-header-height) !important; }
+}
+
+/* Keep the five bottom-nav columns aligned and visible above page content. */
+@media (max-width: 991px) {
+    .main-content {
+        padding-bottom: calc(var(--mobile-bottom-nav-height) + 1rem);
+    }
+
+    .mobile-bottom-nav {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        align-items: center;
+        border-top: 1px solid var(--nagri-line, #e6ebf2);
+        box-shadow: 0 -4px 16px rgba(20, 45, 85, 0.12);
+        overflow: hidden;
+    }
+
+    .mobile-bottom-nav a {
+        min-width: 0;
+        min-height: 44px;
+        align-content: center;
+        justify-items: center;
+        color: var(--nagri-muted, #667085);
+        line-height: 1.1;
+        text-align: center;
+    }
+
+    .mobile-bottom-nav a i { line-height: 1; }
+    .mobile-bottom-nav a.active,
+    .mobile-bottom-nav a.active i,
+    .mobile-bottom-nav a.active span { color: var(--nagri-blue, #1769e0); }
+}
+
+@media (max-width: 576px) {
+    :root { --mobile-header-height: 64px; }
+    .main-content { padding-top: var(--mobile-header-height) !important; }
+    .topnav-inner { padding-left: 0.5rem; padding-right: 0.5rem; }
+}
