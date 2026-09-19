@@ -1161,16 +1161,145 @@
 /* Responsive */
 @media (max-width: 768px) {
     .hero-banner {
-        padding: 60px 20px;
+        width: 100%;
+        padding: 0 !important;
+        margin-bottom: 1rem;
+        position: relative;
+        overflow: hidden;
     }
-    
-    .hero-banner h1 {
-        font-size: 2rem;
+
+    .hero-banner .container {
+        width: 100%;
+        max-width: 100%;
+        padding-right: 0;
+        padding-left: 0;
     }
-    
-    .hero-banner p {
-        font-size: 1.2rem;
+
+    #homeSlider,
+    #homeSlider .carousel-inner,
+    #homeSlider .carousel-item {
+        width: 100%;
+        overflow: hidden;
     }
+
+    #homeSlider .carousel-item {
+        min-height: 0 !important;
+        height: clamp(220px, 68vw, 280px);
+        position: relative;
+    }
+
+    #homeSlider .carousel-item img {
+        display: block;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover;
+    }
+
+    #homeSlider .carousel-caption {
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-width: 100%;
+        max-height: 100%;
+        padding: 12px 14px 30px;
+        overflow: hidden;
+        text-align: left;
+    }
+
+    #homeSlider .carousel-caption h3,
+    #homeSlider .carousel-caption p {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #homeSlider .carousel-caption h3 {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        font-size: clamp(1rem, 5vw, 1.5rem);
+        line-height: 1.15;
+        margin-bottom: 5px;
+    }
+
+    #homeSlider .carousel-caption p {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        font-size: clamp(0.75rem, 3.5vw, 0.95rem);
+        line-height: 1.25;
+        margin-bottom: 8px;
+    }
+
+    #homeSlider .carousel-caption .btn {
+        max-width: 100%;
+        padding: 7px 14px;
+        font-size: 0.75rem;
+        white-space: nowrap;
+    }
+
+    #homeSlider .carousel-indicators {
+        bottom: 4px;
+        margin-bottom: 0;
+    }
+
+    .hero-content {
+        max-width: 100%;
+        padding: 42px 18px !important;
+    }
+
+    .hero-content h1 {
+        font-size: clamp(1.6rem, 8vw, 2rem);
+    }
+
+    .hero-content p {
+        font-size: 1rem;
+    }
+
+    .categories-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 1rem;
+    }
+
+    .category-card {
+        min-width: 0;
+        height: 108px;
+        padding: 9px 5px;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    .category-icon {
+        margin-bottom: 4px;
+        font-size: 1.45rem;
+        line-height: 1;
+    }
+
+    .category-card h4,
+    .category-count {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .category-card h4 {
+        margin: 5px 0 2px;
+        font-size: 0.78rem;
+        line-height: 1.15;
+    }
+
+    .category-count { font-size: 0.65rem; }
+
+    .search-section,
+    .search-section .container,
+    .search-box,
+    .search-form-large { min-width: 0; max-width: 100%; }
+
+    .search-form-large { gap: 8px; }
     
     .section-title {
         font-size: 1.75rem;
@@ -1306,12 +1435,14 @@
         width: 100%;
         overflow: hidden;
         align-items: stretch;
+        min-width: 0;
     }
 
     .benefit-card {
         padding: 10px 6px;
         text-align: center;
         min-width: 0;
+        overflow: hidden;
     }
 
     .benefit-icon { font-size: 1.6rem; margin-bottom: 8px; }
@@ -1347,7 +1478,7 @@
     }
     
     .categories-grid {
-        grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 10px;
     }
     

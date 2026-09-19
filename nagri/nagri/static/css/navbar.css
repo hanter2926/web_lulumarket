@@ -14,7 +14,20 @@ body {
     overflow-x: hidden; /* prevent page-level horizontal scrolling */
 }
 
-*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html,
+body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+}
 ul, ol { list-style: none; }
 a { text-decoration: none; color: inherit; }
 button, input { font: inherit; }
@@ -23,6 +36,7 @@ button, input { font: inherit; }
 .nagri-topnav { background: var(--nagri-orange); color: var(--white); }
 .nagri-topnav .topnav-inner { max-width: 1300px; margin:0 auto; display:flex; align-items:center; gap:16px; padding:12px 18px; }
 .topnav-left, .topnav-center, .topnav-right { display:flex; align-items:center; }
+.topnav-left, .topnav-center, .topnav-right, .topnav-actions, .brand { min-width: 0; }
 .topnav-left { gap:10px; }
 .brand { display:flex; align-items:center; gap:8px; color:var(--white); }
 .brand-logo { width:44px; height:44px; border-radius:50%; object-fit:cover; background:var(--white); padding:6px; }

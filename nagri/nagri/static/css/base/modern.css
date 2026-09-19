@@ -92,30 +92,44 @@ body .section-title::after { background: var(--nagri-blue); }
 .mobile-bottom-nav { display: none; }
 
 @media (max-width: 991px) {
+    :root {
+        --mobile-header-height: 64px;
+        --mobile-bottom-nav-height: calc(56px + env(safe-area-inset-bottom));
+    }
+
     .topnav-inner { padding: 0.55rem 0.75rem; }
     .topnav-center { order: 3; flex-basis: 100%; }
     .desktop-search { display: none; }
     .topnav-inner { flex-wrap: wrap; }
     .topnav-right { margin-left: auto; }
     .nagri-catsnav { display: none; }
-    .main-content { padding-bottom: 5.5rem; }
+    .main-content {
+        padding-top: var(--mobile-header-height);
+        padding-bottom: calc(var(--mobile-bottom-nav-height) + 1rem);
+    }
     .mobile-bottom-nav {
         position: fixed; display: grid; grid-template-columns: repeat(5, 1fr);
-        left: 0; right: 0; bottom: 0; z-index: 1100; padding: 0.45rem 0.35rem calc(0.45rem + env(safe-area-inset-bottom));
+        left: 0; right: 0; bottom: 0; z-index: 1100;
+        height: var(--mobile-bottom-nav-height);
+        padding: 0.45rem 0.35rem env(safe-area-inset-bottom);
         background: rgba(255,255,255,0.97); border-top: 1px solid var(--nagri-line); box-shadow: 0 -8px 24px rgba(20,45,85,0.1);
     }
-    .mobile-bottom-nav a { display: grid; gap: 0.15rem; justify-items: center; color: var(--nagri-muted); font-size: 0.66rem; font-weight: 700; }
+    .mobile-bottom-nav a { min-width: 0; display: grid; gap: 0.15rem; justify-items: center; color: var(--nagri-muted); font-size: 0.66rem; font-weight: 700; }
     .mobile-bottom-nav a i { font-size: 1rem; }
     .mobile-bottom-nav a:hover, .mobile-bottom-nav a:focus { color: var(--nagri-blue); }
 }
 
 @media (max-width: 576px) {
-    .main-content { padding-top: 0.75rem; }
+    :root { --mobile-header-height: 72px; }
+    .main-content { padding-top: var(--mobile-header-height); }
     .container, .container-fluid { padding-left: 0.7rem; padding-right: 0.7rem; }
     .brand-logo { height: 32px; }
+    .topnav-inner { gap: 0.25rem; }
+    .topnav-left { gap: 0.25rem; }
     .topnav-actions { gap: 0.25rem; }
+    .topnav-actions .icon-wrap { width: 36px; flex: 0 0 36px; }
     .topnav-actions .icon-label, .account-toggle .icon-label { display: none; }
-    .icon-btn { width: 36px; height: 36px; }
+    .icon-btn, .mobile-search-btn { width: 32px; height: 32px; }
     .main-content .products-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 0.55rem !important; }
     .product-card-image { height: auto !important; aspect-ratio: 1 / 1; }
     .product-info { padding: 0.55rem !important; gap: 0.3rem !important; }
