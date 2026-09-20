@@ -186,6 +186,11 @@ def product_detail_view(request, product_id):
         id=product_id,
         is_active=True,
     )
+    recently_viewed = [
+        viewed_id for viewed_id in request.session.get("recently_viewed_products", [])
+        if viewed_id != product.id
+    ]
+    request.session["recently_viewed_products"] = ([product.id] + recently_viewed)[:12]
     related_products = (
         Product.objects.select_related("category", "subcategory", "inventory")
         .filter(category=product.category, is_active=True)

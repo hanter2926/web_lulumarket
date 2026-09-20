@@ -1,0 +1,38 @@
+{% for product in products %}
+<article class="product-card" data-url="{% url 'product_detail' product.id %}" role="button" tabindex="0">
+    <div class="product-image">
+        {% with first_image=product.images.all|first %}
+            {% if first_image and first_image.image %}
+                <img src="{{ first_image.image.url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
+            {% elif product.image %}
+                <img src="{{ product.image.url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
+            {% else %}
+                <div class="placeholder-image" aria-label="No product image"><i class="fas fa-image"></i></div>
+            {% endif %}
+        {% endwith %}
+        {% if product.compare_price and product.compare_price > product.price %}
+            <span class="product-strip-discount">{{ product.price|discount_percent:product.compare_price }}% OFF</span>
+        {% endif %}
+        <button class="product-strip-wishlist add-to-wishlist" type="button" data-product-id="{{ product.id }}" aria-label="Add {{ product.name }} to wishlist" onclick="event.stopPropagation();">
+            <i class="far fa-heart" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="product-info">
+        <p class="product-category">{{ product.category.name }}</p>
+        <h3 class="product-name">{{ product.name }}</h3>
+        <div class="product-rating" aria-label="Rated {{ product.rating }} out of 5">
+            <span class="stars">{% for i in "12345" %}{% if forloop.counter <= product.rating %}<i class="fas fa-star"></i>{% else %}<i class="far fa-star"></i>{% endif %}{% endfor %}</span>
+            <span class="rating-value">{{ product.rating }}</span>
+        </div>
+        <div class="product-prices"><strong class="price">₹{{ product.price }}</strong>{% if product.compare_price and product.compare_price > product.price %}<del class="original-price">₹{{ product.compare_price }}</del>{% endif %}</div>
+        {% if product.inventory.stock_quantity > 0 %}
+            <span class="product-stock stock-in">In stock</span>
+        {% else %}
+            <span class="product-stock stock-out">Out of stock</span>
+        {% endif %}
+        <button class="btn btn-primary btn-sm add-to-cart" type="button" data-product-id="{{ product.id }}" onclick="event.stopPropagation();" {% if product.inventory.stock_quantity <= 0 %}disabled{% endif %}><i class="fas fa-shopping-bag" aria-hidden="true"></i> Add to cart</button>
+    </div>
+</article>
+{% empty %}
+<p class="home-empty-state">More products are arriving soon.</p>
+{% endfor %}

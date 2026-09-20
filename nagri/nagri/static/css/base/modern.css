@@ -90,6 +90,11 @@ body .category-icon { color: var(--nagri-blue); }
 body .section-title::after { background: var(--nagri-blue); }
 
 .mobile-bottom-nav { display: none; }
+.install-app-btn { display: inline-flex; align-items: center; gap: .35rem; min-height: 36px; color: var(--nagri-blue); border: 1px solid #b8d0f7; background: var(--nagri-blue-soft); }
+.install-app-btn:hover { color: var(--nagri-blue-dark); background: #dceaff; }
+.drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem; color: var(--nagri-ink); border-bottom: 1px solid var(--nagri-line); }
+.drawer-close { width: 36px; height: 36px; border: 1px solid var(--nagri-line); border-radius: 8px; background: #fff; color: var(--nagri-ink); font-size: 1.35rem; line-height: 1; }
+.mobile-drawer .dropdown-toggle { color: var(--nagri-ink); }
 
 @media (max-width: 991px) {
     :root {

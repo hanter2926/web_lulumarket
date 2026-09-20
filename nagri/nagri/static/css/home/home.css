@@ -1054,6 +1054,50 @@
     }
 }
 
+/* Discovery strips share the same compact rhythm at every viewport. */
+.home-product-section {
+    padding: 2.5rem 0;
+    background: var(--nagri-surface, #fff);
+}
+
+.home-product-section-tinted { background: var(--nagri-canvas, #f6f8fb); }
+.home-product-section-accent { background: #fff8ef; }
+.section-heading-row { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
+.section-heading-row .section-title { margin-bottom: 0; }
+.section-title-left { text-align: left; }
+.section-title-left::after { left: 0; transform: none; }
+.section-kicker { display: block; margin-bottom: .35rem; color: var(--nagri-blue, #1769e0); font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.section-link { flex: 0 0 auto; font-weight: 700; }
+.product-strip-discount { position: absolute; top: .65rem; left: .65rem; padding: .25rem .45rem; border-radius: 6px; background: #e9f8f0; color: #16845b; font-size: .68rem; font-weight: 800; }
+.product-strip-wishlist { position: absolute; top: .55rem; right: .55rem; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--nagri-line, #e6ebf2); border-radius: 50%; background: rgba(255,255,255,.94); color: var(--nagri-ink, #152238); }
+.product-strip-wishlist:hover, .product-strip-wishlist:focus-visible { color: var(--nagri-blue, #1769e0); border-color: var(--nagri-blue, #1769e0); }
+.home-product-section .product-image img { object-fit: contain; padding: .65rem; }
+.home-product-section .product-name { min-height: 2.5em; margin-bottom: .25rem; font-size: .98rem; line-height: 1.25; }
+.home-product-section .product-category { margin-bottom: .15rem; font-size: .72rem; }
+.home-product-section .product-rating { margin-bottom: .35rem; }
+.home-product-section .product-prices { display: flex; flex-wrap: wrap; align-items: baseline; gap: .45rem; margin-bottom: .3rem; }
+.home-product-section .product-prices .price { color: var(--nagri-blue, #1769e0); font-size: 1.05rem; }
+.home-product-section .original-price { color: var(--nagri-muted, #667085); font-size: .72rem; }
+.home-product-section .product-stock { display: block; margin-bottom: .5rem; font-size: .72rem; font-weight: 700; }
+.home-product-section .add-to-cart { width: 100%; }
+.home-empty-state { grid-column: 1 / -1; margin: 0; padding: 1rem; color: var(--nagri-muted, #667085); text-align: center; }
+
+@media (max-width: 576px) {
+    .home-product-section { padding: 1.8rem 0; }
+    .section-heading-row { align-items: start; }
+    .section-heading-row .section-title { font-size: 1.35rem; }
+    .section-link { font-size: .72rem; }
+    .home-product-section .products-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+    .home-product-section .product-image { height: auto; aspect-ratio: 1 / 1; }
+    .home-product-section .product-info { padding: .5rem; }
+    .home-product-section .product-name { font-size: .72rem; }
+    .home-product-section .product-prices .price { font-size: .78rem; }
+    .home-product-section .product-stock, .home-product-section .product-category, .home-product-section .product-rating { font-size: .6rem; }
+    .home-product-section .product-rating .stars i { font-size: .58rem; }
+    .home-product-section .add-to-cart { padding: .35rem .2rem; font-size: .6rem; }
+    .product-strip-wishlist { width: 27px; height: 27px; top: .35rem; right: .35rem; }
+}
+
 /* Benefits Section */
 .benefits-section {
     background-color: #f8f9fa;

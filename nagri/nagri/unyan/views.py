@@ -94,6 +94,12 @@ def home(request):
         )
         .order_by("-rating")[:6]
     )
+    discovery_products = Product.objects.filter(is_active=True).select_related("category", "inventory").prefetch_related("images")
+    trending_products = discovery_products.order_by("-rating", "-created_at")[:6]
+    budget_products = discovery_products.filter(price__lte=99).order_by("-created_at")[:6]
+    recommended_products = discovery_products.filter(is_featured=True).order_by("-rating", "-created_at")[:6]
+    recently_viewed_ids = request.session.get("recently_viewed_products", [])
+    recently_viewed_products = discovery_products.filter(id__in=recently_viewed_ids).order_by("-updated_at")[:6]
     flash_sale_queryset = (
         Product.objects.filter(is_active=True, is_flash_sale=True)
         .select_related("category", "inventory")
@@ -195,6 +201,10 @@ def home(request):
         'bestseller_products': bestseller_products,
         'new_arrivals': new_arrivals,
         'top_rated_products': top_rated_products,
+        'trending_products': trending_products,
+        'budget_products': budget_products,
+        'recommended_products': recommended_products,
+        'recently_viewed_products': recently_viewed_products,
         'flash_sale_products': flash_sale_products,
         'flash_sale_status': flash_sale_status,
         'flash_sale_end_time': flash_sale_end_time,
