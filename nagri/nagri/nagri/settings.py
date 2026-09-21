@@ -29,6 +29,9 @@ SECRET_KEY = os.environ.get(
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 SITE_URL = os.environ.get("SITE_URL") or ("https://web-lulumarket.onrender.com" if not DEBUG else "http://localhost:8000")
 
+CSRF_TRUSTED_ORIGINS = [SITE_URL.rstrip("/")] if SITE_URL.startswith("https://") else []
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 ALLOWED_HOSTS = [
     "web-lulumarket.onrender.com",
     ".onrender.com",
@@ -439,9 +442,9 @@ except Exception:
 # SECURITY - DEVELOPMENT
 # ============================================================
 
-CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = not DEBUG
 
-SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_SECURE = not DEBUG
 
 
 # ============================================================

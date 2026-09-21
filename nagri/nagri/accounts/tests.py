@@ -179,6 +179,104 @@ class AccountSecurityTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("accounts:dashboard_page"), response.url)
 
+    def test_verified_user_can_log_in_with_case_variant_email(self):
+        user = CustomUser.objects.create_user(
+            email="case@example.com",
+            username="case-user",
+            password="StrongPass123",
+            is_active=True,
+        )
+        UserProfile.objects.create(user=user, phone="+919876543212", is_phone_verified=True)
+
+        response = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": "CASE@EXAMPLE.COM", "password": "StrongPass123"},
+        )
+
+        self.assertRedirects(response, reverse("accounts:dashboard_page"))
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+
+    def test_login_honors_safe_next_parameter(self):
+        user = CustomUser.objects.create_user(
+            email="next@example.com",
+            username="next-user",
+            password="StrongPass123",
+            is_active=True,
+        )
+        UserProfile.objects.create(user=user, phone="+919876543213", is_phone_verified=True)
+
+        response = self.client.post(
+            f"{reverse('accounts:email_login')}?next=/cart/",
+            {"email": user.email, "password": "StrongPass123", "next": "/cart/"},
+        )
+
+        self.assertRedirects(response, "/cart/", status_code=302, target_status_code=200)
+
+    def test_login_rejects_external_next_parameter(self):
+        user = CustomUser.objects.create_user(
+            email="redirect@example.com",
+            username="redirect-user",
+            password="StrongPass123",
+            is_active=True,
+        )
+        UserProfile.objects.create(user=user, phone="+919876543214", is_phone_verified=True)
+
+        response = self.client.post(
+            reverse("accounts:email_login"),
+            {
+                "email": user.email,
+                "password": "StrongPass123",
+                "next": "https://attacker.example/",
+            },
+        )
+
+        self.assertRedirects(response, reverse("accounts:dashboard_page"))
+
+    def test_inactive_user_cannot_log_in(self):
+        user = CustomUser.objects.create_user(
+            email="inactive@example.com",
+            username="inactive-user",
+            password="StrongPass123",
+            is_active=False,
+        )
+        UserProfile.objects.create(user=user, phone="+919876543215", is_phone_verified=True)
+
+        response = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": user.email, "password": "StrongPass123"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Your account is inactive")
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+    def test_login_requires_csrf_token(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        response = csrf_client.post(
+            reverse("accounts:email_login"),
+            {"email": "unknown@example.com", "password": "StrongPass123"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_login_session_survives_follow_up_request(self):
+        user = CustomUser.objects.create_user(
+            email="session@example.com",
+            username="session-user",
+            password="StrongPass123",
+            is_active=True,
+        )
+        UserProfile.objects.create(user=user, phone="+919876543216", is_phone_verified=True)
+
+        login_response = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": user.email, "password": "StrongPass123", "remember": "on"},
+        )
+
+        self.assertEqual(login_response.status_code, 302)
+        dashboard_response = self.client.get(reverse("accounts:dashboard_page"))
+        self.assertEqual(dashboard_response.status_code, 200)
+
 
 class SignupFlowTests(TestCase):
     signup_data = {

@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.contrib.auth import login as auth_login, logout as auth_logout
+from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -29,6 +29,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 from django.contrib.auth import views as auth_views
 from django.urls import reverse_lazy
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib import messages
 from .models import HomeSlider
@@ -671,30 +672,47 @@ def email_login_view(request):
     if request.method == "POST":
         email = (request.POST.get("email") or "").strip()
         password = request.POST.get("password") or ""
+        next_url = request.POST.get("next") or request.GET.get("next") or ""
 
         if not email or not password:
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Email and password are required."})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Email and password are required.", "next": next_url})
 
         user = CustomUser.objects.filter(email__iexact=email).first()
-        if not user or not user.check_password(password):
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password."})
+        if not user:
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
 
         if not getattr(user, "is_active", True):
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support."})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": next_url})
+
+        authenticated_user = authenticate(request, username=user.email, password=password)
+        if authenticated_user is None:
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
 
         profile = UserProfile.objects.filter(user=user).first()
         if profile is None or not profile.is_phone_verified:
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Verify your phone number before logging in."})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Verify your phone number before logging in.", "next": next_url})
 
-        auth_login(request, user)
+        auth_login(request, authenticated_user)
+        if request.POST.get("remember"):
+            request.session.set_expiry(settings.SESSION_COOKIE_AGE)
+        else:
+            request.session.set_expiry(0)
+
+        if next_url and url_has_allowed_host_and_scheme(
+            next_url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        ):
+            return redirect(next_url)
+
         # Redirect users by role: owner -> owner dashboard, vendor -> seller dashboard, else customer dashboard
-        if getattr(user, "is_owner", False):
+        if getattr(authenticated_user, "is_owner", False):
             return redirect("sellers:owner_dashboard")
-        if getattr(user, "is_vendor", False):
+        if getattr(authenticated_user, "is_vendor", False):
             return redirect("sellers:dashboard")
         return redirect("accounts:dashboard_page")
 
-    return render(request, "accounts/auth.html", {"active_tab": "login"})
+    return render(request, "accounts/auth.html", {"active_tab": "login", "next": request.GET.get("next", "")})
 
 
 def logout_view(request):
