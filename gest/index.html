@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Aurelia account marketplace dashboard">
+  <title>Aurelia | Account marketplace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#">
+        <span class="brand-mark"><span></span><span></span><span></span></span>
+        <span>Aurelia</span>
+      </a>
+      <div class="workspace-switcher"><span class="workspace-avatar">AM</span><span><strong>Atlas Market</strong><small>Personal workspace</small></span><span class="chevron">⌄</span></div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <p class="nav-label">Workspace</p>
+        <a class="nav-item active" href="#listings"><span class="nav-icon">▦</span>Marketplace <b>12</b></a>
+        <a class="nav-item" href="#saved"><span class="nav-icon">♡</span>Saved accounts</a>
+        <a class="nav-item" href="#activity"><span class="nav-icon">◷</span>Activity</a>
+        <p class="nav-label">Manage</p>
+        <a class="nav-item" href="#insights"><span class="nav-icon">◒</span>Insights</a>
+        <a class="nav-item" href="#settings"><span class="nav-icon">⚙</span>Settings</a>
+      </nav>
+      <div class="sidebar-bottom"><div class="help-card"><span class="help-icon">?</span><div><strong>Need a hand?</strong><small>Visit the support center</small></div><span class="arrow">↗</span></div><div class="user-chip"><span class="profile-avatar">JD</span><span><strong>Jordan Davis</strong><small>Admin account</small></span><span class="dots">•••</span></div></div>
+    </aside>
+
+    <main class="main-content" id="listings">
+      <header class="topbar"><div class="breadcrumbs"><span>Workspace</span><span>/</span><strong>Marketplace</strong></div><div class="topbar-actions"><button class="icon-button" aria-label="Notifications">♧<i></i></button><button class="profile-avatar top-avatar" aria-label="Open profile">JD</button></div></header>
+      <div class="page-heading"><div><p class="eyebrow">SATURDAY, SEPTEMBER 20, 2026</p><h1>Find your next <em>account.</em></h1><p class="subtitle">Browse a curated collection of verified digital accounts.</p></div><button class="primary-button" id="open-form"><span>＋</span> List an account</button></div>
+
+      <section class="stats-row" aria-label="Marketplace summary"><article class="stat-card"><div class="stat-icon mint">⌁</div><div><span>Active listings</span><strong id="active-count">12</strong></div><small class="trend up">↗ 8.2%</small></article><article class="stat-card"><div class="stat-icon amber">◈</div><div><span>Average price</span><strong id="average-price">$184</strong></div><small class="trend up">↗ 4.6%</small></article><article class="stat-card"><div class="stat-icon rose">♧</div><div><span>New this week</span><strong id="new-count">06</strong></div><small class="trend neutral">This week</small></article><article class="stat-card"><div class="stat-icon blue">⌖</div><div><span>Verified sellers</span><strong id="seller-count">38</strong></div><small class="trend up">↗ 12.4%</small></article></section>
+
+      <section class="toolbar" aria-label="Listing filters"><div class="search-wrap"><span>⌕</span><input id="search-input" type="search" placeholder="Search listings..." autocomplete="off"></div><div class="filter-group"><label for="platform-filter">Platform</label><select id="platform-filter"><option value="all">All platforms</option><option value="Instagram">Instagram</option><option value="YouTube">YouTube</option><option value="TikTok">TikTok</option><option value="X / Twitter">X / Twitter</option><option value="Facebook">Facebook</option></select><label for="price-filter">Price</label><select id="price-filter"><option value="all">Any price</option><option value="0-100">Under $100</option><option value="100-250">$100 – $250</option><option value="250-500">$250 – $500</option><option value="500-plus">$500+</option></select><button class="filter-button" id="clear-filters">Clear filters</button></div></section>
+      <div class="results-bar"><p><strong id="result-count">6</strong> accounts available</p><div class="sort-control"><label for="sort-select">Sort by</label><select id="sort-select"><option value="featured">Featured</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="newest">Newest first</option></select></div></div>
+      <section class="listing-grid" id="listing-grid" aria-live="polite"></section>
+      <div class="empty-state" id="empty-state" hidden><div class="empty-symbol">⌕</div><h2>No accounts found</h2><p>Try adjusting your filters or search for another keyword.</p><button class="secondary-button" id="empty-clear">Clear all filters</button></div>
+    </main>
+  </div>
+
+  <dialog class="listing-dialog" id="listing-dialog"><form id="listing-form" novalidate><div class="dialog-header"><div><p class="eyebrow">NEW LISTING</p><h2>List an account</h2><p>Add verified account details for buyers to discover.</p></div><button type="button" class="close-button" id="close-form" aria-label="Close form">×</button></div><div class="form-grid"><label class="field full-width">Title <input id="title" name="title" type="text" placeholder="e.g. Travel inspiration account" maxlength="70"><small class="field-error" data-error="title"></small></label><label class="field">Platform <select id="platform" name="platform"><option value="">Select platform</option><option>Instagram</option><option>YouTube</option><option>TikTok</option><option>X / Twitter</option><option>Facebook</option></select><small class="field-error" data-error="platform"></small></label><label class="field">Price (USD) <input id="price" name="price" type="number" min="1" max="1000000" step="1" placeholder="250"><small class="field-error" data-error="price"></small></label><label class="field full-width">Contact details <input id="contact" name="contact" type="text" placeholder="Email or Telegram handle"><small class="field-error" data-error="contact"></small></label></div><div class="dialog-footer"><span class="secure-note">✦ Your details stay private</span><div><button type="button" class="secondary-button" id="cancel-form">Cancel</button><button type="submit" class="primary-button">Publish listing <span>→</span></button></div></div></form></dialog>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>
