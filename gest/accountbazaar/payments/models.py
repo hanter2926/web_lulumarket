@@ -1,3 +1,84 @@
+from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
-# Create your models here.
+from marketplace.models import Listing
+
+
+class Order(models.Model):
+	class Status(models.TextChoices):
+		PENDING_PAYMENT = "PENDING_PAYMENT", "Pending payment"
+		PAID = "PAID", "Paid"
+		IN_ESCROW = "IN_ESCROW", "In escrow"
+		COMPLETED = "COMPLETED", "Completed"
+		REFUNDED = "REFUNDED", "Refunded"
+		DISPUTED = "DISPUTED", "Disputed"
+		CANCELLED = "CANCELLED", "Cancelled"
+
+	buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="orders")
+	seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="sales")
+	listing = models.ForeignKey(Listing, on_delete=models.PROTECT, related_name="orders")
+	amount = models.DecimalField(max_digits=12, decimal_places=2)
+	currency = models.CharField(max_length=3, default="INR")
+	status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING_PAYMENT)
+	created_at = models.DateTimeField(auto_now_add=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+	def mark_paid(self):
+		if self.status != self.Status.PENDING_PAYMENT:
+			raise ValueError("Only pending orders can be paid.")
+		self.status = self.Status.IN_ESCROW
+		self.save(update_fields=("status", "updated_at"))
+		self.escrow.hold()
+
+
+class Payment(models.Model):
+	class Status(models.TextChoices):
+		CREATED = "CREATED", "Created"
+		AUTHORIZED = "AUTHORIZED", "Authorized"
+		CAPTURED = "CAPTURED", "Captured"
+		FAILED = "FAILED", "Failed"
+		REFUNDED = "REFUNDED", "Refunded"
+
+	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="payment")
+	provider = models.CharField(max_length=40)
+	provider_payment_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+	amount = models.DecimalField(max_digits=12, decimal_places=2)
+	status = models.CharField(max_length=20, choices=Status.choices, default=Status.CREATED)
+	provider_payload = models.JSONField(default=dict, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+
+class Escrow(models.Model):
+	class Status(models.TextChoices):
+		PENDING = "PENDING", "Pending"
+		HELD = "HELD", "Held"
+		RELEASED = "RELEASED", "Released"
+		REFUNDED = "REFUNDED", "Refunded"
+		DISPUTED = "DISPUTED", "Disputed"
+
+	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="escrow")
+	status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+	held_at = models.DateTimeField(null=True, blank=True)
+	released_at = models.DateTimeField(null=True, blank=True)
+
+	def hold(self):
+		self.status = self.Status.HELD
+		self.held_at = timezone.now()
+		self.save(update_fields=("status", "held_at"))
+
+
+class Refund(models.Model):
+	class Status(models.TextChoices):
+		REQUESTED = "REQUESTED", "Requested"
+		PROCESSING = "PROCESSING", "Processing"
+		COMPLETED = "COMPLETED", "Completed"
+		FAILED = "FAILED", "Failed"
+
+	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="refund")
+	amount = models.DecimalField(max_digits=12, decimal_places=2)
+	reason = models.TextField()
+	status = models.CharField(max_length=20, choices=Status.choices, default=Status.REQUESTED)
+	provider_refund_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+	created_at = models.DateTimeField(auto_now_add=True)

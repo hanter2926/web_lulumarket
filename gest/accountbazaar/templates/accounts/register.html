@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Register | AccountBazaar</title><style>body{margin:0;background:#f5f7f8;color:#17212b;font:15px Georgia,serif}main{width:min(470px,calc(100% - 32px));margin:8vh auto;background:#fff;border:1px solid #e4e9ec;padding:28px}h1{color:#17324d;font:700 28px 'Trebuchet MS',sans-serif}label{display:block;color:#71808d;font:700 12px 'Trebuchet MS',sans-serif;margin:15px 0 6px}input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #ccd6dc}button{width:100%;margin-top:18px;padding:11px;border:0;background:#1b817b;color:#fff;font-weight:700}.errorlist{color:#a34545;padding-left:18px;font-size:13px}a{color:#1b817b}</style></head>
+<body><main><h1>Create your account</h1><form method="post">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}{% endfor %}<button type="submit">Register</button></form><p>Already registered? <a href="{% url 'accounts:login' %}">Log in</a></p></main></body>
+</html>

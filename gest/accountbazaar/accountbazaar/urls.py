@@ -22,7 +22,9 @@ from accountbazaar.views import home
 
 urlpatterns = [
     path('', home, name='home'),
+    path('accounts/', include('accounts.urls')),
     path('admin/dashboard/', admin_dashboard, name='admin-dashboard'),
     path('admin/', admin.site.urls),
     path('marketplace/', include('marketplace.urls')),
+    path('payments/', include('payments.urls')),
 ]

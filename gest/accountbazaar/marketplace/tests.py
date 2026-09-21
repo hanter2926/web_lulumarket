@@ -12,14 +12,34 @@ class ListingViewTests(TestCase):
 			password="test-pass-123",
 		)
 
-	def test_anonymous_users_are_redirected_to_login(self):
+	def test_anonymous_users_can_browse_listings(self):
 		response = self.client.get(reverse("marketplace:listings"))
 
-		self.assertRedirects(
-			response,
-			"/accounts/login/?next=/marketplace/",
-			fetch_redirect_response=False,
+		self.assertEqual(response.status_code, 200)
+
+	def test_search_and_category_filter_listings(self):
+		Listing.objects.create(
+			seller=self.user,
+			category="gaming",
+			title="Gaming account",
+			description="Ranked profile",
+			price="25.00",
 		)
+		Listing.objects.create(
+			seller=self.user,
+			category="software",
+			title="Design tools",
+			description="Creative suite",
+			price="15.00",
+		)
+
+		response = self.client.get(
+			reverse("marketplace:listings"),
+			{"q": "Gaming", "category": "gaming"},
+		)
+
+		self.assertContains(response, "Gaming account")
+		self.assertNotContains(response, "Design tools")
 
 	def test_authenticated_user_can_create_listing(self):
 		self.client.force_login(self.user)
