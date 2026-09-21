@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marketplace | AccountBazaar</title>
+  <style>
+    :root { --ink:#17212b; --muted:#71808d; --paper:#f5f7f8; --panel:#fff; --line:#e4e9ec; --navy:#17324d; --teal:#1b817b; }
+    * { box-sizing:border-box; } body { margin:0; color:var(--ink); background:var(--paper); font:15px/1.5 Georgia, serif; }
+    main { width:min(1100px, calc(100% - 32px)); margin:42px auto; }
+    header { display:flex; justify-content:space-between; align-items:end; gap:20px; margin-bottom:28px; } h1 { margin:0; color:var(--navy); font:700 34px 'Trebuchet MS', sans-serif; } .eyebrow { color:var(--teal); font:700 11px 'Trebuchet MS', sans-serif; letter-spacing:1.5px; text-transform:uppercase; }
+    .layout { display:grid; grid-template-columns:340px 1fr; gap:26px; align-items:start; } .panel { background:var(--panel); border:1px solid var(--line); padding:22px; } h2 { color:var(--navy); font:700 20px 'Trebuchet MS', sans-serif; margin:0 0 18px; }
+    label { display:block; color:var(--muted); font:700 12px 'Trebuchet MS', sans-serif; margin:14px 0 6px; } input, select, textarea { width:100%; border:1px solid #ccd6dc; border-radius:2px; padding:10px; color:var(--ink); background:#fff; font:14px Georgia, serif; } textarea { resize:vertical; } button { width:100%; margin-top:18px; border:0; padding:11px 14px; cursor:pointer; color:#fff; background:var(--teal); font:700 13px 'Trebuchet MS', sans-serif; } button:hover { background:var(--navy); }
+    .errorlist { color:#a34545; padding-left:18px; font-size:13px; } .cards { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; } .listing-card { border:1px solid var(--line); padding:16px; min-height:170px; } .listing-card:hover { border-color:var(--teal); } .listing-head { display:flex; justify-content:space-between; gap:14px; } h3 { margin:0; color:var(--navy); font:700 18px 'Trebuchet MS', sans-serif; } .price { color:var(--teal); font:700 17px 'Trebuchet MS', sans-serif; white-space:nowrap; } .meta { color:var(--muted); font:12px 'Trebuchet MS', sans-serif; margin:5px 0 12px; } .empty { color:var(--muted); font-style:italic; }
+    @media (max-width:720px) { main { margin:24px auto; } header { display:block; } .layout { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><div><div class="eyebrow">AccountBazaar / commerce</div><h1>Marketplace</h1></div><div>Signed in as <strong>{{ request.user.username }}</strong></div></header>
+    <div class="layout">
+      <section class="panel"><h2>Create listing</h2><form method="post">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}{% endfor %}<button type="submit">Publish listing</button></form></section>
+      <section class="panel"><h2>Available listings</h2><div class="cards">{% for listing in listings %}<article class="listing-card"><div class="listing-head"><h3>{{ listing.title }}</h3><span class="price">{{ listing.price }}</span></div><div class="meta">{{ listing.get_category_display }} · {{ listing.seller.username }} · {{ listing.created_at|date:"M j, Y" }}</div><div>{{ listing.description }}</div></article>{% empty %}<p class="empty">No listings have been published yet.</p>{% endfor %}</div></section>
+    </div>
+  </main>
+</body>
+</html>
