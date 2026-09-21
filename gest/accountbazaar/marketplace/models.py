@@ -1,3 +1,7 @@
+from django.conf import settings
+from django.db import models
+
+
 class Listing(models.Model):
 
     CATEGORY_CHOICES = [
@@ -8,7 +12,7 @@ class Listing(models.Model):
     ]
 
     seller = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="listings"
     )

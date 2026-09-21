@@ -1,17 +1,3 @@
-class User(AbstractUser):
-    email = models.EmailField(unique=True)
-
-    phone = models.CharField(
-        max_length=15,
-        blank=True,
-        null=True
-    )
-
-    is_seller = models.BooleanField(default=False)
-    is_verified = models.BooleanField(default=False)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
@@ -44,7 +30,7 @@ class User(AbstractUser):
 # -------------------------------------------------------------------
 # 2. Email & Phone OTP/Token Verification
 # -------------------------------------------------------------------
-class VerificationToken(models.BooleanField):
+class VerificationToken(models.Model):
     class TokenType(models.TextChoices):
         EMAIL_VERIFY = 'EMAIL', 'Email Verification'
         PHONE_OTP = 'PHONE', 'Phone OTP'

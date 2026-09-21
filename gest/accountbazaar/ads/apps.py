@@ -1,15 +1,6 @@
-class AdPlacement(models.Model):
+from django.apps import AppConfig
 
-    name = models.CharField(max_length=100)
 
-    location = models.CharField(
-        max_length=100
-    )
-
-    is_active = models.BooleanField(
-        default=True
-    )
-
-    code = models.TextField(
-        blank=True
-    )
+class AdsConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "ads"
