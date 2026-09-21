@@ -1,3 +1,4 @@
+{% load price_extras %}
 {% for product in products %}
 <article class="product-card" data-url="{% url 'product_detail' product.id %}" role="button" tabindex="0">
     <div class="product-image">
