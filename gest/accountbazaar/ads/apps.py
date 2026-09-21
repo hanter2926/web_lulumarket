@@ -1,5 +1,15 @@
-from django.apps import AppConfig
+class AdPlacement(models.Model):
 
+    name = models.CharField(max_length=100)
 
-class AdsConfig(AppConfig):
-    name = 'ads'
+    location = models.CharField(
+        max_length=100
+    )
+
+    is_active = models.BooleanField(
+        default=True
+    )
+
+    code = models.TextField(
+        blank=True
+    )
