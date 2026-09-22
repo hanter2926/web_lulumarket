@@ -5,6 +5,7 @@ from django.urls import reverse
 from base64 import b64decode
 
 from .models import Listing
+from .forms import ListingForm
 
 
 class ListingViewTests(TestCase):
@@ -155,6 +156,8 @@ class ListingViewTests(TestCase):
 			{
 				"category": "gaming",
 				"title": "Starter account",
+				"game_name": "Example Game",
+				"game_id": "PLAYER-123",
 				"description": "Ready to use",
 				"price": "25.00",
 			},
@@ -178,6 +181,8 @@ class ListingViewTests(TestCase):
 			{
 				"category": "gaming",
 				"title": "Visual account",
+				"game_name": "Example Game",
+				"game_id": "PLAYER-123",
 				"description": "Ready to use",
 				"price": "35.00",
 				"image": image,
@@ -196,8 +201,110 @@ class ListingViewTests(TestCase):
 		}
 		file_data = SimpleUploadedFile("script.exe", b"not an image", content_type="application/octet-stream")
 
-		from .forms import ListingForm
 		form = ListingForm(form_data, {"image": file_data})
 
 		self.assertFalse(form.is_valid())
 		self.assertIn("image", form.errors)
+
+	def test_game_category_requires_public_game_name_and_id(self):
+		form = ListingForm({
+			"category": "game",
+			"title": "Ranked profile",
+			"description": "Public details",
+			"price": "25.00",
+		})
+
+		self.assertFalse(form.is_valid())
+		self.assertIn("game_name", form.errors)
+		self.assertIn("game_id", form.errors)
+
+	def test_valid_game_listing_accepts_public_information(self):
+		form = ListingForm({
+			"category": "game",
+			"title": "Ranked profile",
+			"game_name": "Example Game",
+			"game_id": "PLAYER-123",
+			"game_level": "65",
+			"game_rank": "Diamond",
+			"description": "Public details",
+			"price": "25.00",
+		})
+
+		self.assertTrue(form.is_valid(), form.errors)
+
+	def test_website_requires_name_and_valid_https_url(self):
+		missing_fields = ListingForm({
+			"category": "website",
+			"title": "Website",
+			"description": "Public details",
+			"price": "25.00",
+		})
+		invalid_url = ListingForm({
+			"category": "website",
+			"title": "Website",
+			"website_name": "Example",
+			"website_url": "javascript:alert(1)",
+			"description": "Public details",
+			"price": "25.00",
+		})
+
+		self.assertFalse(missing_fields.is_valid())
+		self.assertIn("website_name", missing_fields.errors)
+		self.assertIn("website_url", missing_fields.errors)
+		self.assertFalse(invalid_url.is_valid())
+		self.assertIn("website_url", invalid_url.errors)
+
+	def test_website_public_url_and_game_id_render_on_detail(self):
+		website = Listing.objects.create(
+			seller=self.user,
+			category="website",
+			title="Public website",
+			website_name="Example site",
+			website_url="https://example.com/preview",
+			description="A public preview",
+			price="50.00",
+			is_verified=True,
+		)
+		game = Listing.objects.create(
+			seller=self.user,
+			category="game",
+			title="Game profile",
+			game_name="Example Game",
+			game_id="PLAYER-123",
+			description="A public game profile",
+			price="50.00",
+			is_verified=True,
+		)
+
+		website_response = self.client.get(reverse("marketplace:listing-detail", args=[website.pk]))
+		game_response = self.client.get(reverse("marketplace:listing-detail", args=[game.pk]))
+
+		self.assertContains(website_response, "Example site")
+		self.assertContains(website_response, "https://example.com/preview")
+		self.assertContains(website_response, "Open Website")
+		self.assertContains(game_response, "Example Game")
+		self.assertContains(game_response, "PLAYER-123")
+		self.assertNotContains(game_response, "password")
+		self.assertNotContains(game_response, "OTP")
+
+	def test_app_category_requires_name_and_rejects_unsafe_url(self):
+		missing_name = ListingForm({
+			"category": "app",
+			"title": "Demo app",
+			"app_url": "https://example.com/demo",
+			"description": "A demo",
+			"price": "50.00",
+		})
+		unsafe_url = ListingForm({
+			"category": "app",
+			"title": "Demo app",
+			"app_name": "Example app",
+			"app_url": "javascript:alert(1)",
+			"description": "A demo",
+			"price": "50.00",
+		})
+
+		self.assertFalse(missing_name.is_valid())
+		self.assertIn("app_name", missing_name.errors)
+		self.assertFalse(unsafe_url.is_valid())
+		self.assertIn("app_url", unsafe_url.errors)

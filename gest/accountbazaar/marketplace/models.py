@@ -5,9 +5,13 @@ from django.db import models
 class Listing(models.Model):
 
     CATEGORY_CHOICES = [
+        ("game", "Game Account"),
         ("gaming", "Gaming"),
         ("social", "Social Media"),
         ("youtube", "YouTube"),
+        ("website", "Website"),
+        ("app", "App"),
+        ("other", "Other Digital Asset"),
         ("software", "Software"),
     ]
 
@@ -25,6 +29,18 @@ class Listing(models.Model):
     title = models.CharField(max_length=200)
 
     description = models.TextField()
+
+    game_name = models.CharField(max_length=160, blank=True, null=True)
+    game_id = models.CharField(max_length=160, blank=True, null=True)
+    game_level = models.CharField(max_length=80, blank=True, null=True)
+    game_rank = models.CharField(max_length=120, blank=True, null=True)
+    website_name = models.CharField(max_length=160, blank=True, null=True)
+    website_url = models.URLField(max_length=500, blank=True, null=True)
+    app_name = models.CharField(max_length=160, blank=True, null=True)
+    app_url = models.URLField(max_length=500, blank=True, null=True)
+    platform = models.CharField(max_length=120, blank=True, null=True)
+    features = models.TextField(blank=True, null=True)
+    public_details = models.TextField(blank=True, null=True)
 
     image = models.ImageField(
         upload_to="listings/%Y/%m/",
