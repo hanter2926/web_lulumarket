@@ -2,11 +2,27 @@ from django.contrib.auth.views import redirect_to_login
 from django.db.models import Q
 from django.shortcuts import redirect, render
 
+from accounts.models import Account, AccountMembership
+
 from .forms import ListingForm
 from .models import Listing
 
 
 def listings(request):
+	active_account = None
+	accounts = Account.objects.none()
+	if request.user.is_authenticated:
+		accounts = Account.objects.filter(memberships__user=request.user).distinct()
+		if not accounts.exists():
+			active_account = Account.objects.create(owner=request.user)
+			AccountMembership.objects.create(account=active_account, user=request.user, role="owner")
+			accounts = Account.objects.filter(memberships__user=request.user).distinct()
+		else:
+			active_account = accounts.filter(pk=request.session.get("active_account_id")).first()
+			if active_account is None:
+				active_account = accounts.first()
+			request.session["active_account_id"] = active_account.id
+
 	if request.method == "POST":
 		if not request.user.is_authenticated:
 			return redirect_to_login(request.get_full_path())
@@ -38,5 +54,7 @@ def listings(request):
 			"query": query,
 			"selected_category": category,
 			"categories": Listing.CATEGORY_CHOICES,
+			"active_account": active_account,
+			"accounts": accounts,
 		},
 	)

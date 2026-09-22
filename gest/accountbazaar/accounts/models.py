@@ -1,6 +1,16 @@
+import secrets
+
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils.timezone import now
+
+
+def _account_id():
+    return f"acc_{secrets.token_urlsafe(9)}"
+
+
+def _merchant_id():
+    return f"mid_{secrets.token_urlsafe(9)}"
 
 
 # -------------------------------------------------------------------
@@ -25,6 +35,28 @@ class User(AbstractUser):
         if self.account_locked_until and now() < self.account_locked_until:
             return True
         return False
+
+
+class Account(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="owned_accounts")
+    name = models.CharField(max_length=120, default="My Account")
+    account_id = models.CharField(max_length=32, unique=True, default=_account_id, editable=False)
+    merchant_id = models.CharField(max_length=32, unique=True, default=_merchant_id, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class AccountMembership(models.Model):
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="account_memberships")
+    role = models.CharField(max_length=30, default="member")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("account", "user"), name="unique_account_membership"),
+        ]
 
 
 # -------------------------------------------------------------------
