@@ -6,6 +6,7 @@ from accounts.models import Account, AccountMembership
 
 from .forms import ListingForm
 from .models import Listing
+from .security import is_safe_public_text
 
 
 def listings(request):
@@ -90,4 +91,5 @@ def sell_account(request):
 
 def listing_detail(request, listing_id):
 	listing = get_object_or_404(Listing.objects.select_related("seller"), pk=listing_id)
+	listing.public_game_id = listing.game_id if is_safe_public_text(listing.game_id) else ""
 	return render(request, "marketplace/listing_detail.html", {"listing": listing})

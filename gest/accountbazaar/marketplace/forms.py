@@ -2,6 +2,7 @@ from django import forms
 from django.core.validators import URLValidator
 
 from .models import Listing
+from .security import is_safe_public_text
 
 
 class ListingForm(forms.ModelForm):
@@ -49,7 +50,7 @@ class ListingForm(forms.ModelForm):
             "category": "Category",
             "title": "Title",
             "game_name": "Game Name",
-            "game_id": "Game ID / Player ID",
+            "game_id": "Public Player ID / UID",
             "game_level": "Level",
             "game_rank": "Rank",
             "website_name": "Website Name",
@@ -62,7 +63,10 @@ class ListingForm(forms.ModelForm):
             "description": "Description",
             "price": "Price",
         }
-        help_texts = {"image": "Upload an image of the account/listing (optional)"}
+        help_texts = {
+            "image": "Upload an image of the account/listing (optional)",
+            "game_id": "Only enter a public Player ID/UID that is safe to share. Never enter your password or login credentials here.",
+        }
 
     CATEGORY_FIELDS = {
         "game": {"game_name", "game_id", "game_level", "game_rank"},
@@ -97,6 +101,14 @@ class ListingForm(forms.ModelForm):
         for field_name in required_fields:
             if not cleaned_data.get(field_name):
                 self.add_error(field_name, "This field is required for this category.")
+        public_fields = (
+            "title", "description", "game_name", "game_id", "game_level", "game_rank",
+            "website_name", "app_name", "platform", "features", "public_details",
+        )
+        for field_name in public_fields:
+            value = cleaned_data.get(field_name)
+            if value and not is_safe_public_text(value):
+                self.add_error(field_name, "Do not enter passwords, OTPs, recovery codes, tokens, keys, or login credentials in public listing information.")
         return cleaned_data
 
     def clean_image(self):

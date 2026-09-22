@@ -232,6 +232,20 @@ class ListingViewTests(TestCase):
 
 		self.assertTrue(form.is_valid(), form.errors)
 
+	def test_credential_like_game_ids_are_rejected(self):
+		for unsafe_value in ("password123", "OTP 8492", "recovery code ABC", "Bearer token XYZ", "login username jane"):
+			form = ListingForm({
+				"category": "game",
+				"title": "Public listing",
+				"game_name": "Example Game",
+				"game_id": unsafe_value,
+				"description": "Safe public description",
+				"price": "25.00",
+			})
+
+			self.assertFalse(form.is_valid(), unsafe_value)
+			self.assertIn("game_id", form.errors)
+
 	def test_website_requires_name_and_valid_https_url(self):
 		missing_fields = ListingForm({
 			"category": "website",
@@ -283,9 +297,26 @@ class ListingViewTests(TestCase):
 		self.assertContains(website_response, "https://example.com/preview")
 		self.assertContains(website_response, "Open Website")
 		self.assertContains(game_response, "Example Game")
+		self.assertContains(game_response, "Public Player ID / UID")
 		self.assertContains(game_response, "PLAYER-123")
 		self.assertNotContains(game_response, "password")
 		self.assertNotContains(game_response, "OTP")
+
+	def test_unsafe_stored_game_id_is_not_rendered(self):
+		listing = Listing.objects.create(
+			seller=self.user,
+			category="game",
+			title="Legacy listing",
+			game_name="Example Game",
+			game_id="password=secret",
+			description="Public description",
+			price="50.00",
+			is_verified=True,
+		)
+
+		response = self.client.get(reverse("marketplace:listing-detail", args=[listing.pk]))
+
+		self.assertNotContains(response, "password=secret")
 
 	def test_app_category_requires_name_and_rejects_unsafe_url(self):
 		missing_name = ListingForm({
