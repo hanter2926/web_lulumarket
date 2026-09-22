@@ -19,6 +19,89 @@ class ListingViewTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 
+	def test_active_listing_shows_buy_now_to_anonymous_visitors(self):
+		listing = Listing.objects.create(
+			seller=self.user,
+			category="gaming",
+			title="Verified account",
+			description="Ready to buy",
+			price="50.00",
+			is_verified=True,
+		)
+
+		response = self.client.get(reverse("marketplace:listings"))
+		detail_response = self.client.get(reverse("marketplace:listing-detail", args=[listing.pk]))
+
+		self.assertContains(response, "Buy Now")
+		self.assertContains(response, reverse("payments:checkout-start", args=[listing.pk]))
+		self.assertContains(detail_response, "Buy Now")
+
+	def test_anonymous_buy_now_redirects_to_login_with_purchase_return(self):
+		listing = Listing.objects.create(
+			seller=self.user,
+			category="gaming",
+			title="Verified account",
+			description="Ready to buy",
+			price="50.00",
+			is_verified=True,
+		)
+
+		response = self.client.post(reverse("payments:checkout-start", args=[listing.pk]))
+
+		self.assertEqual(response.status_code, 302)
+		self.assertIn(reverse("accounts:login"), response["Location"])
+		self.assertIn("next=", response["Location"])
+
+	def test_logged_in_buyer_reaches_order_summary_from_buy_now(self):
+		buyer = get_user_model().objects.create_user(username="buyer", password="pass")
+		listing = Listing.objects.create(
+			seller=self.user,
+			category="gaming",
+			title="Verified account",
+			description="Ready to buy",
+			price="50.00",
+			is_verified=True,
+		)
+		self.client.force_login(buyer)
+
+		response = self.client.post(reverse("payments:checkout-start", args=[listing.pk]))
+
+		self.assertRedirects(response, reverse("payments:order-summary", args=[1]))
+
+	def test_seller_sees_your_listing_instead_of_buy_now(self):
+		listing = Listing.objects.create(
+			seller=self.user,
+			category="gaming",
+			title="My verified account",
+			description="Seller listing",
+			price="50.00",
+			is_verified=True,
+		)
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse("marketplace:listings"))
+		detail_response = self.client.get(reverse("marketplace:listing-detail", args=[listing.pk]))
+
+		self.assertContains(response, "Your Listing")
+		self.assertNotContains(response, "Buy Now")
+		self.assertContains(detail_response, "Your Listing")
+		self.assertNotContains(detail_response, "Buy Now")
+
+	def test_sold_and_inactive_listings_do_not_show_buy_now(self):
+		for status, label in (("sold", "Sold"), ("inactive", "Inactive")):
+			listing = Listing.objects.create(
+				seller=self.user,
+				category="gaming",
+				title=f"{label} account",
+				description="Unavailable",
+				price="50.00",
+				status=status,
+				is_verified=True,
+			)
+			response = self.client.get(reverse("marketplace:listing-detail", args=[listing.pk]))
+			self.assertContains(response, label)
+			self.assertNotContains(response, "Buy Now")
+
 	def test_search_and_category_filter_listings(self):
 		Listing.objects.create(
 			seller=self.user,
