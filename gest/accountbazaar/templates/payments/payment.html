@@ -1,1 +1,19 @@
-{% extends "base.html" %}{% load static %}{% block title %}Payment | AccountBazaar{% endblock %}{% block extra_css %}<link rel="stylesheet" href="{% static 'css/payments.css' %}">{% endblock %}{% block content %}<section class="page-section container checkout-page"><p class="eyebrow">Escrow checkout</p><h1>Payment</h1><div class="payment-layout"><div class="glass payment-panel"><h2>{{ order.listing.title }}</h2><p class="muted">Order {{ order.order_id }}</p><p class="payment-amount">{{ order.amount }} {{ order.currency }}</p><p>Payment status: {{ order.payment_status }}</p></div><div class="glass payment-panel"><h2>Demo payment</h2><p class="muted">This safe test flow simulates a verified payment. A success page alone never changes payment state.</p><form method="post" action="{% url 'payments:demo-payment' order.id %}">{% csrf_token %}<button class="button" type="submit">Confirm test payment</button></form><form method="post" action="{% url 'payments:demo-payment-failed' order.id %}" class="secondary-action">{% csrf_token %}<button class="button button-outline" type="submit">Simulate failed payment</button></form></div></div></section>{% endblock %}
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Payment | AccountBazaar{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/payments.css' %}">{% endblock %}
+{% block content %}
+<section class="page-section container checkout-page">
+	<p class="eyebrow">Escrow checkout</p>
+	{% if order %}
+		<h1>Payment</h1>
+		<div class="payment-layout">
+			<div class="glass payment-panel"><h2>{{ order.listing.title }}</h2><p class="muted">Order {{ order.order_id }}</p><p class="payment-amount">{{ order.amount }} {{ order.currency }}</p><p>Payment status: {{ order.payment_status }}</p></div>
+			<div class="glass payment-panel"><h2>Demo payment</h2><p class="muted">This safe test flow simulates a verified payment. A success page alone never changes payment state.</p><form method="post" action="{% url 'payments:demo-payment' order.id %}">{% csrf_token %}<button class="button" type="submit">Confirm test payment</button></form><form method="post" action="{% url 'payments:demo-payment-failed' order.id %}" class="secondary-action">{% csrf_token %}<button class="button button-outline" type="submit">Simulate failed payment</button></form></div>
+		</div>
+	{% else %}
+		<h1>Choose an order to pay</h1>
+		<div class="glass payment-panel empty-state"><p>Payment becomes available after you start checkout from a marketplace listing.</p><a class="button" href="{% url 'marketplace:listings' %}">Browse Accounts</a></div>
+	{% endif %}
+</section>
+{% endblock %}
