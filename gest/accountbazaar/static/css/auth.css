@@ -1,0 +1,1 @@
+.auth-shell { display:grid; min-height:calc(100vh - 72px); place-items:center; padding:50px 0; } .auth-card { width:min(480px,100%); padding:30px; } .auth-card h1 { font-size:36px; } .auth-card form { margin-top:24px; } .auth-footer { color:var(--muted); font-size:14px; }

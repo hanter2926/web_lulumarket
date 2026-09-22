@@ -1,0 +1,1 @@
+.notification-list { display:grid; gap:10px; max-width:780px; } .notification-item { padding:18px; } .notification-item.unread { border-left:3px solid var(--primary); } .notification-time { color:var(--muted); font-size:12px; }

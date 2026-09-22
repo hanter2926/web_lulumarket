@@ -1,13 +1,11 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AccountBazaar</title>
-  <style>
-    :root { --ink:#17212b; --paper:#f5f7f8; --navy:#17324d; --teal:#1b817b; }
-    * { box-sizing:border-box; } body { margin:0; min-height:100vh; color:var(--ink); background:var(--paper); font:16px/1.5 Georgia, serif; } main { width:min(900px, calc(100% - 32px)); margin:14vh auto; } .eyebrow { color:var(--teal); font:700 12px 'Trebuchet MS', sans-serif; letter-spacing:2px; text-transform:uppercase; } h1 { max-width:680px; margin:15px 0; color:var(--navy); font:700 clamp(38px, 7vw, 74px)/.98 'Trebuchet MS', sans-serif; } p { max-width:540px; color:#60717d; font-size:19px; } a { display:inline-block; margin-top:18px; padding:12px 17px; color:#fff; background:var(--teal); text-decoration:none; font:700 13px 'Trebuchet MS', sans-serif; } a:hover { background:var(--navy); }
-  </style>
-</head>
-<body><main><div class="eyebrow">AccountBazaar</div><h1>Trade with a clearer view.</h1><p>Browse verified account listings and publish your own offer through the marketplace.</p><a href="{% url 'marketplace:listings' %}">Open marketplace</a></main></body>
-</html>
+{% extends "base.html" %}
+{% load static %}
+{% block title %}AccountBazaar | Safer digital commerce{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/home.css' %}">{% endblock %}
+{% block extra_js %}<script src="{% static 'js/home.js' %}" defer></script>{% endblock %}
+{% block content %}
+<section class="hero container"><div class="hero-grid"><div class="hero-copy"><p class="eyebrow">The trusted account marketplace</p><h1>Trade digital accounts with clarity.</h1><p>Browse verified listings, compete in tournaments, and keep every transaction protected by escrow.</p><div class="hero-actions"><a class="button" href="{% url 'marketplace:listings' %}">Browse accounts</a><a class="button button-outline" href="{% url 'accounts:register' %}">Start selling</a></div></div><div class="glass hero-panel"><p class="eyebrow">Escrow protection</p><h2>Funds stay protected until the handoff is right.</h2><p class="muted">Clear statuses, verified sellers, and a dispute path when something needs review.</p><div class="stat">100%</div><p class="muted">transaction visibility</p></div></div></section>
+<section class="page-section container"><div class="section-heading"><p class="eyebrow">Explore categories</p><h2>Find the right account for your next move.</h2></div><div class="category-grid"><a class="glass feature-card" href="{% url 'marketplace:listings' %}?category=gaming"><h3>Gaming</h3><p class="muted">Competitive profiles and game-ready accounts.</p></a><a class="glass feature-card" href="{% url 'marketplace:listings' %}?category=social"><h3>Social</h3><p class="muted">Social profiles with transparent listing details.</p></a><a class="glass feature-card" href="{% url 'marketplace:listings' %}?category=youtube"><h3>YouTube</h3><p class="muted">Creator channels ready for the next chapter.</p></a><a class="glass feature-card" href="{% url 'marketplace:listings' %}?category=software"><h3>Software</h3><p class="muted">Useful tools and licensed digital products.</p></a></div></section>
+<section class="page-section container"><div class="section-heading"><p class="eyebrow">How escrow works</p><h2>A calmer way to complete a trade.</h2></div><div class="feature-grid"><div class="glass feature-card"><span class="stat">01</span><h3>Choose</h3><p class="muted">Review the account, seller, and terms.</p></div><div class="glass feature-card"><span class="stat">02</span><h3>Protect</h3><p class="muted">Payment stays held while the handoff happens.</p></div><div class="glass feature-card"><span class="stat">03</span><h3>Confirm</h3><p class="muted">Release or open a dispute with evidence.</p></div><div class="glass feature-card"><span class="stat">04</span><h3>Grow</h3><p class="muted">Return for tournaments and new listings.</p></div></div></section>
+<section class="page-section container"><div class="section-heading"><p class="eyebrow">Questions, answered</p><h2>Built for informed decisions.</h2></div><div class="glass faq-list" data-faq><details><summary>What does escrow protect?</summary><p class="muted">It keeps a captured payment held while the transaction is completed or reviewed.</p></details><details><summary>Can I sell an account?</summary><p class="muted">Create an account, complete the required verification, and publish a listing from the marketplace.</p></details><details><summary>What happens when there is a problem?</summary><p class="muted">Either party can open a dispute with a reason so the transaction can be reviewed.</p></details></div></section>
+{% endblock %}
