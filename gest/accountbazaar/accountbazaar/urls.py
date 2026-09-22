@@ -18,14 +18,17 @@ from django.contrib import admin
 from django.urls import include, path
 
 from accountbazaar.dashboard import admin_dashboard
+from accountbazaar.owner_dashboard import owner_dashboard
 from accountbazaar.views import home
 
 urlpatterns = [
     path('', home, name='home'),
     path('accounts/', include('accounts.urls')),
     path('admin/dashboard/', admin_dashboard, name='admin-dashboard'),
+    path('owner/dashboard/', owner_dashboard, name='owner-dashboard'),
     path('admin/', admin.site.urls),
     path('marketplace/', include('marketplace.urls')),
     path('payments/', include('payments.urls')),
     path('tournaments/', include('tournaments.urls')),
+    path('notifications/', include('notifications.urls')),
 ]

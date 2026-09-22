@@ -141,3 +141,18 @@ class LoginHistory(models.Model):
     is_suspicious = models.BooleanField(default=False)
     suspicious_reason = models.CharField(max_length=255, null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
+
+
+class FraudSignal(models.Model):
+    class Severity(models.TextChoices):
+        LOW = "LOW", "Low"
+        MEDIUM = "MEDIUM", "Medium"
+        HIGH = "HIGH", "High"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="fraud_signals", null=True, blank=True)
+    category = models.CharField(max_length=50)
+    severity = models.CharField(max_length=10, choices=Severity.choices, default=Severity.LOW)
+    score = models.PositiveIntegerField(default=0)
+    reason = models.TextField()
+    is_resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)

@@ -2,7 +2,8 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import Account, AccountMembership
+from .fraud import scan_user_login_risk
+from .models import Account, AccountMembership, FraudSignal, LoginHistory
 
 
 class AccountFlowTests(TestCase):
@@ -45,3 +46,17 @@ class AccountFlowTests(TestCase):
 
 		self.assertRedirects(response, reverse("marketplace:listings"))
 		self.assertEqual(self.client.session["active_account_id"], account.id)
+
+	def test_failed_login_pattern_creates_fraud_signal(self):
+		for _ in range(3):
+			LoginHistory.objects.create(
+				user=self.user,
+				ip_address="127.0.0.1",
+				user_agent="test",
+				status=LoginHistory.Status.FAILED,
+			)
+
+		signal = scan_user_login_risk(self.user)
+
+		self.assertEqual(signal.category, "LOGIN_RISK")
+		self.assertEqual(FraudSignal.objects.count(), 1)
