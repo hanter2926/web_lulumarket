@@ -21,10 +21,11 @@ from django.conf.urls.static import static
 
 from accountbazaar.dashboard import admin_dashboard
 from accountbazaar.owner_dashboard import owner_dashboard
-from accountbazaar.views import home
+from accountbazaar.views import home, service_worker
 
 urlpatterns = [
     path('', home, name='home'),
+    path('service-worker.js', service_worker, name='service-worker'),
     path('accounts/', include('accounts.urls')),
     path('admin/dashboard/', admin_dashboard, name='admin-dashboard'),
     path('owner/dashboard/', owner_dashboard, name='owner-dashboard'),

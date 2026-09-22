@@ -7,6 +7,9 @@ from accounts.models import LoginHistory, SellerVerification, User, UserKYC
 from ads.models import AdPlacement
 from marketplace.models import Listing
 from tournaments.models import Tournament
+from disputes.models import Dispute, Report
+from notifications.models import AuditLog
+from payments.models import Order, Payment
 
 
 @user_passes_test(lambda user: user.is_active and user.is_staff)
@@ -25,8 +28,8 @@ def admin_dashboard(request):
             ("Listings", Listing.objects.count()),
             ("Pending Verification", Listing.objects.filter(is_verified=False).count()),
             ("Sold", Listing.objects.filter(status__iexact="sold").count()),
-            ("Reports", "--"),
-            ("Disputes", "--"),
+            ("Reports", Report.objects.filter(status=Report.Status.OPEN).count()),
+            ("Disputes", Dispute.objects.filter(status=Dispute.Status.OPEN).count()),
         ],
         "tournament_metrics": [
             ("Free", Tournament.objects.filter(entry_type="free").count()),
@@ -35,7 +38,12 @@ def admin_dashboard(request):
             ("Live", Tournament.objects.filter(status__iexact="live").count()),
             ("Completed", Tournament.objects.filter(status__iexact="completed").count()),
         ],
-        "payment_metrics": [(label, "--") for label in ("Pending", "Successful", "Refunds", "Reconciliation")],
+        "payment_metrics": [
+            ("Pending", Payment.objects.filter(status=Payment.Status.CREATED).count()),
+            ("Successful", Payment.objects.filter(status=Payment.Status.CAPTURED).count()),
+            ("Refunds", Payment.objects.filter(status=Payment.Status.REFUNDED).count()),
+            ("Reconciliation", Order.objects.filter(status=Order.Status.IN_ESCROW).count()),
+        ],
         "ad_metrics": [
             ("Placements", AdPlacement.objects.count()),
             ("Active Ads", AdPlacement.objects.filter(is_active=True).count()),
@@ -44,7 +52,7 @@ def admin_dashboard(request):
         "security_metrics": [
             ("Login Attempts", LoginHistory.objects.count()),
             ("Suspicious Activity", LoginHistory.objects.filter(is_suspicious=True).count()),
-            ("Audit Logs", "--"),
+            ("Audit Logs", AuditLog.objects.count()),
         ],
         "sections": [
             ("Marketplace", [

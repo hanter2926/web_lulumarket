@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Report {{ target_type|title }} | AccountBazaar{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/disputes.css' %}">{% endblock %}
+{% block content %}<section class="page-section container"><div class="glass dispute-panel"><p class="eyebrow">Trust & safety</p><h1>Report {{ target_type }}</h1><p class="muted">Reports are reviewed by moderators. Do not include passwords, OTPs, or private keys.</p><form method="post" enctype="multipart/form-data">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Submit report</button></form></div></section>{% endblock %}

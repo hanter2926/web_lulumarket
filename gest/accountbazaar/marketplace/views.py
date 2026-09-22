@@ -37,6 +37,9 @@ def listings(request):
 
 	query = request.GET.get("q", "").strip()
 	category = request.GET.get("category", "").strip()
+	min_price = request.GET.get("min_price", "").strip()
+	max_price = request.GET.get("max_price", "").strip()
+	sort = request.GET.get("sort", "newest").strip()
 	listing_query = Listing.objects.select_related("seller").order_by("-created_at")
 	if query:
 		listing_query = listing_query.filter(
@@ -44,6 +47,16 @@ def listings(request):
 		)
 	if category:
 		listing_query = listing_query.filter(category=category)
+	if min_price:
+		listing_query = listing_query.filter(price__gte=min_price)
+	if max_price:
+		listing_query = listing_query.filter(price__lte=max_price)
+	if sort == "price_low":
+		listing_query = listing_query.order_by("price", "-created_at")
+	elif sort == "price_high":
+		listing_query = listing_query.order_by("-price", "-created_at")
+	elif sort == "oldest":
+		listing_query = listing_query.order_by("created_at")
 
 	return render(
 		request,
@@ -53,6 +66,9 @@ def listings(request):
 			"listings": listing_query,
 			"query": query,
 			"selected_category": category,
+			"min_price": min_price,
+			"max_price": max_price,
+			"selected_sort": sort,
 			"categories": Listing.CATEGORY_CHOICES,
 			"active_account": active_account,
 			"accounts": accounts,

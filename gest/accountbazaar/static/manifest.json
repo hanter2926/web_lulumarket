@@ -1,0 +1,17 @@
+{
+  "name": "AccountBazaar",
+  "short_name": "AccountBazaar",
+  "description": "A trusted digital marketplace for safer account transfers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "icons": [
+    {
+      "src": "/static/images/logo/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -43,6 +43,27 @@ class ListingViewTests(TestCase):
 		self.assertContains(response, "Gaming account")
 		self.assertNotContains(response, "Design tools")
 
+	def test_price_filter_and_sort_are_server_side(self):
+		Listing.objects.create(
+			seller=self.user,
+			category="gaming",
+			title="Budget account",
+			description="Affordable",
+			price="10.00",
+		)
+		Listing.objects.create(
+			seller=self.user,
+			category="gaming",
+			title="Premium account",
+			description="Premium",
+			price="100.00",
+		)
+
+		response = self.client.get(reverse("marketplace:listings"), {"min_price": "50", "sort": "price_high"})
+
+		self.assertContains(response, "Premium account")
+		self.assertNotContains(response, "Budget account")
+
 	def test_authenticated_user_can_create_listing(self):
 		self.client.force_login(self.user)
 

@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from disputes.models import Dispute
 from notifications.models import Notification
+from notifications.services import record_audit
 
 from .models import AccountTransfer, ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Settlement
 
@@ -82,6 +83,7 @@ def create_order(*, buyer, listing, provider=""):
         platform_fee=platform_fee,
         net_amount=order_amount - platform_fee,
     )
+    record_audit(actor=buyer, action="ORDER_CREATED", obj=order, metadata={"listing_id": listing.id, "amount": str(order.amount)})
     return order
 
 
@@ -115,6 +117,7 @@ def record_payment_success(*, order, provider_payment_id, payload=None):
         body=f"Payment for {order.listing.title} is confirmed. Transfer the account securely.",
         link=f"/payments/orders/{order.id}/",
     )
+    record_audit(actor=order.buyer, action="PAYMENT_VERIFIED", obj=order, metadata={"payment_id": provider_payment_id})
     original_order.status = order.status
     original_order.payment_status = order.payment_status
     return order
@@ -153,6 +156,7 @@ def mark_transfer_sent(*, order, seller, note=""):
         body=f"The seller has submitted the account for order {order.order_id}. Confirm receipt when ready.",
         link=f"/payments/orders/{order.id}/",
     )
+    record_audit(actor=seller, action="HANDOFF_SENT", obj=order)
     return transfer
 
 
@@ -167,6 +171,7 @@ def confirm_transfer(*, order, buyer):
     transfer.save(update_fields=("status", "buyer_confirmed_at"))
     order.status = Order.Status.COMPLETED
     order.save(update_fields=("status", "updated_at"))
+    record_audit(actor=buyer, action="HANDOFF_CONFIRMED", obj=order)
     return order
 
 
