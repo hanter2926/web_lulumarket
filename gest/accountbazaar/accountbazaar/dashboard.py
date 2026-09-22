@@ -46,6 +46,22 @@ def admin_dashboard(request):
             ("Suspicious Activity", LoginHistory.objects.filter(is_suspicious=True).count()),
             ("Audit Logs", "--"),
         ],
+        "sections": [
+            ("Marketplace", [
+                ("Listings", Listing.objects.count()),
+                ("Pending Verification", Listing.objects.filter(is_verified=False).count()),
+                ("Sold", Listing.objects.filter(status__iexact="sold").count()),
+            ]),
+            ("Tournaments", [
+                ("Free", Tournament.objects.filter(entry_type="free").count()),
+                ("Paid / Restricted", Tournament.objects.filter(entry_type="paid").count()),
+                ("Upcoming", Tournament.objects.filter(start_time__gt=now).count()),
+            ]),
+            ("Security", [
+                ("Login Attempts", LoginHistory.objects.count()),
+                ("Suspicious Activity", LoginHistory.objects.filter(is_suspicious=True).count()),
+            ]),
+        ],
         "attention_items": [
             ("Pending KYC reviews", UserKYC.objects.filter(status=UserKYC.Status.PENDING).count()),
             ("Pending seller reviews", SellerVerification.objects.filter(status=SellerVerification.Status.PENDING).count()),

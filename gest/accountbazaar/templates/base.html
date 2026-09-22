@@ -28,7 +28,7 @@
         {% if user.is_authenticated %}
           <a href="{% url 'notifications:inbox' %}">Notifications</a>
           <a href="{% url 'owner-dashboard' %}">Dashboard</a>
-          <a href="{% url 'accounts:login' %}">Profile</a>
+          <a href="{% url 'accounts:profile' %}">Profile</a>
         {% else %}
           <a class="button button-small" href="{% url 'accounts:login' %}">Log in</a>
           <a class="button button-small button-outline" href="{% url 'accounts:register' %}">Register</a>

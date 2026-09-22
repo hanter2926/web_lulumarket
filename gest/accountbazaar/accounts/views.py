@@ -36,6 +36,11 @@ def account_logout(request):
 
 
 @login_required
+def profile(request):
+	return render(request, "accounts/profile.html")
+
+
+@login_required
 def switch_account(request, account_id):
 	if request.method == "POST" and AccountMembership.objects.filter(
 		account_id=account_id,
