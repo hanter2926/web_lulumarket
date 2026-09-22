@@ -42,6 +42,7 @@ class Payment(models.Model):
 
 	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="payment")
 	provider = models.CharField(max_length=40)
+	provider_order_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
 	provider_payment_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
 	amount = models.DecimalField(max_digits=12, decimal_places=2)
 	status = models.CharField(max_length=20, choices=Status.choices, default=Status.CREATED)
@@ -82,3 +83,43 @@ class Refund(models.Model):
 	status = models.CharField(max_length=20, choices=Status.choices, default=Status.REQUESTED)
 	provider_refund_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
 	created_at = models.DateTimeField(auto_now_add=True)
+
+
+class FeeConfiguration(models.Model):
+	name = models.CharField(max_length=100, unique=True)
+	percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+	fixed_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+	currency = models.CharField(max_length=3, default="INR")
+	is_active = models.BooleanField(default=True)
+	updated_at = models.DateTimeField(auto_now=True)
+
+
+class ComplianceCheck(models.Model):
+	class Status(models.TextChoices):
+		PASSED = "PASSED", "Passed"
+		BLOCKED = "BLOCKED", "Blocked"
+
+	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="compliance_check")
+	status = models.CharField(max_length=10, choices=Status.choices)
+	buyer_email_verified = models.BooleanField(default=False)
+	seller_kyc_approved = models.BooleanField(default=False)
+	seller_verification_approved = models.BooleanField(default=False)
+	reason = models.TextField(blank=True)
+	checked_at = models.DateTimeField(auto_now_add=True)
+
+
+class Settlement(models.Model):
+	class Status(models.TextChoices):
+		PENDING = "PENDING", "Pending"
+		HELD = "HELD", "Held"
+		ELIGIBLE = "ELIGIBLE", "Eligible"
+		PAID = "PAID", "Paid"
+
+	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="settlement")
+	seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="settlements")
+	gross_amount = models.DecimalField(max_digits=12, decimal_places=2)
+	platform_fee = models.DecimalField(max_digits=12, decimal_places=2)
+	net_amount = models.DecimalField(max_digits=12, decimal_places=2)
+	status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+	provider_transfer_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+	paid_at = models.DateTimeField(null=True, blank=True)
