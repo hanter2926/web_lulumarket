@@ -5,8 +5,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from disputes.models import Dispute
+from notifications.models import Notification
 
-from .models import ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Settlement
+from .models import AccountTransfer, ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Settlement
 
 
 def _compliance_status(*, buyer, seller):
@@ -27,10 +28,22 @@ def _fee_for(amount):
 
 @transaction.atomic
 def create_order(*, buyer, listing, provider=""):
+    listing = listing.__class__.objects.select_for_update().select_related("seller").get(pk=listing.pk)
     if listing.seller_id == buyer.id:
         raise ValueError("A seller cannot buy their own listing.")
     if not listing.is_verified:
         raise ValueError("Only verified listings can be ordered.")
+    if listing.status.lower() in {"sold", "inactive", "cancelled"}:
+        raise ValueError("This listing is no longer available.")
+
+    existing_order = Order.objects.filter(
+        listing=listing,
+        status__in=(Order.Status.PENDING_PAYMENT, Order.Status.PAID, Order.Status.IN_ESCROW, Order.Status.COMPLETED, Order.Status.DISPUTED),
+    ).first()
+    if existing_order:
+        if existing_order.buyer_id != buyer.id:
+            raise ValueError("This listing already has a purchase in progress.")
+        return existing_order
 
     compliance_passed, email_verified, kyc_approved, seller_approved = _compliance_status(
         buyer=buyer,
@@ -51,6 +64,7 @@ def create_order(*, buyer, listing, provider=""):
         amount=order.amount,
     )
     Escrow.objects.create(order=order)
+    AccountTransfer.objects.create(order=order)
     ComplianceCheck.objects.create(
         order=order,
         status=ComplianceCheck.Status.PASSED if compliance_passed else ComplianceCheck.Status.BLOCKED,
@@ -73,8 +87,12 @@ def create_order(*, buyer, listing, provider=""):
 
 @transaction.atomic
 def record_payment_success(*, order, provider_payment_id, payload=None):
+    original_order = order
+    order = Order.objects.select_for_update().select_related("listing").get(pk=order.pk)
     payment = Payment.objects.select_for_update().get(order=order)
     if payment.status == Payment.Status.CAPTURED:
+        original_order.status = order.status
+        original_order.payment_status = order.payment_status
         return order
     if payment.status != Payment.Status.CREATED:
         raise ValueError("Only created payments can be captured.")
@@ -84,8 +102,71 @@ def record_payment_success(*, order, provider_payment_id, payload=None):
     payment.provider_payload = payload or {}
     payment.save(update_fields=("status", "provider_payment_id", "provider_payload", "updated_at"))
     order.mark_paid()
+    listing = order.listing.__class__.objects.select_for_update().get(pk=order.listing_id)
+    if listing.status.lower() in {"sold", "inactive", "cancelled"}:
+        raise ValueError("This listing is no longer available.")
+    listing.status = "sold"
+    listing.save(update_fields=("status",))
     order.settlement.status = Settlement.Status.HELD
     order.settlement.save(update_fields=("status",))
+    Notification.objects.create(
+        recipient=order.seller,
+        title="Payment confirmed",
+        body=f"Payment for {order.listing.title} is confirmed. Transfer the account securely.",
+        link=f"/payments/orders/{order.id}/",
+    )
+    original_order.status = order.status
+    original_order.payment_status = order.payment_status
+    return order
+
+
+@transaction.atomic
+def record_payment_failure(*, order, reason="Payment failed"):
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    payment = Payment.objects.select_for_update().get(order=order)
+    if payment.status == Payment.Status.CAPTURED:
+        raise ValueError("A captured payment cannot be marked as failed.")
+    payment.status = Payment.Status.FAILED
+    payment.provider_payload = {"reason": reason}
+    payment.save(update_fields=("status", "provider_payload", "updated_at"))
+    order.status = Order.Status.CANCELLED
+    order.payment_status = "FAILED"
+    order.save(update_fields=("status", "payment_status", "updated_at"))
+    return order
+
+
+@transaction.atomic
+def mark_transfer_sent(*, order, seller, note=""):
+    order = Order.objects.select_for_update().get(pk=order.pk, seller=seller)
+    if order.status != Order.Status.IN_ESCROW:
+        raise ValueError("Payment must be confirmed before transfer.")
+    transfer = AccountTransfer.objects.select_for_update().get(order=order)
+    if transfer.status != AccountTransfer.Status.AWAITING_SELLER:
+        raise ValueError("This transfer has already been submitted.")
+    transfer.status = AccountTransfer.Status.TRANSFERRED
+    transfer.seller_transferred_at = timezone.now()
+    transfer.transfer_note = note
+    transfer.save(update_fields=("status", "seller_transferred_at", "transfer_note"))
+    Notification.objects.create(
+        recipient=order.buyer,
+        title="Account transfer submitted",
+        body=f"The seller has submitted the account for order {order.order_id}. Confirm receipt when ready.",
+        link=f"/payments/orders/{order.id}/",
+    )
+    return transfer
+
+
+@transaction.atomic
+def confirm_transfer(*, order, buyer):
+    order = Order.objects.select_for_update().get(pk=order.pk, buyer=buyer)
+    transfer = AccountTransfer.objects.select_for_update().get(order=order)
+    if transfer.status != AccountTransfer.Status.TRANSFERRED:
+        raise ValueError("The seller has not submitted the transfer yet.")
+    transfer.status = AccountTransfer.Status.RECEIVED
+    transfer.buyer_confirmed_at = timezone.now()
+    transfer.save(update_fields=("status", "buyer_confirmed_at"))
+    order.status = Order.Status.COMPLETED
+    order.save(update_fields=("status", "updated_at"))
     return order
 
 

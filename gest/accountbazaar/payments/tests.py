@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -9,7 +10,7 @@ from django.urls import reverse
 from disputes.models import Dispute
 from marketplace.models import Listing
 
-from .models import ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Settlement
+from .models import AccountTransfer, ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Settlement
 from .services import create_order, open_dispute, record_payment_success, request_refund
 
 
@@ -18,6 +19,7 @@ class TransactionWorkflowTests(TestCase):
 		user_model = get_user_model()
 		self.buyer = user_model.objects.create_user(username="buyer", password="pass")
 		self.seller = user_model.objects.create_user(username="seller", password="pass")
+		self.other_buyer = user_model.objects.create_user(username="other-buyer", password="pass")
 		self.listing = Listing.objects.create(
 			seller=self.seller,
 			category="gaming",
@@ -67,6 +69,122 @@ class TransactionWorkflowTests(TestCase):
 		record_payment_success(order=order, provider_payment_id="pay_fee")
 		order.refresh_from_db()
 		self.assertEqual(order.settlement.status, Settlement.Status.HELD)
+
+	def test_buyer_can_view_listing_and_start_checkout(self):
+		self.client.force_login(self.buyer)
+
+		self.assertEqual(self.client.get(reverse("marketplace:listing-detail", args=[self.listing.id])).status_code, 200)
+		response = self.client.post(reverse("payments:checkout-start", args=[self.listing.id]))
+
+		self.assertRedirects(response, reverse("payments:order-summary", args=[1]))
+		self.assertEqual(Order.objects.get().amount, Decimal("100.00"))
+
+	def test_unauthenticated_buy_now_returns_to_login(self):
+		response = self.client.post(reverse("payments:checkout-start", args=[self.listing.id]))
+
+		self.assertEqual(response.status_code, 302)
+		self.assertIn(reverse("accounts:login"), response["Location"])
+		self.assertIn("next=", response["Location"])
+
+	def test_seller_cannot_buy_own_listing(self):
+		self.client.force_login(self.seller)
+
+		response = self.client.post(reverse("payments:checkout-start", args=[self.listing.id]))
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(Order.objects.count(), 0)
+
+	def test_inactive_and_sold_listings_cannot_be_purchased(self):
+		self.client.force_login(self.buyer)
+		for status in ("inactive", "sold"):
+			self.listing.status = status
+			self.listing.save(update_fields=("status",))
+			response = self.client.post(reverse("payments:checkout-start", args=[self.listing.id]))
+			self.assertEqual(response.status_code, 400)
+
+	def test_second_buyer_cannot_create_duplicate_purchase(self):
+		first_order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
+
+		with self.assertRaisesMessage(ValueError, "already has a purchase"):
+			create_order(buyer=self.other_buyer, listing=self.listing, provider="test")
+		self.assertEqual(Order.objects.count(), 1)
+		self.assertEqual(first_order.amount, Decimal("100.00"))
+
+	def test_browser_cannot_manipulate_listing_price(self):
+		self.client.force_login(self.buyer)
+		response = self.client.post(
+			reverse("payments:checkout-start", args=[self.listing.id]),
+			{"amount": "0.01"},
+		)
+
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(Order.objects.get().amount, 100)
+
+	def test_verified_demo_payment_marks_order_and_listing_sold(self):
+		self.client.force_login(self.buyer)
+		self.client.post(reverse("payments:checkout-start", args=[self.listing.id]))
+		order = Order.objects.get()
+
+		response = self.client.post(reverse("payments:demo-payment", args=[order.id]))
+
+		self.assertRedirects(response, reverse("payments:payment-success-page", args=[order.id]))
+		order.refresh_from_db()
+		self.listing.refresh_from_db()
+		self.assertEqual(order.payment_status, "PAID")
+		self.assertEqual(order.status, Order.Status.IN_ESCROW)
+		self.assertEqual(self.listing.status, "sold")
+		self.assertEqual(AccountTransfer.objects.get(order=order).status, AccountTransfer.Status.AWAITING_SELLER)
+
+	def test_failed_demo_payment_does_not_mark_order_paid(self):
+		self.client.force_login(self.buyer)
+		self.client.post(reverse("payments:checkout-start", args=[self.listing.id]))
+		order = Order.objects.get()
+
+		self.client.post(reverse("payments:demo-payment-failed", args=[order.id]))
+		order.refresh_from_db()
+		self.assertEqual(order.payment_status, "FAILED")
+		self.assertNotEqual(order.status, Order.Status.IN_ESCROW)
+		self.assertEqual(self.listing.__class__.objects.get(pk=self.listing.pk).status, "pending")
+
+	def test_buyer_cannot_view_another_buyers_order(self):
+		order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
+		self.client.force_login(self.other_buyer)
+
+		response = self.client.get(reverse("payments:order-detail", args=[order.id]))
+
+		self.assertEqual(response.status_code, 403)
+
+	def test_seller_orders_only_show_that_sellers_sales(self):
+		other_seller = get_user_model().objects.create_user(username="other-seller", password="pass")
+		other_listing = Listing.objects.create(
+			seller=other_seller,
+			category="software",
+			title="Other listing",
+			description="Other account",
+			price="50.00",
+			is_verified=True,
+		)
+		create_order(buyer=self.buyer, listing=self.listing, provider="test")
+		create_order(buyer=self.other_buyer, listing=other_listing, provider="test")
+		self.client.force_login(self.seller)
+
+		response = self.client.get(reverse("payments:seller-orders"))
+
+		self.assertContains(response, self.listing.title)
+		self.assertNotContains(response, other_listing.title)
+
+	def test_transfer_confirmation_completes_order_without_credentials(self):
+		order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
+		record_payment_success(order=order, provider_payment_id="pay_transfer")
+		self.client.force_login(self.seller)
+		self.client.post(reverse("payments:transfer-sent", args=[order.id]), {"note": "Secure handoff reference"})
+		self.client.force_login(self.buyer)
+
+		response = self.client.post(reverse("payments:transfer-received", args=[order.id]))
+
+		self.assertRedirects(response, reverse("payments:order-detail", args=[order.id]))
+		order.refresh_from_db()
+		self.assertEqual(order.status, Order.Status.COMPLETED)
 
 	@override_settings(RAZORPAY_WEBHOOK_SECRET="webhook-secret")
 	def test_signed_razorpay_webhook_captures_payment(self):

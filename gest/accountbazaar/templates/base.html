@@ -29,6 +29,8 @@
           <a class="{% if request.resolver_match.namespace == 'notifications' %}is-active{% endif %}" href="{% url 'notifications:inbox' %}">Notifications</a>
           <a class="{% if request.resolver_match.url_name == 'owner-dashboard' %}is-active{% endif %}" href="{% url 'owner-dashboard' %}">Dashboard</a>
           <a class="{% if request.resolver_match.url_name == 'profile' %}is-active{% endif %}" href="{% url 'accounts:profile' %}">Profile</a>
+          <a class="{% if request.resolver_match.url_name == 'my-orders' %}is-active{% endif %}" href="{% url 'payments:my-orders' %}">My Orders</a>
+          <a class="{% if request.resolver_match.url_name == 'seller-orders' %}is-active{% endif %}" href="{% url 'payments:seller-orders' %}">Sales</a>
         {% else %}
           <a class="button button-small" href="{% url 'accounts:login' %}">Log in</a>
           <a class="button button-small button-outline" href="{% url 'accounts:register' %}">Register</a>

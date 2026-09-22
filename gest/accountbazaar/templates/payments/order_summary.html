@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Order Summary | AccountBazaar{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/payments.css' %}">{% endblock %}
+{% block content %}
+<section class="page-section container checkout-page">
+  <p class="eyebrow">Secure checkout</p>
+  <h1>Order Summary</h1>
+  <div class="glass payment-panel summary-panel">
+    <div class="summary-line"><span>Listing</span><strong>{{ order.listing.title }}</strong></div>
+    <div class="summary-line"><span>Price</span><strong>{{ order.amount }} {{ order.currency }}</strong></div>
+    <div class="summary-line summary-total"><span>Total</span><strong>{{ order.amount }} {{ order.currency }}</strong></div>
+    <form method="post" action="{% url 'payments:proceed-payment' order.id %}">{% csrf_token %}<button class="button" type="submit">Proceed to Payment</button></form>
+  </div>
+</section>
+{% endblock %}

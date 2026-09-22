@@ -15,7 +15,9 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
+from django.conf import settings
 from django.urls import include, path
+from django.conf.urls.static import static
 
 from accountbazaar.dashboard import admin_dashboard
 from accountbazaar.owner_dashboard import owner_dashboard
@@ -34,3 +36,6 @@ urlpatterns = [
     path('wallet/', include('wallet.urls')),
     path('disputes/', include('disputes.urls')),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

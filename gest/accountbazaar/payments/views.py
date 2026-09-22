@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -12,11 +12,112 @@ from marketplace.models import Listing
 
 from .models import Order, Payment
 from .providers import create_razorpay_order, verify_webhook_signature, webhook_payment_details
-from .services import create_order, open_dispute, record_payment_success, request_refund
+from .services import confirm_transfer, create_order, mark_transfer_sent, open_dispute, record_payment_failure, record_payment_success, request_refund
 
 
 def payment_page(request):
 	return render(request, "payments/payment.html")
+
+
+@login_required
+@require_POST
+def checkout_start(request, listing_id):
+	listing = get_object_or_404(Listing, pk=listing_id)
+	try:
+		order = create_order(buyer=request.user, listing=listing, provider="demo")
+	except ValueError as error:
+		return HttpResponse(str(error), status=400)
+	return redirect("payments:order-summary", order_id=order.id)
+
+
+@login_required
+def order_summary(request, order_id):
+	order = get_object_or_404(Order.objects.select_related("listing", "seller"), pk=order_id, buyer=request.user)
+	return render(request, "payments/order_summary.html", {"order": order})
+
+
+@login_required
+@require_POST
+def proceed_to_payment(request, order_id):
+	order = get_object_or_404(Order, pk=order_id, buyer=request.user)
+	if order.status != Order.Status.PENDING_PAYMENT:
+		return redirect("payments:order-detail", order_id=order.id)
+	return redirect("payments:payment", order_id=order.id)
+
+
+@login_required
+def payment_checkout(request, order_id):
+	order = get_object_or_404(Order.objects.select_related("listing", "payment"), pk=order_id, buyer=request.user)
+	return render(request, "payments/payment.html", {"order": order})
+
+
+@login_required
+@require_POST
+def demo_payment(request, order_id):
+	order = get_object_or_404(Order, pk=order_id, buyer=request.user)
+	try:
+		order = record_payment_success(order=order, provider_payment_id=f"demo_{order.order_id}", payload={"mode": "demo"})
+	except ValueError as error:
+		return HttpResponse(str(error), status=400)
+	return redirect("payments:payment-success-page", order_id=order.id)
+
+
+@login_required
+@require_POST
+def demo_payment_failed(request, order_id):
+	order = get_object_or_404(Order, pk=order_id, buyer=request.user)
+	record_payment_failure(order=order, reason="Demo payment declined")
+	return redirect("payments:order-detail", order_id=order.id)
+
+
+@login_required
+def payment_success_page(request, order_id):
+	order = get_object_or_404(Order.objects.select_related("listing", "payment"), pk=order_id, buyer=request.user)
+	if order.payment_status != "PAID":
+		return redirect("payments:payment", order_id=order.id)
+	return render(request, "payments/payment_success.html", {"order": order})
+
+
+@login_required
+def order_detail(request, order_id):
+	order = get_object_or_404(Order.objects.select_related("listing", "buyer", "seller", "payment", "transfer"), pk=order_id)
+	if request.user.id not in (order.buyer_id, order.seller_id):
+		return HttpResponse("You do not have access to this order.", status=403)
+	return render(request, "payments/order_detail.html", {"order": order, "is_buyer": request.user.id == order.buyer_id})
+
+
+@login_required
+def my_orders(request):
+	orders = Order.objects.filter(buyer=request.user).select_related("listing", "seller").order_by("-created_at")
+	return render(request, "payments/my_orders.html", {"orders": orders, "page_title": "My Orders"})
+
+
+@login_required
+def seller_orders(request):
+	orders = Order.objects.filter(seller=request.user).select_related("listing", "buyer").order_by("-created_at")
+	return render(request, "payments/seller_orders.html", {"orders": orders, "page_title": "Seller Orders"})
+
+
+@login_required
+@require_POST
+def transfer_sent(request, order_id):
+	order = get_object_or_404(Order, pk=order_id)
+	try:
+		mark_transfer_sent(order=order, seller=request.user, note=request.POST.get("note", ""))
+	except ValueError as error:
+		return HttpResponse(str(error), status=400)
+	return redirect("payments:order-detail", order_id=order.id)
+
+
+@login_required
+@require_POST
+def transfer_received(request, order_id):
+	order = get_object_or_404(Order, pk=order_id)
+	try:
+		confirm_transfer(order=order, buyer=request.user)
+	except ValueError as error:
+		return HttpResponse(str(error), status=400)
+	return redirect("payments:order-detail", order_id=order.id)
 
 
 def _json_body(request):

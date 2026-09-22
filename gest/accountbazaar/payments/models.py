@@ -1,8 +1,13 @@
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+import secrets
 
 from marketplace.models import Listing
+
+
+def _order_id():
+	return f"ORD-{secrets.token_hex(4).upper()}"
 
 
 class Order(models.Model):
@@ -18,18 +23,43 @@ class Order(models.Model):
 	buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="orders")
 	seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="sales")
 	listing = models.ForeignKey(Listing, on_delete=models.PROTECT, related_name="orders")
+	order_id = models.CharField(max_length=12, unique=True, default=_order_id, editable=False)
 	amount = models.DecimalField(max_digits=12, decimal_places=2)
 	currency = models.CharField(max_length=3, default="INR")
 	status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING_PAYMENT)
+	payment_status = models.CharField(max_length=10, choices=(("PENDING", "Pending"), ("PAID", "Paid"), ("FAILED", "Failed"), ("REFUNDED", "Refunded")), default="PENDING")
 	created_at = models.DateTimeField(auto_now_add=True)
 	updated_at = models.DateTimeField(auto_now=True)
+
+	class Meta:
+		constraints = [
+			models.UniqueConstraint(
+				fields=("listing",),
+				condition=models.Q(status__in=("PENDING_PAYMENT", "PAID", "IN_ESCROW", "COMPLETED", "DISPUTED")),
+				name="one_active_order_per_listing",
+			),
+		]
 
 	def mark_paid(self):
 		if self.status != self.Status.PENDING_PAYMENT:
 			raise ValueError("Only pending orders can be paid.")
 		self.status = self.Status.IN_ESCROW
-		self.save(update_fields=("status", "updated_at"))
+		self.payment_status = "PAID"
+		self.save(update_fields=("status", "payment_status", "updated_at"))
 		self.escrow.hold()
+
+
+class AccountTransfer(models.Model):
+	class Status(models.TextChoices):
+		AWAITING_SELLER = "AWAITING_SELLER", "Awaiting seller transfer"
+		TRANSFERRED = "TRANSFERRED", "Transferred"
+		RECEIVED = "RECEIVED", "Received"
+
+	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="transfer")
+	status = models.CharField(max_length=20, choices=Status.choices, default=Status.AWAITING_SELLER)
+	seller_transferred_at = models.DateTimeField(null=True, blank=True)
+	buyer_confirmed_at = models.DateTimeField(null=True, blank=True)
+	transfer_note = models.TextField(blank=True)
 
 
 class Payment(models.Model):

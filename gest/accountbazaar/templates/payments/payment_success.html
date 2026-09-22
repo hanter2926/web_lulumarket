@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Payment Successful | AccountBazaar{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/payments.css' %}">{% endblock %}
+{% block content %}
+<section class="page-section container checkout-page">
+  <div class="glass payment-panel success-panel"><p class="eyebrow">Escrow payment</p><h1>Payment Successful <span aria-hidden="true">&#10003;</span></h1><p class="muted">Your payment is confirmed and held securely while the seller transfers the account.</p><div class="summary-line"><span>Order ID</span><strong>{{ order.order_id }}</strong></div><div class="summary-line"><span>Listing</span><strong>{{ order.listing.title }}</strong></div><div class="summary-line"><span>Amount</span><strong>{{ order.amount }} {{ order.currency }}</strong></div><div class="summary-line"><span>Payment status</span><strong>{{ order.payment_status }}</strong></div><a class="button" href="{% url 'payments:order-detail' order.id %}">View Order</a></div>
+</section>
+{% endblock %}

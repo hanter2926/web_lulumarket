@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Seller Orders | AccountBazaar{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/payments.css' %}">{% endblock %}
+{% block content %}<section class="page-section container checkout-page"><p class="eyebrow">Seller area</p><h1>Seller Orders</h1><div class="order-list">{% for order in orders %}<article class="glass order-row"><div><strong>{{ order.order_id }}</strong><h2>{{ order.listing.title }}</h2><p class="meta">Buyer: {{ order.buyer.username }} · {{ order.created_at|date:"M j, Y" }}</p></div><div><strong>{{ order.amount }} {{ order.currency }}</strong><p class="meta">{{ order.get_status_display }} · {{ order.payment_status }}</p><a class="button button-outline" href="{% url 'payments:order-detail' order.id %}">View Order</a></div></article>{% empty %}<p class="glass empty-state">No orders for your listings.</p>{% endfor %}</div></section>{% endblock %}
