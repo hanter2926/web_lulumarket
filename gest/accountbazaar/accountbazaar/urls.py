@@ -31,4 +31,6 @@ urlpatterns = [
     path('payments/', include('payments.urls')),
     path('tournaments/', include('tournaments.urls')),
     path('notifications/', include('notifications.urls')),
+    path('wallet/', include('wallet.urls')),
+    path('disputes/', include('disputes.urls')),
 ]

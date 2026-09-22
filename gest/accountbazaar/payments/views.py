@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -13,6 +13,10 @@ from marketplace.models import Listing
 from .models import Order, Payment
 from .providers import create_razorpay_order, verify_webhook_signature, webhook_payment_details
 from .services import create_order, open_dispute, record_payment_success, request_refund
+
+
+def payment_page(request):
+	return render(request, "payments/payment.html")
 
 
 def _json_body(request):

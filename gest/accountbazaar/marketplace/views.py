@@ -1,6 +1,6 @@
 from django.contrib.auth.views import redirect_to_login
 from django.db.models import Q
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.models import Account, AccountMembership
 
@@ -58,3 +58,18 @@ def listings(request):
 			"accounts": accounts,
 		},
 	)
+
+
+def sell_account(request):
+	form = ListingForm(request.POST or None)
+	if request.method == "POST" and request.user.is_authenticated and form.is_valid():
+		listing = form.save(commit=False)
+		listing.seller = request.user
+		listing.save()
+		return redirect("marketplace:listings")
+	return render(request, "marketplace/sell_account.html", {"form": form})
+
+
+def listing_detail(request, listing_id):
+	listing = get_object_or_404(Listing.objects.select_related("seller"), pk=listing_id)
+	return render(request, "marketplace/listing_detail.html", {"listing": listing})

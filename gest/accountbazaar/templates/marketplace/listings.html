@@ -1,1 +1,43 @@
-{% extends "base.html" %}{% load static %}{% block title %}Marketplace | AccountBazaar{% endblock %}{% block extra_css %}<link rel="stylesheet" href="{% static 'css/marketplace.css' %}">{% endblock %}{% block extra_js %}<script src="{% static 'js/marketplace.js' %}" defer></script>{% endblock %}{% block content %}<section class="page-section container"><div class="marketplace-header"><div><p class="eyebrow">Verified digital commerce</p><h1>Browse accounts</h1></div>{% if request.user.is_authenticated and active_account %}<div class="glass account-card"><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><div class="meta">Account ID: <span id="account-id">{{ active_account.account_id }}</span> <button class="copy-button" type="button" data-copy="account-id">Copy</button></div><div class="meta">MID: <span id="merchant-id">{{ active_account.merchant_id }}</span> <button class="copy-button" type="button" data-copy="merchant-id">Copy</button></div>{% for account in accounts %}<form method="post" action="{% url 'accounts:switch-account' account.id %}">{% csrf_token %}<button class="button button-small button-outline" type="submit">{% if account.id == active_account.id %}Current: {% endif %}{{ account.name }}</button></form>{% endfor %}</div>{% endif %}</div><div class="marketplace-layout"><aside class="glass panel"><h2>Sell account</h2>{% if request.user.is_authenticated %}<form method="post">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Publish listing</button></form>{% else %}<p class="muted">Log in to publish a listing.</p><a class="button" href="{% url 'accounts:login' %}">Log in</a>{% endif %}</aside><section><form class="glass panel search-form" method="get" data-marketplace-search><input type="search" name="q" value="{{ query }}" placeholder="Search listings" aria-label="Search listings"><select name="category" aria-label="Filter by category"><option value="">All categories</option>{% for value,label in categories %}<option value="{{ value }}"{% if selected_category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="button" type="submit">Search</button></form><div class="listing-grid">{% for listing in listings %}<article class="glass listing-card"><div class="listing-head"><h2>{{ listing.title }}</h2><span class="price">{{ listing.price }}</span></div><p class="meta">{{ listing.get_category_display }} · {{ listing.seller.username }} · {{ listing.created_at|date:"M j, Y" }}</p><p>{{ listing.description }}</p><a href="#listing-{{ listing.id }}">View details</a></article>{% empty %}<p class="glass empty-state">No listings match your search.</p>{% endfor %}</div></section></div></section>{% endblock %}
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Marketplace | AccountBazaar{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/marketplace.css' %}">{% endblock %}
+{% block extra_js %}<script src="{% static 'js/marketplace.js' %}" defer></script>{% endblock %}
+{% block content %}
+<section class="page-section container">
+  <div class="marketplace-header">
+    <div><p class="eyebrow">Verified digital commerce</p><h1>Browse accounts</h1></div>
+    {% if request.user.is_authenticated and active_account %}
+      <div class="glass account-card">
+        <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+        <div class="meta">Account ID: <span id="account-id">{{ active_account.account_id }}</span> <button class="copy-button" type="button" data-copy="account-id">Copy</button></div>
+        <div class="meta">MID: <span id="merchant-id">{{ active_account.merchant_id }}</span> <button class="copy-button" type="button" data-copy="merchant-id">Copy</button></div>
+        {% for account in accounts %}<form method="post" action="{% url 'accounts:switch-account' account.id %}">{% csrf_token %}<button class="button button-small button-outline" type="submit">{% if account.id == active_account.id %}Current: {% endif %}{{ account.name }}</button></form>{% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  <div class="marketplace-layout">
+    <aside class="glass panel">
+      <h2>Sell account</h2>
+      {% if request.user.is_authenticated %}<form method="post">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Publish listing</button></form>{% else %}<p class="muted">Log in to publish a listing.</p><a class="button" href="{% url 'accounts:login' %}">Log in</a>{% endif %}
+    </aside>
+    <section>
+      <form class="glass panel search-form" method="get" data-marketplace-search>
+        <input type="search" name="q" value="{{ query }}" placeholder="Search listings" aria-label="Search listings">
+        <select name="category" aria-label="Filter by category"><option value="">All categories</option>{% for value,label in categories %}<option value="{{ value }}"{% if selected_category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <button class="button" type="submit">Search</button>
+      </form>
+      <div class="listing-grid">
+        {% for listing in listings %}
+          <article class="glass listing-card">
+            <div class="listing-head"><h2>{{ listing.title }}</h2><span class="price">{{ listing.price }}</span></div>
+            <p class="meta">{{ listing.get_category_display }} · {{ listing.seller.username }} · {{ listing.created_at|date:"M j, Y" }}</p>
+            <p>{{ listing.description }}</p>
+            <a href="{% url 'marketplace:listing-detail' listing.id %}">View details</a>
+          </article>
+        {% empty %}<p class="glass empty-state">No listings match your search.</p>{% endfor %}
+      </div>
+    </section>
+  </div>
+</section>
+{% endblock %}

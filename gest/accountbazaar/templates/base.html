@@ -22,9 +22,9 @@
       <div class="nav-menu" data-nav-menu>
         <a href="{% url 'home' %}">Home</a>
         <a href="{% url 'marketplace:listings' %}">Browse Accounts</a>
-        <a href="{% url 'marketplace:listings' %}">Sell Account</a>
+        <a href="{% url 'marketplace:sell-account' %}">Sell Account</a>
         <a href="{% url 'tournaments:list' %}">Tournaments</a>
-        <a href="#wallet">Wallet</a>
+        <a href="{% url 'wallet:wallet' %}">Wallet</a>
         {% if user.is_authenticated %}
           <a href="{% url 'notifications:inbox' %}">Notifications</a>
           <a href="{% url 'owner-dashboard' %}">Dashboard</a>
@@ -40,7 +40,7 @@
   <footer class="site-footer">
     <div class="container footer-grid">
       <div><a class="brand" href="{% url 'home' %}"><span class="brand-mark">AB</span><span>Account<span class="brand-accent">Bazaar</span></span></a><p class="muted">Trade with confidence. Escrow protected.</p></div>
-      <div><h2>Explore</h2><a href="{% url 'marketplace:listings' %}">Marketplace</a><a href="{% url 'tournaments:list' %}">Tournaments</a><a href="{% url 'marketplace:listings' %}">Sell Account</a></div>
+      <div><h2>Explore</h2><a href="{% url 'marketplace:listings' %}">Marketplace</a><a href="{% url 'tournaments:list' %}">Tournaments</a><a href="{% url 'marketplace:sell-account' %}">Sell Account</a></div>
       <div><h2>Support</h2><a href="#help">Help center</a><a href="#privacy">Privacy</a><a href="#terms">Terms</a><a href="#contact">Contact</a></div>
     </div>
     <div class="container footer-bottom"><span>&copy; 2026 AccountBazaar</span><span>Built for safer digital commerce.</span></div>

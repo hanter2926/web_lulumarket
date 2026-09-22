@@ -1,0 +1,1 @@
+.dispute-layout { display:grid; grid-template-columns:1fr 1fr; gap:18px; } .dispute-panel { padding:24px; } .status-pill { display:inline-block; padding:4px 9px; border:1px solid var(--border); border-radius:999px; color:var(--warning); font-size:12px; } @media(max-width:700px){.dispute-layout{grid-template-columns:1fr}}
