@@ -23,6 +23,10 @@ class Order(models.Model):
 	buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="orders")
 	seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="sales")
 	listing = models.ForeignKey(Listing, on_delete=models.PROTECT, related_name="orders")
+	listing_title = models.CharField(max_length=200, blank=True)
+	listing_category = models.CharField(max_length=30, blank=True)
+	listing_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+	listing_public_details = models.JSONField(default=dict, blank=True)
 	order_id = models.CharField(max_length=12, unique=True, default=_order_id, editable=False)
 	amount = models.DecimalField(max_digits=12, decimal_places=2)
 	currency = models.CharField(max_length=3, default="INR")
@@ -157,3 +161,17 @@ class Settlement(models.Model):
 	status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
 	provider_transfer_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
 	paid_at = models.DateTimeField(null=True, blank=True)
+
+
+class Review(models.Model):
+	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="review")
+	buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="reviews_written")
+	seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="reviews_received")
+	rating = models.PositiveSmallIntegerField()
+	body = models.TextField(blank=True)
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		constraints = [
+			models.CheckConstraint(condition=models.Q(rating__gte=1, rating__lte=5), name="review_rating_1_to_5"),
+		]

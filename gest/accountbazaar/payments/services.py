@@ -8,7 +8,7 @@ from disputes.models import Dispute
 from notifications.models import Notification
 from notifications.services import record_audit
 
-from .models import AccountTransfer, ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Settlement
+from .models import AccountTransfer, ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Review, Settlement
 
 
 def _compliance_status(*, buyer, seller):
@@ -57,6 +57,23 @@ def create_order(*, buyer, listing, provider=""):
         buyer=buyer,
         seller=listing.seller,
         listing=listing,
+        listing_title=listing.title,
+        listing_category=listing.category,
+        listing_price=listing.price,
+        listing_public_details={
+            "game_name": listing.game_name,
+            "game_id": listing.game_id,
+            "game_level": listing.game_level,
+            "game_rank": listing.game_rank,
+            "website_name": listing.website_name,
+            "website_url": listing.website_url,
+            "app_name": listing.app_name,
+            "app_url": listing.app_url,
+            "platform": listing.platform,
+            "features": listing.features,
+            "public_details": listing.public_details,
+            "description": listing.description,
+        },
         amount=listing.price,
     )
     Payment.objects.create(
@@ -222,6 +239,12 @@ def confirm_transfer(*, order, buyer):
 def mark_settlement_eligible(*, order):
     if order.status != Order.Status.COMPLETED or order.escrow.status != Escrow.Status.RELEASED:
         raise ValueError("Settlement requires a completed order and released escrow.")
+    if hasattr(order, "dispute") and order.dispute.status not in (
+        Dispute.Status.RESOLVED_RELEASE,
+        Dispute.Status.REJECTED,
+        Dispute.Status.CLOSED,
+    ):
+        raise ValueError("Settlement is blocked while the order has an unresolved dispute.")
     settlement = Settlement.objects.select_for_update().get(order=order)
     settlement.status = Settlement.Status.ELIGIBLE
     settlement.save(update_fields=("status",))
@@ -230,14 +253,35 @@ def mark_settlement_eligible(*, order):
 
 @transaction.atomic
 def complete_settlement(*, settlement, provider_transfer_id):
-    settlement = Settlement.objects.select_for_update().get(pk=settlement.pk)
-    if settlement.status != Settlement.Status.ELIGIBLE:
-        raise ValueError("Only eligible settlements can be paid.")
-    settlement.status = Settlement.Status.PAID
-    settlement.provider_transfer_id = provider_transfer_id
-    settlement.paid_at = timezone.now()
-    settlement.save(update_fields=("status", "provider_transfer_id", "paid_at"))
-    return settlement
+    """Reject unsupported manual payout completion.
+
+    Razorpay Route onboarding and transfer reconciliation are not configured yet.
+    A provider webhook must call a future provider-confirmed transition instead.
+    """
+    raise ValueError("Real provider payout integration is not configured; settlement remains eligible.")
+
+
+@transaction.atomic
+def create_review(*, order, buyer, rating, body=""):
+    try:
+        order = Order.objects.select_for_update().get(pk=order.pk, buyer=buyer)
+    except Order.DoesNotExist as error:
+        raise ValueError("Only the buyer may review this order.") from error
+    if order.status != Order.Status.COMPLETED:
+        raise ValueError("A review requires a completed order.")
+    if not 1 <= int(rating) <= 5:
+        raise ValueError("Rating must be between 1 and 5.")
+    if Review.objects.filter(order=order).exists():
+        raise ValueError("This order has already been reviewed.")
+    review = Review.objects.create(
+        order=order,
+        buyer=buyer,
+        seller=order.seller,
+        rating=int(rating),
+        body=body,
+    )
+    record_audit(actor=buyer, action="REVIEW_CREATED", obj=review, metadata={"order_id": order.order_id, "rating": int(rating)})
+    return review
 
 
 @transaction.atomic

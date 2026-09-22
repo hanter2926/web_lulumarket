@@ -10,8 +10,8 @@ from django.urls import reverse
 from disputes.models import Dispute
 from marketplace.models import Listing
 
-from .models import AccountTransfer, ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Settlement
-from .services import create_order, open_dispute, record_payment_success, request_refund
+from .models import AccountTransfer, ComplianceCheck, Escrow, FeeConfiguration, Order, Payment, Refund, Review, Settlement
+from .services import complete_settlement, create_order, create_review, mark_settlement_eligible, open_dispute, record_payment_success, request_refund
 
 
 class TransactionWorkflowTests(TestCase):
@@ -120,6 +120,21 @@ class TransactionWorkflowTests(TestCase):
 		self.assertEqual(response.status_code, 302)
 		self.assertEqual(Order.objects.get().amount, 100)
 
+	def test_order_preserves_public_listing_snapshot(self):
+		self.listing.game_name = "Example Game"
+		self.listing.game_id = "PUBLIC-123"
+		self.listing.public_details = "Public rank"
+		self.listing.save(update_fields=("game_name", "game_id", "public_details"))
+		order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
+
+		self.listing.title = "Changed title"
+		self.listing.price = "999.00"
+		self.listing.save(update_fields=("title", "price"))
+		order.refresh_from_db()
+		self.assertEqual(order.listing_title, "Verified account")
+		self.assertEqual(order.listing_price, Decimal("100.00"))
+		self.assertEqual(order.listing_public_details["game_id"], "PUBLIC-123")
+
 	def test_verified_demo_payment_marks_order_and_listing_sold(self):
 		self.client.force_login(self.buyer)
 		self.client.post(reverse("payments:checkout-start", args=[self.listing.id]))
@@ -200,6 +215,51 @@ class TransactionWorkflowTests(TestCase):
 			)
 		order.refresh_from_db()
 		self.assertEqual(order.payment.status, Payment.Status.CREATED)
+
+	def test_payout_cannot_become_eligible_before_buyer_confirmation(self):
+		order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
+		record_payment_success(order=order, provider_payment_id="pay_before_payout")
+
+		with self.assertRaisesMessage(ValueError, "completed order"):
+			mark_settlement_eligible(order=order)
+		self.assertEqual(Settlement.objects.get(order=order).status, Settlement.Status.HELD)
+
+	def test_unresolved_dispute_blocks_payout_eligibility(self):
+		order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
+		record_payment_success(order=order, provider_payment_id="pay_dispute_payout")
+		order.status = Order.Status.COMPLETED
+		order.save(update_fields=("status",))
+		order.escrow.status = Escrow.Status.RELEASED
+		order.escrow.save(update_fields=("status",))
+		Dispute.objects.create(order=order, opened_by=self.buyer, reason="UNDER_REVIEW")
+
+		with self.assertRaisesMessage(ValueError, "unresolved dispute"):
+			mark_settlement_eligible(order=order)
+
+	def test_unsupported_provider_payout_cannot_mark_settlement_paid(self):
+		order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
+		order.status = Order.Status.COMPLETED
+		order.save(update_fields=("status",))
+		order.escrow.status = Escrow.Status.RELEASED
+		order.escrow.save(update_fields=("status",))
+		settlement = mark_settlement_eligible(order=order)
+
+		with self.assertRaisesMessage(ValueError, "provider payout integration"):
+			complete_settlement(settlement=settlement, provider_transfer_id="tampered-reference")
+		settlement.refresh_from_db()
+		self.assertEqual(settlement.status, Settlement.Status.ELIGIBLE)
+
+	def test_only_buyer_can_review_completed_order_once(self):
+		order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
+		record_payment_success(order=order, provider_payment_id="pay_review")
+		order.status = Order.Status.COMPLETED
+		order.save(update_fields=("status",))
+		review = create_review(order=order, buyer=self.buyer, rating=5, body="Secure transaction")
+		self.assertEqual(review.seller, self.seller)
+		with self.assertRaisesMessage(ValueError, "already been reviewed"):
+			create_review(order=order, buyer=self.buyer, rating=4)
+		with self.assertRaises(ValueError):
+			create_review(order=order, buyer=self.other_buyer, rating=5)
 
 	@override_settings(RAZORPAY_WEBHOOK_SECRET="webhook-secret")
 	def test_signed_razorpay_webhook_captures_payment(self):

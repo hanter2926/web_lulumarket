@@ -9,4 +9,5 @@ document.addEventListener('DOMContentLoaded', () => {
       window.setTimeout(() => { button.textContent = original; }, 1200);
     });
   });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/service-worker.js').catch(() => {});
 });

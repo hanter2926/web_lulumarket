@@ -24,5 +24,6 @@ urlpatterns = [
     path("orders/<int:order_id>/transfer-received/", views.transfer_received, name="transfer-received"),
     path("orders/<int:order_id>/refund/", views.refund_request, name="refund-request"),
     path("orders/<int:order_id>/dispute/", views.dispute_request, name="dispute-request"),
+    path("orders/<int:order_id>/review/", views.review_request, name="review-request"),
     path("webhooks/razorpay/", views.razorpay_webhook, name="razorpay-webhook"),
 ]

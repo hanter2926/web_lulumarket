@@ -13,7 +13,7 @@ from marketplace.models import Listing
 
 from .models import Order, Payment
 from .providers import create_razorpay_order, verify_checkout_signature, verify_webhook_signature, webhook_payment_details
-from .services import confirm_transfer, create_order, mark_transfer_sent, open_dispute, record_payment_failure, record_payment_success, request_refund, start_transfer
+from .services import confirm_transfer, create_order, create_review, mark_transfer_sent, open_dispute, record_payment_failure, record_payment_success, request_refund, start_transfer
 
 
 def payment_page(request):
@@ -99,7 +99,7 @@ def my_orders(request):
 
 @login_required
 def seller_orders(request):
-	orders = Order.objects.filter(seller=request.user).select_related("listing", "buyer").order_by("-created_at")
+	orders = Order.objects.filter(seller=request.user).select_related("listing", "buyer", "settlement").order_by("-created_at")
 	return render(request, "payments/seller_orders.html", {"orders": orders, "page_title": "Seller Orders"})
 
 
@@ -228,6 +228,22 @@ def dispute_request(request, order_id):
 	return JsonResponse({"dispute_id": dispute.id, "status": dispute.status}, status=201)
 
 
+@login_required
+@require_POST
+def review_request(request, order_id):
+	data = _json_body(request)
+	try:
+		review = create_review(
+			order=get_object_or_404(Order, pk=order_id),
+			buyer=request.user,
+			rating=data.get("rating"),
+			body=data.get("body", ""),
+		)
+	except (ValueError, TypeError):
+		return JsonResponse({"error": "A valid completed order and rating from 1 to 5 are required."}, status=400)
+	return JsonResponse({"review_id": review.id, "rating": review.rating}, status=201)
+
+
 @csrf_exempt
 @require_POST
 def razorpay_webhook(request):
@@ -238,17 +254,23 @@ def razorpay_webhook(request):
 	):
 		return JsonResponse({"error": "Invalid webhook signature"}, status=400)
 
-	details = webhook_payment_details(request.body)
-	if details:
-		provider_order_id, provider_payment_id, payload = details
-		payment = get_object_or_404(Payment, provider_order_id=provider_order_id)
-		entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
-		record_payment_success(
-			order=payment.order,
-			provider_payment_id=provider_payment_id,
-			payload=payload,
-			provider_order_id=provider_order_id,
-			amount=Decimal(str(entity["amount"])) / 100 if "amount" in entity else None,
-			currency=entity.get("currency"),
-		)
+	try:
+		details = webhook_payment_details(request.body)
+	except (TypeError, ValueError, json.JSONDecodeError):
+		return JsonResponse({"error": "Invalid webhook payload"}, status=400)
+	if not details:
+		return HttpResponse(status=200)
+	provider_order_id, provider_payment_id, payload = details
+	payment = Payment.objects.filter(provider_order_id=provider_order_id).select_related("order").first()
+	if not payment:
+		return HttpResponse(status=200)
+	entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
+	record_payment_success(
+		order=payment.order,
+		provider_payment_id=provider_payment_id,
+		payload=payload,
+		provider_order_id=provider_order_id,
+		amount=Decimal(str(entity["amount"])) / 100 if "amount" in entity else None,
+		currency=entity.get("currency"),
+	)
 	return HttpResponse(status=200)

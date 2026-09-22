@@ -1,0 +1,11 @@
+.env
+myenv/
+__pycache__/
+*.py[cod]
+staticfiles/
+media/
+*.sqlite3
+
+# Keep local deployment outputs and secrets out of source control.
+.env.*
+!.env.example
