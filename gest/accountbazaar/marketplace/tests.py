@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from base64 import b64decode
 
 from .models import Listing
 
@@ -58,3 +60,40 @@ class ListingViewTests(TestCase):
 		listing = Listing.objects.get()
 		self.assertEqual(listing.seller, self.user)
 		self.assertEqual(listing.title, "Starter account")
+
+	def test_authenticated_user_can_create_listing_with_image(self):
+		self.client.force_login(self.user)
+		image = SimpleUploadedFile(
+			"account.png",
+			b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),
+			content_type="image/png",
+		)
+
+		response = self.client.post(
+			reverse("marketplace:listings"),
+			{
+				"category": "gaming",
+				"title": "Visual account",
+				"description": "Ready to use",
+				"price": "35.00",
+				"image": image,
+			},
+		)
+
+		self.assertRedirects(response, reverse("marketplace:listings"))
+		self.assertTrue(Listing.objects.get().image.name.startswith("listings/"))
+
+	def test_listing_image_rejects_unsupported_type(self):
+		form_data = {
+			"category": "gaming",
+			"title": "Unsafe file",
+			"description": "Not an image",
+			"price": "35.00",
+		}
+		file_data = SimpleUploadedFile("script.exe", b"not an image", content_type="application/octet-stream")
+
+		from .forms import ListingForm
+		form = ListingForm(form_data, {"image": file_data})
+
+		self.assertFalse(form.is_valid())
+		self.assertIn("image", form.errors)

@@ -20,15 +20,15 @@
       <a class="brand" href="{% url 'home' %}"><span class="brand-mark">AB</span><span>Account<span class="brand-accent">Bazaar</span></span></a>
       <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" data-nav-toggle><span></span><span></span><span></span></button>
       <div class="nav-menu" data-nav-menu>
-        <a href="{% url 'home' %}">Home</a>
-        <a href="{% url 'marketplace:listings' %}">Browse Accounts</a>
-        <a href="{% url 'marketplace:sell-account' %}">Sell Account</a>
-        <a href="{% url 'tournaments:list' %}">Tournaments</a>
-        <a href="{% url 'wallet:wallet' %}">Wallet</a>
+        <a class="{% if request.resolver_match.url_name == 'home' %}is-active{% endif %}" href="{% url 'home' %}">Home</a>
+        <a class="{% if request.resolver_match.namespace == 'marketplace' and request.resolver_match.url_name == 'listings' %}is-active{% endif %}" href="{% url 'marketplace:listings' %}">Browse Accounts</a>
+        <a class="{% if request.resolver_match.url_name == 'sell-account' %}is-active{% endif %}" href="{% url 'marketplace:sell-account' %}">Sell Account</a>
+        <a class="{% if request.resolver_match.namespace == 'tournaments' %}is-active{% endif %}" href="{% url 'tournaments:list' %}">Tournaments</a>
+        <a class="{% if request.resolver_match.namespace == 'wallet' %}is-active{% endif %}" href="{% url 'wallet:wallet' %}">Wallet</a>
         {% if user.is_authenticated %}
-          <a href="{% url 'notifications:inbox' %}">Notifications</a>
-          <a href="{% url 'owner-dashboard' %}">Dashboard</a>
-          <a href="{% url 'accounts:profile' %}">Profile</a>
+          <a class="{% if request.resolver_match.namespace == 'notifications' %}is-active{% endif %}" href="{% url 'notifications:inbox' %}">Notifications</a>
+          <a class="{% if request.resolver_match.url_name == 'owner-dashboard' %}is-active{% endif %}" href="{% url 'owner-dashboard' %}">Dashboard</a>
+          <a class="{% if request.resolver_match.url_name == 'profile' %}is-active{% endif %}" href="{% url 'accounts:profile' %}">Profile</a>
         {% else %}
           <a class="button button-small" href="{% url 'accounts:login' %}">Log in</a>
           <a class="button button-small button-outline" href="{% url 'accounts:register' %}">Register</a>

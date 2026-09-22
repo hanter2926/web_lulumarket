@@ -26,6 +26,12 @@ class Listing(models.Model):
 
     description = models.TextField()
 
+    image = models.ImageField(
+        upload_to="listings/%Y/%m/",
+        blank=True,
+        null=True,
+    )
+
     price = models.DecimalField(
         max_digits=12,
         decimal_places=2

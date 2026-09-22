@@ -26,7 +26,7 @@ def listings(request):
 	if request.method == "POST":
 		if not request.user.is_authenticated:
 			return redirect_to_login(request.get_full_path())
-		form = ListingForm(request.POST)
+		form = ListingForm(request.POST, request.FILES)
 		if form.is_valid():
 			listing = form.save(commit=False)
 			listing.seller = request.user
@@ -61,8 +61,10 @@ def listings(request):
 
 
 def sell_account(request):
-	form = ListingForm(request.POST or None)
-	if request.method == "POST" and request.user.is_authenticated and form.is_valid():
+	if request.method == "POST" and not request.user.is_authenticated:
+		return redirect_to_login(request.get_full_path())
+	form = ListingForm(request.POST or None, request.FILES or None)
+	if request.method == "POST" and form.is_valid():
 		listing = form.save(commit=False)
 		listing.seller = request.user
 		listing.save()

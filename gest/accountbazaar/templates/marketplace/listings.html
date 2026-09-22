@@ -6,7 +6,7 @@
 {% block content %}
 <section class="page-section container">
   <div class="marketplace-header">
-    <div><p class="eyebrow">Verified digital commerce</p><h1>Browse accounts</h1></div>
+    <div class="hero-copy"><p class="eyebrow">Verified digital commerce</p><h1>Browse accounts</h1><p class="hero-summary">Find established digital accounts from sellers you can trust, with escrow protection built in.</p></div>
     {% if request.user.is_authenticated and active_account %}
       <div class="glass account-card">
         <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
@@ -19,7 +19,7 @@
   <div class="marketplace-layout">
     <aside class="glass panel">
       <h2>Sell account</h2>
-      {% if request.user.is_authenticated %}<form method="post">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Publish listing</button></form>{% else %}<p class="muted">Log in to publish a listing.</p><a class="button" href="{% url 'accounts:login' %}">Log in</a>{% endif %}
+      {% if request.user.is_authenticated %}<form method="post" enctype="multipart/form-data" data-listing-form>{% csrf_token %}{% for field in form %}<div class="form-field{% if field.errors %} has-error{% endif %}"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<small class="field-help">{{ field.help_text }}</small>{% endif %}{{ field.errors }}</div>{% endfor %}<div class="image-preview" data-image-preview hidden><img data-image-preview-image alt="Selected account preview"><button class="preview-remove" type="button" data-image-remove>Remove image</button></div><button class="button publish-button" type="submit">Publish listing</button></form>{% else %}<p class="muted">Log in to publish a listing.</p><a class="button" href="{% url 'accounts:login' %}">Log in</a>{% endif %}
     </aside>
     <section>
       <form class="glass panel search-form" method="get" data-marketplace-search>
@@ -30,10 +30,8 @@
       <div class="listing-grid">
         {% for listing in listings %}
           <article class="glass listing-card">
-            <div class="listing-head"><h2>{{ listing.title }}</h2><span class="price">{{ listing.price }}</span></div>
-            <p class="meta">{{ listing.get_category_display }} · {{ listing.seller.username }} · {{ listing.created_at|date:"M j, Y" }}</p>
-            <p>{{ listing.description }}</p>
-            <a href="{% url 'marketplace:listing-detail' listing.id %}">View details</a>
+            {% if listing.image %}<img class="listing-image" src="{{ listing.image.url }}" alt="{{ listing.title }}">{% else %}<div class="listing-image listing-placeholder" aria-label="No image">No image</div>{% endif %}
+            <div class="listing-card-body"><div class="listing-card-top"><span class="category-badge">{{ listing.get_category_display }}</span><span class="price">{{ listing.price }}</span></div><h2>{{ listing.title }}</h2><p class="listing-description">{{ listing.description|truncatewords:22 }}</p><p class="meta">Seller: {{ listing.seller.username }} · {{ listing.created_at|date:"M j, Y" }}</p><a class="button button-outline details-button" href="{% url 'marketplace:listing-detail' listing.id %}">View details</a></div>
           </article>
         {% empty %}<p class="glass empty-state">No listings match your search.</p>{% endfor %}
       </div>
