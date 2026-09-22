@@ -3,6 +3,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
 from payments.models import Order
+from payments.services import open_dispute
 from notifications.services import record_audit
 
 from .forms import DisputeForm, ReportForm
@@ -20,10 +21,16 @@ def create_dispute(request, order_id=None):
 		return redirect("disputes:detail", dispute_id=order.dispute.id)
 	form = DisputeForm(request.POST or None, request.FILES or None)
 	if request.method == "POST" and form.is_valid():
-		dispute = form.save(commit=False)
-		dispute.order = order
-		dispute.opened_by = request.user
-		dispute.save()
+		try:
+			dispute = open_dispute(
+				order=order,
+				opened_by=request.user,
+				reason=form.cleaned_data["reason"],
+				description=form.cleaned_data.get("description", ""),
+				evidence=form.cleaned_data.get("evidence"),
+			)
+		except ValueError:
+			return render(request, "disputes/forbidden.html", status=400)
 		record_audit(actor=request.user, action="DISPUTE_OPENED", obj=dispute, metadata={"order_id": order.order_id})
 		return redirect("disputes:detail", dispute_id=dispute.id)
 	return render(request, "disputes/create_dispute.html", {"form": form, "order": order})

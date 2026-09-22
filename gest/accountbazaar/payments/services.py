@@ -88,16 +88,28 @@ def create_order(*, buyer, listing, provider=""):
 
 
 @transaction.atomic
-def record_payment_success(*, order, provider_payment_id, payload=None):
+def record_payment_success(*, order, provider_payment_id, payload=None, provider_order_id=None, amount=None, currency=None):
     original_order = order
     order = Order.objects.select_for_update().select_related("listing").get(pk=order.pk)
     payment = Payment.objects.select_for_update().get(order=order)
     if payment.status == Payment.Status.CAPTURED:
+        if provider_payment_id and payment.provider_payment_id != provider_payment_id:
+            raise ValueError("This order is already captured with a different payment.")
         original_order.status = order.status
         original_order.payment_status = order.payment_status
         return order
     if payment.status != Payment.Status.CREATED:
         raise ValueError("Only created payments can be captured.")
+    if not provider_payment_id:
+        raise ValueError("A verified provider payment is required.")
+    if provider_order_id and payment.provider_order_id != provider_order_id:
+        raise ValueError("The provider order does not match this order.")
+    if amount is not None and Decimal(str(amount)) != payment.amount:
+        raise ValueError("The provider amount does not match the order amount.")
+    if currency and currency != order.currency:
+        raise ValueError("The provider currency does not match the order currency.")
+    if Payment.objects.filter(provider_payment_id=provider_payment_id).exclude(order=order).exists():
+        raise ValueError("This provider payment is already linked to another order.")
 
     payment.status = Payment.Status.CAPTURED
     payment.provider_payment_id = provider_payment_id
@@ -139,12 +151,33 @@ def record_payment_failure(*, order, reason="Payment failed"):
 
 
 @transaction.atomic
+def start_transfer(*, order, seller):
+    order = Order.objects.select_for_update().get(pk=order.pk, seller=seller)
+    if order.status != Order.Status.IN_ESCROW:
+        raise ValueError("Payment must be confirmed before handoff.")
+    transfer = AccountTransfer.objects.select_for_update().get(order=order)
+    if transfer.status != AccountTransfer.Status.AWAITING_SELLER:
+        raise ValueError("Handoff has already started.")
+    transfer.status = AccountTransfer.Status.STARTED
+    transfer.handoff_started_at = timezone.now()
+    transfer.save(update_fields=("status", "handoff_started_at"))
+    Notification.objects.create(
+        recipient=order.buyer,
+        title="Seller started handoff",
+        body=f"The seller has started the secure handoff for order {order.order_id}.",
+        link=f"/payments/orders/{order.id}/",
+    )
+    record_audit(actor=seller, action="HANDOFF_STARTED", obj=order)
+    return transfer
+
+
+@transaction.atomic
 def mark_transfer_sent(*, order, seller, note=""):
     order = Order.objects.select_for_update().get(pk=order.pk, seller=seller)
     if order.status != Order.Status.IN_ESCROW:
         raise ValueError("Payment must be confirmed before transfer.")
     transfer = AccountTransfer.objects.select_for_update().get(order=order)
-    if transfer.status != AccountTransfer.Status.AWAITING_SELLER:
+    if transfer.status not in (AccountTransfer.Status.AWAITING_SELLER, AccountTransfer.Status.STARTED):
         raise ValueError("This transfer has already been submitted.")
     transfer.status = AccountTransfer.Status.TRANSFERRED
     transfer.seller_transferred_at = timezone.now()
@@ -171,6 +204,16 @@ def confirm_transfer(*, order, buyer):
     transfer.save(update_fields=("status", "buyer_confirmed_at"))
     order.status = Order.Status.COMPLETED
     order.save(update_fields=("status", "updated_at"))
+    order.escrow.status = Escrow.Status.RELEASED
+    order.escrow.released_at = timezone.now()
+    order.escrow.save(update_fields=("status", "released_at"))
+    mark_settlement_eligible(order=order)
+    Notification.objects.create(
+        recipient=order.seller,
+        title="Buyer confirmed receipt",
+        body=f"Order {order.order_id} is complete. Your payout is eligible and remains pending provider transfer.",
+        link=f"/payments/orders/{order.id}/",
+    )
     record_audit(actor=buyer, action="HANDOFF_CONFIRMED", obj=order)
     return order
 
@@ -209,15 +252,15 @@ def request_refund(*, order, reason):
 
 
 @transaction.atomic
-def open_dispute(*, order, opened_by, reason):
+def open_dispute(*, order, opened_by, reason, description="", evidence=None):
     if opened_by.id not in (order.buyer_id, order.seller_id):
         raise ValueError("Only the buyer or seller can open a dispute.")
-    if order.status not in (Order.Status.IN_ESCROW, Order.Status.PAID):
+    if order.status not in (Order.Status.PENDING_PAYMENT, Order.Status.IN_ESCROW, Order.Status.PAID):
         raise ValueError("This order cannot be disputed in its current state.")
 
     dispute, _ = Dispute.objects.get_or_create(
         order=order,
-        defaults={"opened_by": opened_by, "reason": reason},
+        defaults={"opened_by": opened_by, "reason": reason, "description": description, "evidence": evidence},
     )
     order.status = Order.Status.DISPUTED
     order.save(update_fields=("status", "updated_at"))

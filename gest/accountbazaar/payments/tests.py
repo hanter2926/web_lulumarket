@@ -177,6 +177,8 @@ class TransactionWorkflowTests(TestCase):
 		order = create_order(buyer=self.buyer, listing=self.listing, provider="test")
 		record_payment_success(order=order, provider_payment_id="pay_transfer")
 		self.client.force_login(self.seller)
+		self.client.post(reverse("payments:transfer-start", args=[order.id]))
+		self.assertEqual(AccountTransfer.objects.get(order=order).status, AccountTransfer.Status.STARTED)
 		self.client.post(reverse("payments:transfer-sent", args=[order.id]), {"note": "Secure handoff reference"})
 		self.client.force_login(self.buyer)
 
@@ -185,6 +187,19 @@ class TransactionWorkflowTests(TestCase):
 		self.assertRedirects(response, reverse("payments:order-detail", args=[order.id]))
 		order.refresh_from_db()
 		self.assertEqual(order.status, Order.Status.COMPLETED)
+		self.assertEqual(order.escrow.status, Escrow.Status.RELEASED)
+		self.assertEqual(order.settlement.status, Settlement.Status.ELIGIBLE)
+
+	def test_provider_amount_mismatch_cannot_capture_payment(self):
+		order = create_order(buyer=self.buyer, listing=self.listing, provider="razorpay")
+		with self.assertRaisesMessage(ValueError, "provider amount"):
+			record_payment_success(
+				order=order,
+				provider_payment_id="pay_wrong_amount",
+				amount="0.01",
+			)
+		order.refresh_from_db()
+		self.assertEqual(order.payment.status, Payment.Status.CREATED)
 
 	@override_settings(RAZORPAY_WEBHOOK_SECRET="webhook-secret")
 	def test_signed_razorpay_webhook_captures_payment(self):

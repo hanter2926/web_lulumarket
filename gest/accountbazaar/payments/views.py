@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -11,8 +12,8 @@ from django.views.decorators.http import require_POST
 from marketplace.models import Listing
 
 from .models import Order, Payment
-from .providers import create_razorpay_order, verify_webhook_signature, webhook_payment_details
-from .services import confirm_transfer, create_order, mark_transfer_sent, open_dispute, record_payment_failure, record_payment_success, request_refund
+from .providers import create_razorpay_order, verify_checkout_signature, verify_webhook_signature, webhook_payment_details
+from .services import confirm_transfer, create_order, mark_transfer_sent, open_dispute, record_payment_failure, record_payment_success, request_refund, start_transfer
 
 
 def payment_page(request):
@@ -48,12 +49,14 @@ def proceed_to_payment(request, order_id):
 @login_required
 def payment_checkout(request, order_id):
 	order = get_object_or_404(Order.objects.select_related("listing", "payment"), pk=order_id, buyer=request.user)
-	return render(request, "payments/payment.html", {"order": order})
+	return render(request, "payments/payment.html", {"order": order, "demo_payments_enabled": settings.DEMO_PAYMENTS_ENABLED})
 
 
 @login_required
 @require_POST
 def demo_payment(request, order_id):
+	if not settings.DEMO_PAYMENTS_ENABLED:
+		return HttpResponse("Demo payments are disabled.", status=404)
 	order = get_object_or_404(Order, pk=order_id, buyer=request.user)
 	try:
 		order = record_payment_success(order=order, provider_payment_id=f"demo_{order.order_id}", payload={"mode": "demo"})
@@ -65,6 +68,8 @@ def demo_payment(request, order_id):
 @login_required
 @require_POST
 def demo_payment_failed(request, order_id):
+	if not settings.DEMO_PAYMENTS_ENABLED:
+		return HttpResponse("Demo payments are disabled.", status=404)
 	order = get_object_or_404(Order, pk=order_id, buyer=request.user)
 	record_payment_failure(order=order, reason="Demo payment declined")
 	return redirect("payments:order-detail", order_id=order.id)
@@ -96,6 +101,17 @@ def my_orders(request):
 def seller_orders(request):
 	orders = Order.objects.filter(seller=request.user).select_related("listing", "buyer").order_by("-created_at")
 	return render(request, "payments/seller_orders.html", {"orders": orders, "page_title": "Seller Orders"})
+
+
+@login_required
+@require_POST
+def transfer_start(request, order_id):
+	order = get_object_or_404(Order, pk=order_id)
+	try:
+		start_transfer(order=order, seller=request.user)
+	except ValueError as error:
+		return HttpResponse(str(error), status=400)
+	return redirect("payments:order-detail", order_id=order.id)
 
 
 @login_required
@@ -162,13 +178,26 @@ def payment_success(request, order_id):
 	order = get_object_or_404(Order, pk=order_id, buyer=request.user)
 	data = _json_body(request)
 	provider_payment_id = data.get("provider_payment_id")
-	if not provider_payment_id:
-		return JsonResponse({"error": "provider_payment_id is required"}, status=400)
+	provider_order_id = data.get("provider_order_id")
+	signature = data.get("signature")
+	if not provider_payment_id or not provider_order_id or not signature:
+		return JsonResponse({"error": "Verified provider payment details are required"}, status=400)
+	if not order.payment.provider_order_id or order.payment.provider_order_id != provider_order_id:
+		return JsonResponse({"error": "The provider order does not match this order"}, status=400)
+	if not settings.RAZORPAY_KEY_SECRET or not verify_checkout_signature(
+		order_id=provider_order_id,
+		payment_id=provider_payment_id,
+		signature=signature,
+	):
+		return JsonResponse({"error": "Invalid payment signature"}, status=400)
 	try:
 		order = record_payment_success(
 			order=order,
 			provider_payment_id=provider_payment_id,
 			payload=data,
+			provider_order_id=provider_order_id,
+			amount=data.get("amount"),
+			currency=data.get("currency"),
 		)
 	except ValueError as error:
 		return JsonResponse({"error": str(error)}, status=400)
@@ -213,9 +242,13 @@ def razorpay_webhook(request):
 	if details:
 		provider_order_id, provider_payment_id, payload = details
 		payment = get_object_or_404(Payment, provider_order_id=provider_order_id)
+		entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
 		record_payment_success(
 			order=payment.order,
 			provider_payment_id=provider_payment_id,
 			payload=payload,
+			provider_order_id=provider_order_id,
+			amount=Decimal(str(entity["amount"])) / 100 if "amount" in entity else None,
+			currency=entity.get("currency"),
 		)
 	return HttpResponse(status=200)

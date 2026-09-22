@@ -52,11 +52,13 @@ class Order(models.Model):
 class AccountTransfer(models.Model):
 	class Status(models.TextChoices):
 		AWAITING_SELLER = "AWAITING_SELLER", "Awaiting seller transfer"
+		STARTED = "STARTED", "Handoff in progress"
 		TRANSFERRED = "TRANSFERRED", "Transferred"
 		RECEIVED = "RECEIVED", "Received"
 
 	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="transfer")
 	status = models.CharField(max_length=20, choices=Status.choices, default=Status.AWAITING_SELLER)
+	handoff_started_at = models.DateTimeField(null=True, blank=True)
 	seller_transferred_at = models.DateTimeField(null=True, blank=True)
 	buyer_confirmed_at = models.DateTimeField(null=True, blank=True)
 	transfer_note = models.TextField(blank=True)
@@ -143,7 +145,9 @@ class Settlement(models.Model):
 		PENDING = "PENDING", "Pending"
 		HELD = "HELD", "Held"
 		ELIGIBLE = "ELIGIBLE", "Eligible"
+		PROCESSING = "PROCESSING", "Processing"
 		PAID = "PAID", "Paid"
+		FAILED = "FAILED", "Failed"
 
 	order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="settlement")
 	seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="settlements")
