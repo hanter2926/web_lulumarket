@@ -1,15 +1,17 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 from app.utils.constants import SUPPORTED_LANGUAGES
 
 
 class PingMessage(BaseModel):
+	model_config = ConfigDict(extra="forbid")
 	type: Literal["ping"]
 
 
 class LanguageChangeMessage(BaseModel):
+	model_config = ConfigDict(extra="forbid")
 	type: Literal["language.change"]
 	language: str = Field(min_length=2, max_length=16)
 
@@ -22,7 +24,23 @@ class LanguageChangeMessage(BaseModel):
 		return normalized
 
 
-IncomingMessage = Annotated[PingMessage | LanguageChangeMessage, Field(discriminator="type")]
+class AudioStartMessage(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	type: Literal["audio.start"]
+	sample_rate: int = Field(gt=0)
+	channels: int = Field(gt=0)
+	sample_width: int = Field(gt=0)
+
+
+class AudioEndMessage(BaseModel):
+	model_config = ConfigDict(extra="forbid")
+	type: Literal["audio.end"]
+
+
+IncomingMessage = Annotated[
+	PingMessage | LanguageChangeMessage | AudioStartMessage | AudioEndMessage,
+	Field(discriminator="type"),
+]
 _message_adapter = TypeAdapter(IncomingMessage)
 
 
@@ -30,7 +48,7 @@ class InvalidMessageError(Exception):
 	"""Raised when a client message is malformed or unsupported."""
 
 
-def parse_message(raw_message: str) -> PingMessage | LanguageChangeMessage:
+def parse_message(raw_message: str) -> PingMessage | LanguageChangeMessage | AudioStartMessage | AudioEndMessage:
 	if len(raw_message) > 4096:
 		raise InvalidMessageError
 	try:

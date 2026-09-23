@@ -159,3 +159,72 @@ def test_multiple_connections_and_disconnect_cleanup(database, scenario) -> None
         assert asyncio.run(connection_manager.connection_count(str(call_id))) == 1
         second.__exit__(None, None, None)
         assert asyncio.run(connection_manager.connection_count(str(call_id))) == 0
+
+
+def test_audio_chunk_before_start_is_rejected(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            websocket.receive_json()
+            websocket.send_bytes(b"\x00\x00")
+            response = websocket.receive_json()
+            assert response["code"] == "AUDIO_NOT_STARTED"
+
+
+def test_audio_lifecycle_buffers_and_clears_audio(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            websocket.receive_json()
+            websocket.send_json({"type": "audio.start", "sample_rate": 16000, "channels": 1, "sample_width": 2})
+            assert websocket.receive_json()["type"] == "audio.ready"
+            websocket.send_bytes(b"\x00\x00" * 160)
+            assert websocket.receive_json() == {"type": "audio.received", "bytes": "320"}
+            websocket.send_json({"type": "audio.end"})
+            assert websocket.receive_json() == {"type": "audio.ended", "bytes": "320"}
+
+
+def test_audio_start_rejects_unsupported_format_and_invalid_transitions(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            websocket.receive_json()
+            websocket.send_json({"type": "audio.end"})
+            assert websocket.receive_json()["code"] == "AUDIO_NOT_STARTED"
+            websocket.send_json({"type": "audio.start", "sample_rate": 8000, "channels": 1, "sample_width": 2})
+            assert websocket.receive_json()["code"] == "UNSUPPORTED_AUDIO_FORMAT"
+            websocket.send_json({"type": "audio.start", "sample_rate": 16000, "channels": 1, "sample_width": 2})
+            assert websocket.receive_json()["type"] == "audio.ready"
+            websocket.send_json({"type": "audio.start", "sample_rate": 16000, "channels": 1, "sample_width": 2})
+            assert websocket.receive_json()["code"] == "INVALID_AUDIO_STATE"
+
+
+def test_audio_protocol_messages_are_strict(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            websocket.receive_json()
+            websocket.send_json({"type": "audio.start", "sample_rate": 16000, "channels": 1, "sample_width": 2, "extra": True})
+            assert websocket.receive_json()["code"] == "INVALID_MESSAGE"
+            websocket.send_bytes(b"\x00")
+            assert websocket.receive_json()["code"] == "AUDIO_NOT_STARTED"
+
+
+def test_audio_buffers_are_isolated_per_connection(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        first = client.websocket_connect(websocket_path(call_id, owner_tokens.access_token))
+        second = client.websocket_connect(websocket_path(call_id, owner_tokens.access_token))
+        first.__enter__()
+        second.__enter__()
+        assert first.receive_json()["type"] == "connection.ready"
+        assert second.receive_json()["type"] == "connection.ready"
+        for websocket in (first, second):
+            websocket.send_json({"type": "audio.start", "sample_rate": 16000, "channels": 1, "sample_width": 2})
+            assert websocket.receive_json()["type"] == "audio.ready"
+        first.send_bytes(b"\x00\x00" * 2)
+        assert first.receive_json()["bytes"] == "4"
+        second.send_json({"type": "audio.end"})
+        assert second.receive_json() == {"type": "audio.ended", "bytes": "0"}
+        first.__exit__(None, None, None)
+        second.__exit__(None, None, None)
