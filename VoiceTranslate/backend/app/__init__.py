@@ -1,0 +1,1 @@
+"""VoiceTranslate backend application."""
