@@ -42,6 +42,17 @@ def test_speech_end_after_minimum_silence() -> None:
     assert vad.state == VadState.IDLE
 
 
+@pytest.mark.parametrize(("frame_ms", "expected_duration_ms"), ((10, 20), (40, 80)))
+def test_configured_frame_duration_is_used(frame_ms: int, expected_duration_ms: int) -> None:
+    vad = make_vad(frame_ms=frame_ms, min_speech_ms=1, min_silence_ms=1000)
+    vad.process(SPEECH)
+    vad.process(SPEECH)
+    events = vad.end()
+
+    assert events[0].segment is not None
+    assert events[0].segment.duration_ms == expected_duration_ms
+
+
 def test_minimum_speech_avoids_noisy_false_start() -> None:
     vad = make_vad()
     assert vad.process(NOISE) == []

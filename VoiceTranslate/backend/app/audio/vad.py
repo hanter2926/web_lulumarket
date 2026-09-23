@@ -68,7 +68,7 @@ class EnergyVAD:
 		if not self.enabled:
 			return []
 		validate_pcm_frame(frame, CANONICAL_PCM_FORMAT)
-		frame_ms = max(1, round(len(frame) / (16000 * 2) * 1000))
+		frame_ms = self.config.frame_ms
 		is_speech = self._rms(frame) >= self.config.threshold
 		if is_speech:
 			return self._process_speech(frame_ms, len(frame))
