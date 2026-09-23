@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
+    max_websocket_frame_bytes: int = 65536
+    max_audio_buffer_bytes: int = 1048576
+    max_audio_segment_seconds: float = 30.0
+    max_audio_chunk_bytes: int = 65536
     device: str = "cpu"
     whisper_model_size: str = "small"
 
