@@ -21,6 +21,7 @@ from app.services.auth_service import issue_tokens
 from app.utils.security import create_token
 import app.websocket.handlers as websocket_handlers
 from app.ai.whisper.service import Transcript
+from app.ai.translation.service import Translation
 from app.websocket.manager import connection_manager
 from app.db.session import async_session_factory as production_session_factory
 
@@ -31,6 +32,14 @@ class FakeSTTService:
 
     def transcribe(self, audio: bytes) -> Transcript:
         return Transcript("test transcript", "en", 0.99, len(audio) / 32000, [{"start": 0.0, "end": 0.1, "text": "test transcript"}])
+
+
+class FakeTranslationService:
+    def __init__(self, settings) -> None:
+        self.settings = settings
+
+    def translate(self, text: str, source_language: str | None, target_language: str | None) -> Translation:
+        return Translation(text, f"{target_language}:{text}", source_language or "eng", target_language or "hin")
 
 
 @pytest.fixture(scope="module")
@@ -55,6 +64,7 @@ def database():
     asyncio.run(reset_schema())
     websocket_handlers.async_session_factory = session_factory
     websocket_handlers.stt_service_factory = FakeSTTService
+    websocket_handlers.translation_service_factory = FakeTranslationService
     yield session_factory
     websocket_handlers.async_session_factory = production_session_factory
     asyncio.run(engine.dispose())
@@ -302,3 +312,29 @@ def test_websocket_returns_safe_stt_failure(database, scenario, monkeypatch) -> 
                 "code": "STT_FAILED",
                 "message": "Speech transcription failed.",
             }
+
+
+def test_language_change_emits_translation_for_selected_target(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    speech_frame = b"\xff\x7f" * 320
+    silence_frame = b"\x00\x00" * 320
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            websocket.receive_json()
+            websocket.send_json({"type": "language.change", "target_language": "hin"})
+            assert websocket.receive_json() == {"type": "language.changed", "target_language": "hin"}
+            websocket.send_json({"type": "audio.start", "sample_rate": 16000, "channels": 1, "sample_width": 2})
+            websocket.receive_json()
+            for _ in range(10):
+                websocket.send_bytes(speech_frame)
+                websocket.receive_json()
+                if _ == 9:
+                    assert websocket.receive_json()["type"] == "speech.started"
+            for _ in range(15):
+                websocket.send_bytes(silence_frame)
+                websocket.receive_json()
+            assert websocket.receive_json()["type"] == "speech.ended"
+            assert websocket.receive_json()["type"] == "transcript.final"
+            translation = websocket.receive_json()
+            assert translation["type"] == "translation.final"
+            assert translation["target_language"] == "hin"

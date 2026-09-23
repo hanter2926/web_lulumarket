@@ -11,6 +11,7 @@ from app.audio.buffer import AudioBuffer, AudioBufferLimitError
 from app.audio.validator import AudioFormat, AudioValidationError, CANONICAL_PCM_FORMAT, validate_pcm_frame
 from app.audio.vad import EnergyVAD, VadConfig, VadEvent
 from app.ai.whisper.service import Transcript, WhisperSTTError, WhisperSTTService
+from app.ai.translation.service import SeamlessTranslationService, Translation, TranslationError
 from app.config import get_settings
 from app.db.session import async_session_factory
 from app.models.call import Call
@@ -28,6 +29,7 @@ from app.websocket.protocol import (
 	parse_message,
 	ready_message,
 )
+from app.utils.constants import normalize_language_code
 
 router = APIRouter(tags=["websocket"])
 
@@ -39,9 +41,12 @@ class AudioConnectionState:
 	buffer: AudioBuffer | None = None
 	vad: EnergyVAD | None = None
 	stt: WhisperSTTService | None = None
+	target_language: str | None = None
+	translation: SeamlessTranslationService | None = None
 
 
 stt_service_factory = WhisperSTTService
+translation_service_factory = SeamlessTranslationService
 
 
 def _audio_error(code: str, message: str) -> dict[str, str]:
@@ -55,6 +60,10 @@ async def _handle_audio_start(message: AudioStartMessage, state: AudioConnection
 	if format != CANONICAL_PCM_FORMAT:
 		return _audio_error("UNSUPPORTED_AUDIO_FORMAT", "Only 16 kHz mono 16-bit PCM is supported.")
 	settings = get_settings()
+	try:
+		configured_target = normalize_language_code(settings.translation_target_language) if settings.translation_target_language.strip() else None
+	except ValueError:
+		return _audio_error("INVALID_TARGET_LANGUAGE", "Unsupported target language.")
 	state.format = format
 	state.buffer = AudioBuffer(settings.max_audio_buffer_bytes)
 	state.vad = EnergyVAD(
@@ -68,6 +77,8 @@ async def _handle_audio_start(message: AudioStartMessage, state: AudioConnection
 		)
 	)
 	state.stt = stt_service_factory(settings) if settings.whisper_enabled else None
+	state.target_language = configured_target
+	state.translation = translation_service_factory(settings) if settings.translation_enabled else None
 	state.status = "AUDIO_STARTED"
 	return {"type": "audio.ready", "sample_rate": "16000", "channels": "1", "sample_width": "2"}
 
@@ -94,7 +105,7 @@ async def _handle_audio_chunk(payload: bytes, state: AudioConnectionState) -> li
 		for event in state.vad.process(payload):
 			messages.append(_vad_event_message(event))
 			if event.type == "speech.ended":
-				messages.append(await _transcribe_segment(event.segment, state.stt))
+				messages.extend(await _transcribe_segment(event.segment, state.stt, state.translation, state.target_language))
 	return messages
 
 
@@ -111,16 +122,35 @@ def _vad_event_message(event: VadEvent) -> dict:
 	return message
 
 
-async def _transcribe_segment(segment, service: WhisperSTTService | None) -> dict:
+async def _transcribe_segment(
+	segment,
+	service: WhisperSTTService | None,
+	translation: SeamlessTranslationService | None,
+	target_language: str | None,
+) -> list[dict]:
 	if service is None or segment is None:
-		return {"type": "error", "code": "STT_UNAVAILABLE", "message": "Speech transcription is unavailable."}
+		return [{"type": "error", "code": "STT_UNAVAILABLE", "message": "Speech transcription is unavailable."}]
 	try:
 		transcript: Transcript = await asyncio.to_thread(service.transcribe, segment.audio_bytes)
-		return {"type": "transcript.final", **transcript.to_dict()}
+		messages = [{"type": "transcript.final", **transcript.to_dict()}]
+		if translation is not None and target_language and transcript.text.strip():
+			try:
+				result: Translation = await asyncio.to_thread(
+					translation.translate,
+					transcript.text,
+					transcript.language or None,
+					target_language,
+				)
+				messages.append({"type": "translation.final", **result.to_dict()})
+			except TranslationError:
+				messages.append({"type": "error", "code": "TRANSLATION_FAILED", "message": "Translation failed."})
+				except Exception:
+				messages.append({"type": "error", "code": "TRANSLATION_FAILED", "message": "Translation failed."})
+		return messages
 	except WhisperSTTError:
-		return {"type": "error", "code": "STT_FAILED", "message": "Speech transcription failed."}
+		return [{"type": "error", "code": "STT_FAILED", "message": "Speech transcription failed."}]
 	except Exception:
-		return {"type": "error", "code": "STT_FAILED", "message": "Speech transcription failed."}
+		return [{"type": "error", "code": "STT_FAILED", "message": "Speech transcription failed."}]
 
 
 async def _handle_audio_end(state: AudioConnectionState) -> list[dict]:
@@ -133,13 +163,15 @@ async def _handle_audio_end(state: AudioConnectionState) -> list[dict]:
 		for event in state.vad.end():
 			messages.append(_vad_event_message(event))
 			if event.type == "speech.ended":
-				messages.append(await _transcribe_segment(event.segment, state.stt))
+				messages.extend(await _transcribe_segment(event.segment, state.stt, state.translation, state.target_language))
 	messages.append({"type": "audio.ended", "bytes": str(total_bytes)})
 	state.status = "IDLE"
 	state.format = None
 	state.buffer = None
 	state.vad = None
 	state.stt = None
+	state.target_language = None
+	state.translation = None
 	return messages
 
 
@@ -213,10 +245,18 @@ async def call_websocket(websocket: WebSocket, call_id: str) -> None:
 			if isinstance(message, PingMessage):
 				await connection_manager.send_to_connection(websocket, {"type": "pong"})
 			elif isinstance(message, LanguageChangeMessage):
-				await connection_manager.send_to_connection(
-					websocket,
-					{"type": "language.changed", "language": message.language},
-				)
+				try:
+					requested_language = message.target_language or message.language
+					validated_target = normalize_language_code(requested_language or "")
+					audio_state.target_language = validated_target
+					response = (
+						{"type": "language.changed", "target_language": validated_target}
+						if message.target_language is not None
+						else {"type": "language.changed", "language": message.language}
+					)
+				except ValueError:
+					response = _audio_error("INVALID_TARGET_LANGUAGE", "Unsupported target language.")
+				await connection_manager.send_to_connection(websocket, response)
 			elif isinstance(message, AudioStartMessage):
 				await connection_manager.send_to_connection(websocket, await _handle_audio_start(message, audio_state))
 			elif isinstance(message, AudioEndMessage):
@@ -230,4 +270,5 @@ async def call_websocket(websocket: WebSocket, call_id: str) -> None:
 		if audio_state.vad is not None:
 			audio_state.vad.reset()
 		audio_state.stt = None
+		audio_state.translation = None
 		await connection_manager.disconnect(websocket)
