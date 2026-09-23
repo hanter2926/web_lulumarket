@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router, root_router
 from app.config import get_settings
+from app.websocket.handlers import router as websocket_router
 
 
 def create_app() -> FastAPI:
@@ -17,6 +18,7 @@ def create_app() -> FastAPI:
     )
     application.include_router(root_router)
     application.include_router(api_router)
+    application.include_router(websocket_router)
     return application
 
 
