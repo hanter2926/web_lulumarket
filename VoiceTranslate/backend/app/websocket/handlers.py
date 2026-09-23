@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 from dataclasses import dataclass
 
@@ -9,6 +10,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.audio.buffer import AudioBuffer, AudioBufferLimitError
 from app.audio.validator import AudioFormat, AudioValidationError, CANONICAL_PCM_FORMAT, validate_pcm_frame
 from app.audio.vad import EnergyVAD, VadConfig, VadEvent
+from app.ai.whisper.service import Transcript, WhisperSTTError, WhisperSTTService
 from app.config import get_settings
 from app.db.session import async_session_factory
 from app.models.call import Call
@@ -36,6 +38,10 @@ class AudioConnectionState:
 	format: AudioFormat | None = None
 	buffer: AudioBuffer | None = None
 	vad: EnergyVAD | None = None
+	stt: WhisperSTTService | None = None
+
+
+stt_service_factory = WhisperSTTService
 
 
 def _audio_error(code: str, message: str) -> dict[str, str]:
@@ -61,6 +67,7 @@ async def _handle_audio_start(message: AudioStartMessage, state: AudioConnection
 			frame_ms=settings.vad_frame_ms,
 		)
 	)
+	state.stt = stt_service_factory(settings) if settings.whisper_enabled else None
 	state.status = "AUDIO_STARTED"
 	return {"type": "audio.ready", "sample_rate": "16000", "channels": "1", "sample_width": "2"}
 
@@ -84,7 +91,10 @@ async def _handle_audio_chunk(payload: bytes, state: AudioConnectionState) -> li
 	state.status = "RECEIVING"
 	messages: list[dict] = [{"type": "audio.received", "bytes": str(len(payload))}]
 	if state.vad is not None:
-		messages.extend(_vad_event_message(event) for event in state.vad.process(payload))
+		for event in state.vad.process(payload):
+			messages.append(_vad_event_message(event))
+			if event.type == "speech.ended":
+				messages.append(await _transcribe_segment(event.segment, state.stt))
 	return messages
 
 
@@ -101,17 +111,35 @@ def _vad_event_message(event: VadEvent) -> dict:
 	return message
 
 
+async def _transcribe_segment(segment, service: WhisperSTTService | None) -> dict:
+	if service is None or segment is None:
+		return {"type": "error", "code": "STT_UNAVAILABLE", "message": "Speech transcription is unavailable."}
+	try:
+		transcript: Transcript = await asyncio.to_thread(service.transcribe, segment.audio_bytes)
+		return {"type": "transcript.final", **transcript.to_dict()}
+	except WhisperSTTError:
+		return {"type": "error", "code": "STT_FAILED", "message": "Speech transcription failed."}
+	except Exception:
+		return {"type": "error", "code": "STT_FAILED", "message": "Speech transcription failed."}
+
+
 async def _handle_audio_end(state: AudioConnectionState) -> list[dict]:
 	if state.status == "IDLE" or state.buffer is None:
 		return [_audio_error("AUDIO_NOT_STARTED", "Send audio.start before audio.end.")]
 	total_bytes = await state.buffer.size()
 	await state.buffer.clear()
-	messages = [_vad_event_message(event) for event in state.vad.end()] if state.vad is not None else []
+	messages: list[dict] = []
+	if state.vad is not None:
+		for event in state.vad.end():
+			messages.append(_vad_event_message(event))
+			if event.type == "speech.ended":
+				messages.append(await _transcribe_segment(event.segment, state.stt))
 	messages.append({"type": "audio.ended", "bytes": str(total_bytes)})
 	state.status = "IDLE"
 	state.format = None
 	state.buffer = None
 	state.vad = None
+	state.stt = None
 	return messages
 
 
@@ -201,4 +229,5 @@ async def call_websocket(websocket: WebSocket, call_id: str) -> None:
 			await audio_state.buffer.clear()
 		if audio_state.vad is not None:
 			audio_state.vad.reset()
+		audio_state.stt = None
 		await connection_manager.disconnect(websocket)

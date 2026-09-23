@@ -20,8 +20,17 @@ from app.models.user import User
 from app.services.auth_service import issue_tokens
 from app.utils.security import create_token
 import app.websocket.handlers as websocket_handlers
+from app.ai.whisper.service import Transcript
 from app.websocket.manager import connection_manager
 from app.db.session import async_session_factory as production_session_factory
+
+
+class FakeSTTService:
+    def __init__(self, settings) -> None:
+        self.settings = settings
+
+    def transcribe(self, audio: bytes) -> Transcript:
+        return Transcript("test transcript", "en", 0.99, len(audio) / 32000, [{"start": 0.0, "end": 0.1, "text": "test transcript"}])
 
 
 @pytest.fixture(scope="module")
@@ -45,6 +54,7 @@ def database():
 
     asyncio.run(reset_schema())
     websocket_handlers.async_session_factory = session_factory
+    websocket_handlers.stt_service_factory = FakeSTTService
     yield session_factory
     websocket_handlers.async_session_factory = production_session_factory
     asyncio.run(engine.dispose())
@@ -254,3 +264,41 @@ def test_websocket_emits_speech_started_and_ended_events(database, scenario) -> 
             assert ended["type"] == "speech.ended"
             assert ended["duration_ms"] >= 200
             assert ended["bytes"] > 0
+            transcript = websocket.receive_json()
+            assert transcript["type"] == "transcript.final"
+            assert transcript["text"] == "test transcript"
+
+
+def test_websocket_returns_safe_stt_failure(database, scenario, monkeypatch) -> None:
+    call_id, owner_tokens, _, _ = scenario
+
+    class FailingSTTService(FakeSTTService):
+        def transcribe(self, audio: bytes) -> Transcript:
+            from app.ai.whisper.service import WhisperSTTError
+
+            raise WhisperSTTError("internal details")
+
+    monkeypatch.setattr(websocket_handlers, "stt_service_factory", FailingSTTService)
+    speech_frame = b"\xff\x7f" * 320
+    silence_frame = b"\x00\x00" * 320
+
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            websocket.receive_json()
+            websocket.send_json({"type": "audio.start", "sample_rate": 16000, "channels": 1, "sample_width": 2})
+            websocket.receive_json()
+            for _ in range(10):
+                websocket.send_bytes(speech_frame)
+                websocket.receive_json()
+                if _ == 9:
+                    assert websocket.receive_json()["type"] == "speech.started"
+            for _ in range(15):
+                websocket.send_bytes(silence_frame)
+                websocket.receive_json()
+            ended = websocket.receive_json()
+            assert ended["type"] == "speech.ended"
+            assert websocket.receive_json() == {
+                "type": "error",
+                "code": "STT_FAILED",
+                "message": "Speech transcription failed.",
+            }

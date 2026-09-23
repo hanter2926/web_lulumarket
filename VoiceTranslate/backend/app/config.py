@@ -25,8 +25,20 @@ class Settings(BaseSettings):
     vad_min_silence_ms: int = Field(default=300, gt=0)
     vad_max_speech_ms: int = Field(default=30000, gt=0)
     vad_frame_ms: int = Field(default=20, gt=0)
-    device: str = "cpu"
+    whisper_enabled: bool = True
     whisper_model_size: str = "small"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
+    whisper_language: str = ""
+    whisper_beam_size: int = Field(default=5, gt=0)
+    whisper_vad_filter: bool = False
+    translation_enabled: bool = True
+    translation_model: str = "facebook/hf-seamless-m4t-v2-large"
+    translation_device: str = "cpu"
+    translation_compute_type: str = "default"
+    translation_source_language: str = ""
+    translation_target_language: str = ""
+    device: str = "cpu"
 
     model_config = SettingsConfigDict(
         env_file=".env",

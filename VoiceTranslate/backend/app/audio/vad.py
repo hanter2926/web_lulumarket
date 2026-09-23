@@ -24,6 +24,7 @@ class SpeechSegment:
 	duration_ms: int
 	frame_count: int
 	byte_count: int
+	audio_bytes: bytes = b""
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class EnergyVAD:
 		self._silence_ms = 0
 		self._frame_count = 0
 		self._byte_count = 0
+		self._audio_bytes = bytearray()
 		self._start_timestamp: str | None = None
 
 	@property
@@ -71,7 +73,7 @@ class EnergyVAD:
 		frame_ms = self.config.frame_ms
 		is_speech = self._rms(frame) >= self.config.threshold
 		if is_speech:
-			return self._process_speech(frame_ms, len(frame))
+			return self._process_speech(frame_ms, frame)
 		return self._process_silence(frame_ms)
 
 	def end(self) -> list[VadEvent]:
@@ -88,16 +90,18 @@ class EnergyVAD:
 		self._silence_ms = 0
 		self._frame_count = 0
 		self._byte_count = 0
+		self._audio_bytes.clear()
 		self._start_timestamp = None
 
-	def _process_speech(self, frame_ms: int, byte_count: int) -> list[VadEvent]:
+	def _process_speech(self, frame_ms: int, frame: bytes) -> list[VadEvent]:
 		if self.state == VadState.IDLE:
 			self.state = VadState.POSSIBLE_SPEECH
 			self._start_timestamp = datetime.now(timezone.utc).isoformat()
 		self._speech_ms += frame_ms
 		self._silence_ms = 0
 		self._frame_count += 1
-		self._byte_count += byte_count
+		self._byte_count += len(frame)
+		self._audio_bytes.extend(frame)
 		if self.state == VadState.POSSIBLE_SPEECH and self._speech_ms >= self.config.min_speech_ms:
 			self.state = VadState.SPEAKING
 			return [VadEvent("speech.started")]
@@ -132,6 +136,7 @@ class EnergyVAD:
 				duration_ms=self._speech_ms,
 				frame_count=self._frame_count,
 				byte_count=self._byte_count,
+				audio_bytes=bytes(self._audio_bytes),
 			),
 		)
 

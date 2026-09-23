@@ -1,8 +1,8 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
-from app.utils.constants import SUPPORTED_LANGUAGES
+from app.utils.constants import normalize_language_code
 
 
 class PingMessage(BaseModel):
@@ -13,15 +13,22 @@ class PingMessage(BaseModel):
 class LanguageChangeMessage(BaseModel):
 	model_config = ConfigDict(extra="forbid")
 	type: Literal["language.change"]
-	language: str = Field(min_length=2, max_length=16)
+	language: str | None = Field(default=None, min_length=2, max_length=16)
+	target_language: str | None = Field(default=None, min_length=2, max_length=16)
 
-	@field_validator("language")
+	@field_validator("language", "target_language")
 	@classmethod
-	def validate_language(cls, value: str) -> str:
-		normalized = value.lower()
-		if normalized not in SUPPORTED_LANGUAGES:
-			raise ValueError("Unsupported language")
-		return normalized
+	def validate_language(cls, value: str | None) -> str | None:
+		if value is None:
+			return None
+		normalize_language_code(value)
+		return value.strip().lower()
+
+	@model_validator(mode="after")
+	def require_language(self) -> "LanguageChangeMessage":
+		if (self.language is None) == (self.target_language is None):
+			raise ValueError("Provide exactly one language field")
+		return self
 
 
 class AudioStartMessage(BaseModel):
