@@ -11,7 +11,7 @@ from app.audio.buffer import AudioBuffer, AudioBufferLimitError
 from app.audio.validator import AudioFormat, AudioValidationError, CANONICAL_PCM_FORMAT, validate_pcm_frame
 from app.audio.vad import EnergyVAD, VadConfig, VadEvent
 from app.ai.whisper.service import Transcript, WhisperSTTError, WhisperSTTService
-from app.ai.translation.service import SeamlessTranslationService, Translation, TranslationError
+from app.ai.translation.service import SeamlessTranslationService, Translation
 from app.config import get_settings
 from app.db.session import async_session_factory
 from app.models.call import Call
@@ -77,7 +77,8 @@ async def _handle_audio_start(message: AudioStartMessage, state: AudioConnection
 		)
 	)
 	state.stt = stt_service_factory(settings) if settings.whisper_enabled else None
-	state.target_language = configured_target
+	if state.target_language is None:
+		state.target_language = configured_target
 	state.translation = translation_service_factory(settings) if settings.translation_enabled else None
 	state.status = "AUDIO_STARTED"
 	return {"type": "audio.ready", "sample_rate": "16000", "channels": "1", "sample_width": "2"}
@@ -142,9 +143,7 @@ async def _transcribe_segment(
 					target_language,
 				)
 				messages.append({"type": "translation.final", **result.to_dict()})
-			except TranslationError:
-				messages.append({"type": "error", "code": "TRANSLATION_FAILED", "message": "Translation failed."})
-				except Exception:
+			except Exception:
 				messages.append({"type": "error", "code": "TRANSLATION_FAILED", "message": "Translation failed."})
 		return messages
 	except WhisperSTTError:
@@ -170,7 +169,6 @@ async def _handle_audio_end(state: AudioConnectionState) -> list[dict]:
 	state.buffer = None
 	state.vad = None
 	state.stt = None
-	state.target_language = None
 	state.translation = None
 	return messages
 

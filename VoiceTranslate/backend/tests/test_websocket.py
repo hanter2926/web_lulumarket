@@ -338,3 +338,20 @@ def test_language_change_emits_translation_for_selected_target(database, scenari
             translation = websocket.receive_json()
             assert translation["type"] == "translation.final"
             assert translation["target_language"] == "hin"
+
+
+def test_target_language_is_connection_scoped(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        first = client.websocket_connect(websocket_path(call_id, owner_tokens.access_token))
+        second = client.websocket_connect(websocket_path(call_id, owner_tokens.access_token))
+        first.__enter__()
+        second.__enter__()
+        assert first.receive_json()["type"] == "connection.ready"
+        assert second.receive_json()["type"] == "connection.ready"
+        first.send_json({"type": "language.change", "target_language": "hin"})
+        assert first.receive_json() == {"type": "language.changed", "target_language": "hin"}
+        second.send_json({"type": "language.change", "target_language": "fra"})
+        assert second.receive_json() == {"type": "language.changed", "target_language": "fra"}
+        first.__exit__(None, None, None)
+        second.__exit__(None, None, None)

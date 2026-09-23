@@ -9,6 +9,9 @@ from app.config import Settings
 
 @dataclass
 class FakeTensor:
+	def __getitem__(self, index):
+		return self
+
 	def tolist(self):
 		return [[1, 2, 3]]
 
@@ -151,3 +154,15 @@ def test_model_loading_and_translation_failures_are_safe() -> None:
 	)
 	with pytest.raises(TranslationError, match="Translation failed"):
 		failing_service.translate("Hello", "en", "hi")
+
+
+def test_translation_can_be_disabled_without_loading_model() -> None:
+	settings = make_settings(translation_enabled=False)
+	loader = TranslationModelLoader(
+		settings,
+		model_factory=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError),
+		processor_factory=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError),
+	)
+
+	assert settings.translation_enabled is False
+	assert loader._loaded is None
