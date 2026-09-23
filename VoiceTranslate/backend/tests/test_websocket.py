@@ -1,0 +1,161 @@
+import asyncio
+import json
+import os
+from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+from starlette.websockets import WebSocketDisconnect
+
+os.environ.setdefault("JWT_SECRET_KEY", "test-only-websocket-secret")
+
+from app.db.base import Base
+from app.main import app as fastapi_app
+from app.models.call import Call
+from app.models.call_participant import CallParticipant
+from app.models.user import User
+from app.services.auth_service import issue_tokens
+from app.utils.security import create_token
+import app.websocket.handlers as websocket_handlers
+from app.websocket.manager import connection_manager
+from app.db.session import async_session_factory as production_session_factory
+
+
+@pytest.fixture(scope="module")
+def database():
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def reset_schema() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.drop_all)
+            await connection.run_sync(Base.metadata.create_all)
+
+    asyncio.run(reset_schema())
+    websocket_handlers.async_session_factory = session_factory
+    yield session_factory
+    websocket_handlers.async_session_factory = production_session_factory
+    asyncio.run(engine.dispose())
+
+
+@pytest.fixture(autouse=True)
+def reset_database(database):
+    async def reset_schema() -> None:
+        async with database() as session:
+            await session.close()
+        async with session.bind.begin() as connection:
+            await connection.run_sync(Base.metadata.drop_all)
+            await connection.run_sync(Base.metadata.create_all)
+
+    asyncio.run(reset_schema())
+    yield
+
+
+@pytest.fixture
+def scenario(database):
+    async def seed():
+        async with database() as session:
+            owner = User(email="owner@example.com", password_hash="unused", display_name="Owner")
+            participant = User(email="participant@example.com", password_hash="unused", display_name="Participant")
+            outsider = User(email="outsider@example.com", password_hash="unused", display_name="Outsider")
+            call = Call(initiator=owner)
+            call.participants.append(CallParticipant(user=participant))
+            session.add_all([owner, participant, outsider, call])
+            await session.commit()
+            return call.id, issue_tokens(owner), issue_tokens(participant), issue_tokens(outsider)
+
+    return asyncio.run(seed())
+
+
+def websocket_path(call_id, token: str) -> str:
+    return f"/ws/calls/{call_id}?token={token}"
+
+
+def test_authenticated_connection_lifecycle_and_ping(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            ready = websocket.receive_json()
+            assert ready["type"] == "connection.ready"
+            assert ready["call_id"] == str(call_id)
+            websocket.send_json({"type": "ping"})
+            assert websocket.receive_json() == {"type": "pong"}
+            assert asyncio.run(connection_manager.connection_count(str(call_id))) == 1
+        assert asyncio.run(connection_manager.connection_count(str(call_id))) == 0
+
+
+def test_unauthenticated_and_invalid_jwt_are_rejected(database, scenario) -> None:
+    call_id, _, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        for path in (f"/ws/calls/{call_id}", websocket_path(call_id, "invalid")):
+            with pytest.raises(WebSocketDisconnect) as error:
+                with client.websocket_connect(path):
+                    pass
+            assert error.value.code == 1008
+
+
+def test_invalid_call_id_and_missing_call_are_rejected(database, scenario) -> None:
+    _, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        for path in (
+            websocket_path("not-a-uuid", owner_tokens.access_token),
+            websocket_path(uuid4(), owner_tokens.access_token),
+        ):
+            with pytest.raises(WebSocketDisconnect) as error:
+                with client.websocket_connect(path):
+                    pass
+            assert error.value.code == 1008
+
+
+def test_call_participant_is_allowed_but_outsider_is_rejected(database, scenario) -> None:
+    call_id, _, participant_tokens, outsider_tokens = scenario
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, participant_tokens.access_token)) as websocket:
+            assert websocket.receive_json()["type"] == "connection.ready"
+        with pytest.raises(WebSocketDisconnect) as error:
+            with client.websocket_connect(websocket_path(call_id, outsider_tokens.access_token)):
+                pass
+        assert error.value.code == 1008
+
+
+def test_malformed_messages_and_language_change_validation(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            websocket.receive_json()
+            websocket.send_text("not json")
+            assert websocket.receive_json()["code"] == "INVALID_MESSAGE"
+            websocket.send_json({"type": "unsupported"})
+            assert websocket.receive_json()["code"] == "INVALID_MESSAGE"
+            websocket.send_json({"type": "language.change", "language": "xx"})
+            assert websocket.receive_json()["code"] == "INVALID_MESSAGE"
+            websocket.send_json({"type": "language.change", "language": "HI"})
+            assert websocket.receive_json() == {"type": "language.changed", "language": "hi"}
+
+
+def test_multiple_connections_and_disconnect_cleanup(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    with TestClient(fastapi_app) as client:
+        first = client.websocket_connect(websocket_path(call_id, owner_tokens.access_token))
+        second = client.websocket_connect(websocket_path(call_id, owner_tokens.access_token))
+        first.__enter__()
+        second.__enter__()
+        assert first.receive_json()["type"] == "connection.ready"
+        assert second.receive_json()["type"] == "connection.ready"
+        assert asyncio.run(connection_manager.connection_count(str(call_id))) == 2
+        first.__exit__(None, None, None)
+        assert asyncio.run(connection_manager.connection_count(str(call_id))) == 1
+        second.__exit__(None, None, None)
+        assert asyncio.run(connection_manager.connection_count(str(call_id))) == 0

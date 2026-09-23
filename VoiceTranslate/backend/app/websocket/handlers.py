@@ -1,11 +1,10 @@
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketDisconnect
 
-from app.config import get_settings
 from app.db.session import async_session_factory
 from app.models.call import Call
 from app.models.call_participant import CallParticipant
@@ -72,7 +71,13 @@ async def call_websocket(websocket: WebSocket, call_id: str) -> None:
 	try:
 		await connection_manager.send_to_connection(websocket, ready_message(call_id, user_id))
 		while True:
-			raw_message = await websocket.receive_text()
+			received = await websocket.receive()
+			if received["type"] == "websocket.disconnect":
+				break
+			raw_message = received.get("text")
+			if raw_message is None:
+				await connection_manager.send_to_connection(websocket, error_message("INVALID_MESSAGE"))
+				continue
 			try:
 				message = parse_message(raw_message)
 			except InvalidMessageError:

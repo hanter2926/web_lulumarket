@@ -2,24 +2,24 @@
 
 ## Status
 
-The call WebSocket is planned and is not currently implemented. No client should connect to `/ws/calls/{call_id}` yet.
+The secure WebSocket foundation is implemented at `/ws/calls/{call_id}`. Audio and translation messages are intentionally not implemented yet.
 
-## Planned control messages
+Clients authenticate with the existing access JWT as the `token` query parameter. The server validates the JWT signature, expiration, token type, active user, and token version before accepting the socket. It then verifies that the user is the call initiator or an existing call participant. Use HTTPS/WSS in deployed environments; tokens are never logged.
+
+## Implemented control messages
 
 ```json
-{"type":"audio_start"}
-{"type":"language_change","source_language":"en","target_language":"hi"}
-{"type":"audio_stop"}
 {"type":"ping"}
+{"type":"language.change","language":"hi"}
 ```
 
-## Planned server events
+## Implemented server events
 
 ```json
-{"type":"transcript","text":"Hello"}
-{"type":"translation","text":"नमस्ते"}
-{"type":"processing","status":"processing"}
+{"type":"connection.ready","call_id":"...","user_id":"..."}
+{"type":"pong"}
+{"type":"language.changed","language":"hi"}
 {"type":"error","code":"...","message":"..."}
 ```
 
-Authentication, participant authorization, binary PCM frames, reconnects, and heartbeat behavior will be specified when the WebSocket phase begins.
+Malformed JSON, unsupported message types, unsupported languages, and binary frames receive an `INVALID_MESSAGE` error. Disconnects remove the socket from the connection manager. Audio frames, reconnects, and translation events remain planned.
