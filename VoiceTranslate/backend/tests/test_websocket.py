@@ -228,3 +228,29 @@ def test_audio_buffers_are_isolated_per_connection(database, scenario) -> None:
         assert second.receive_json() == {"type": "audio.ended", "bytes": "0"}
         first.__exit__(None, None, None)
         second.__exit__(None, None, None)
+
+
+def test_websocket_emits_speech_started_and_ended_events(database, scenario) -> None:
+    call_id, owner_tokens, _, _ = scenario
+    speech_frame = b"\xff\x7f" * 320
+    silence_frame = b"\x00\x00" * 320
+    with TestClient(fastapi_app) as client:
+        with client.websocket_connect(websocket_path(call_id, owner_tokens.access_token)) as websocket:
+            websocket.receive_json()
+            websocket.send_json({"type": "audio.start", "sample_rate": 16000, "channels": 1, "sample_width": 2})
+            assert websocket.receive_json()["type"] == "audio.ready"
+            for _ in range(9):
+                websocket.send_bytes(speech_frame)
+                assert websocket.receive_json()["type"] == "audio.received"
+            websocket.send_bytes(speech_frame)
+            assert websocket.receive_json()["type"] == "audio.received"
+            assert websocket.receive_json()["type"] == "speech.started"
+            for _ in range(14):
+                websocket.send_bytes(silence_frame)
+                assert websocket.receive_json()["type"] == "audio.received"
+            websocket.send_bytes(silence_frame)
+            assert websocket.receive_json()["type"] == "audio.received"
+            ended = websocket.receive_json()
+            assert ended["type"] == "speech.ended"
+            assert ended["duration_ms"] >= 200
+            assert ended["bytes"] > 0

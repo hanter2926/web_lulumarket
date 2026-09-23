@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,10 +15,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 30
-    max_websocket_frame_bytes: int = 65536
-    max_audio_buffer_bytes: int = 1048576
-    max_audio_segment_seconds: float = 30.0
-    max_audio_chunk_bytes: int = 65536
+    max_websocket_frame_bytes: int = Field(default=65536, gt=0)
+    max_audio_buffer_bytes: int = Field(default=1048576, gt=0)
+    max_audio_segment_seconds: float = Field(default=30.0, gt=0)
+    max_audio_chunk_bytes: int = Field(default=65536, gt=0)
+    vad_enabled: bool = True
+    vad_threshold: float = Field(default=500.0, ge=0)
+    vad_min_speech_ms: int = Field(default=200, gt=0)
+    vad_min_silence_ms: int = Field(default=300, gt=0)
+    vad_max_speech_ms: int = Field(default=30000, gt=0)
+    vad_frame_ms: int = Field(default=20, gt=0)
     device: str = "cpu"
     whisper_model_size: str = "small"
 

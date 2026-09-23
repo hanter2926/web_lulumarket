@@ -8,6 +8,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.audio.buffer import AudioBuffer, AudioBufferLimitError
 from app.audio.validator import AudioFormat, AudioValidationError, CANONICAL_PCM_FORMAT, validate_pcm_frame
+from app.audio.vad import EnergyVAD, VadConfig, VadEvent
 from app.config import get_settings
 from app.db.session import async_session_factory
 from app.models.call import Call
@@ -34,6 +35,7 @@ class AudioConnectionState:
 	status: str = "IDLE"
 	format: AudioFormat | None = None
 	buffer: AudioBuffer | None = None
+	vad: EnergyVAD | None = None
 
 
 def _audio_error(code: str, message: str) -> dict[str, str]:
@@ -49,39 +51,68 @@ async def _handle_audio_start(message: AudioStartMessage, state: AudioConnection
 	settings = get_settings()
 	state.format = format
 	state.buffer = AudioBuffer(settings.max_audio_buffer_bytes)
+	state.vad = EnergyVAD(
+		VadConfig(
+			enabled=settings.vad_enabled,
+			threshold=settings.vad_threshold,
+			min_speech_ms=settings.vad_min_speech_ms,
+			min_silence_ms=settings.vad_min_silence_ms,
+			max_speech_ms=settings.vad_max_speech_ms,
+			frame_ms=settings.vad_frame_ms,
+		)
+	)
 	state.status = "AUDIO_STARTED"
 	return {"type": "audio.ready", "sample_rate": "16000", "channels": "1", "sample_width": "2"}
 
 
-async def _handle_audio_chunk(payload: bytes, state: AudioConnectionState) -> dict[str, str]:
+async def _handle_audio_chunk(payload: bytes, state: AudioConnectionState) -> list[dict]:
 	if state.status == "IDLE" or state.buffer is None or state.format is None:
-		return _audio_error("AUDIO_NOT_STARTED", "Send audio.start before binary audio frames.")
+		return [_audio_error("AUDIO_NOT_STARTED", "Send audio.start before binary audio frames.")]
 	settings = get_settings()
 	if len(payload) > settings.max_websocket_frame_bytes or len(payload) > settings.max_audio_chunk_bytes:
-		return _audio_error("FRAME_TOO_LARGE", "Audio frame exceeds the maximum size.")
+		return [_audio_error("FRAME_TOO_LARGE", "Audio frame exceeds the maximum size.")]
 	max_segment_bytes = int(state.format.sample_rate * state.format.sample_width * settings.max_audio_segment_seconds)
 	if await state.buffer.size() + len(payload) > max_segment_bytes:
-		return _audio_error("AUDIO_SEGMENT_TOO_LARGE", "Audio segment exceeds the maximum duration.")
+		return [_audio_error("AUDIO_SEGMENT_TOO_LARGE", "Audio segment exceeds the maximum duration.")]
 	try:
 		validate_pcm_frame(payload, state.format, settings.max_websocket_frame_bytes)
 		await state.buffer.append(payload)
-	except AudioValidationError:
-		return _audio_error("INVALID_AUDIO", "Invalid PCM audio frame.")
 	except AudioBufferLimitError:
-		return _audio_error("AUDIO_BUFFER_LIMIT", "Audio buffer limit exceeded.")
+		return [_audio_error("AUDIO_BUFFER_LIMIT", "Audio buffer limit exceeded.")]
+	except (AudioValidationError, TypeError, ValueError):
+		return [_audio_error("INVALID_AUDIO", "Invalid PCM audio frame.")]
 	state.status = "RECEIVING"
-	return {"type": "audio.received", "bytes": str(len(payload))}
+	messages: list[dict] = [{"type": "audio.received", "bytes": str(len(payload))}]
+	if state.vad is not None:
+		messages.extend(_vad_event_message(event) for event in state.vad.process(payload))
+	return messages
 
 
-async def _handle_audio_end(state: AudioConnectionState) -> dict[str, str]:
+def _vad_event_message(event: VadEvent) -> dict:
+	message: dict = {"type": event.type}
+	if event.segment is not None:
+		message.update(
+			{
+				"duration_ms": event.segment.duration_ms,
+				"frame_count": event.segment.frame_count,
+				"bytes": event.segment.byte_count,
+			}
+		)
+	return message
+
+
+async def _handle_audio_end(state: AudioConnectionState) -> list[dict]:
 	if state.status == "IDLE" or state.buffer is None:
-		return _audio_error("AUDIO_NOT_STARTED", "Send audio.start before audio.end.")
+		return [_audio_error("AUDIO_NOT_STARTED", "Send audio.start before audio.end.")]
 	total_bytes = await state.buffer.size()
 	await state.buffer.clear()
+	messages = [_vad_event_message(event) for event in state.vad.end()] if state.vad is not None else []
+	messages.append({"type": "audio.ended", "bytes": str(total_bytes)})
 	state.status = "IDLE"
 	state.format = None
 	state.buffer = None
-	return {"type": "audio.ended", "bytes": str(total_bytes)}
+	state.vad = None
+	return messages
 
 
 async def _authenticate_and_authorize(websocket: WebSocket, session: AsyncSession, call_id: UUID) -> User | None:
@@ -138,7 +169,8 @@ async def call_websocket(websocket: WebSocket, call_id: str) -> None:
 				break
 			binary_message = received.get("bytes")
 			if binary_message is not None:
-				await connection_manager.send_to_connection(websocket, await _handle_audio_chunk(binary_message, audio_state))
+				for message in await _handle_audio_chunk(binary_message, audio_state):
+					await connection_manager.send_to_connection(websocket, message)
 				continue
 			raw_message = received.get("text")
 			if raw_message is None:
@@ -160,8 +192,13 @@ async def call_websocket(websocket: WebSocket, call_id: str) -> None:
 			elif isinstance(message, AudioStartMessage):
 				await connection_manager.send_to_connection(websocket, await _handle_audio_start(message, audio_state))
 			elif isinstance(message, AudioEndMessage):
-				await connection_manager.send_to_connection(websocket, await _handle_audio_end(audio_state))
+				for response in await _handle_audio_end(audio_state):
+					await connection_manager.send_to_connection(websocket, response)
 	except WebSocketDisconnect:
 		pass
 	finally:
+		if audio_state.buffer is not None:
+			await audio_state.buffer.clear()
+		if audio_state.vad is not None:
+			audio_state.vad.reset()
 		await connection_manager.disconnect(websocket)

@@ -12,6 +12,14 @@ class AudioFormat:
 	sample_width: int
 	little_endian: bool = True
 
+	def __post_init__(self) -> None:
+		if self.sample_rate <= 0:
+			raise ValueError("sample_rate must be positive")
+		if self.channels <= 0:
+			raise ValueError("channels must be positive")
+		if self.sample_width <= 0:
+			raise ValueError("sample_width must be positive")
+
 
 CANONICAL_PCM_FORMAT = AudioFormat(sample_rate=16000, channels=1, sample_width=2)
 
@@ -23,6 +31,8 @@ def validate_pcm_frame(
 ) -> bytes:
 	if not isinstance(payload, bytes):
 		raise AudioValidationError("Audio frame must be binary PCM data")
+	if not isinstance(max_frame_bytes, int) or max_frame_bytes <= 0:
+		raise AudioValidationError("Maximum audio frame size is invalid")
 	if not payload:
 		raise AudioValidationError("Audio frame must not be empty")
 	if len(payload) > max_frame_bytes:

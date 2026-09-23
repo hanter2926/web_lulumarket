@@ -1,4 +1,4 @@
-from app.audio.validator import AudioFormat, CANONICAL_PCM_FORMAT
+from app.audio.validator import AudioFormat, CANONICAL_PCM_FORMAT, validate_pcm_frame
 
 
 class UnsupportedResamplingError(ValueError):
@@ -16,6 +16,8 @@ class PcmResampler:
 		self.target_format = target_format
 
 	def resample(self, payload: bytes, source_format: AudioFormat) -> bytes:
+		if self.target_format != CANONICAL_PCM_FORMAT:
+			raise UnsupportedResamplingError("Only 16 kHz mono 16-bit PCM is supported")
 		if source_format != self.target_format:
 			raise UnsupportedResamplingError("Resampling this source format is not implemented")
-		return payload
+		return validate_pcm_frame(payload, source_format)
