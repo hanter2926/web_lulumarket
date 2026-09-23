@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, Index, String
+from sqlalchemy import Boolean, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -24,6 +24,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     is_email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     devices: Mapped[list["Device"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     contacts: Mapped[list["Contact"]] = relationship(

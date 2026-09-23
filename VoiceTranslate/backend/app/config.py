@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     debug: bool = False
     cors_origins: str = "http://localhost:3000"
     database_url: str = "postgresql+psycopg://voicetranslate:voicetranslate@localhost:5432/voicetranslate"
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 30
     device: str = "cpu"
     whisper_model_size: str = "small"
 
