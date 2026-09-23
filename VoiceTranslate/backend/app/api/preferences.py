@@ -1,0 +1,1 @@
+"""User preference routes."""
