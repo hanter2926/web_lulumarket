@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     whisper_beam_size: int = Field(default=5, gt=0)
     whisper_vad_filter: bool = False
     translation_enabled: bool = True
-    translation_model: str = "facebook/hf-seamless-m4t-v2-large"
+    translation_model: str = "facebook/seamless-m4t-v2-large"
     translation_device: str = "cpu"
     translation_compute_type: str = "default"
     translation_source_language: str = ""

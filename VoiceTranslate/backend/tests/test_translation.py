@@ -43,6 +43,12 @@ def make_settings(**overrides: object) -> Settings:
 	return Settings(_env_file=None, **overrides)
 
 
+def test_default_translation_model_id_is_official() -> None:
+	settings = make_settings()
+
+	assert settings.translation_model == "facebook/seamless-m4t-v2-large"
+
+
 def make_service(settings: Settings):
 	model = FakeModel()
 	processor = FakeProcessor()
