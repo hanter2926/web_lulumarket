@@ -77,6 +77,16 @@ def login_user(test_client: TestClient, email: str = "user@example.com") -> dict
     return response.json()
 
 
+def test_auth_routes_are_exposed_in_openapi(database) -> None:
+    with client(database) as test_client:
+        paths = test_client.get("/openapi.json").json()["paths"]
+
+    assert {"post"} == set(paths["/api/v1/auth/register"])
+    assert {"post"} == set(paths["/api/v1/auth/login"])
+    assert {"post"} == set(paths["/api/v1/auth/refresh"])
+    assert {"post"} == set(paths["/api/v1/auth/logout"])
+
+
 def test_successful_registration(database) -> None:
     with client(database) as test_client:
         user = register_user(test_client)
