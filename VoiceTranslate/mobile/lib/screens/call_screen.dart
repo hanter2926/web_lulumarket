@@ -211,20 +211,22 @@ class _ConnectionNotice extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0xffd95466).withValues(alpha: 0.25)),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.cloud_off_rounded, color: Color(0xffe97985), size: 20),
-            SizedBox(width: 10),
+            const Icon(Icons.cloud_off_rounded, color: Color(0xffe97985), size: 20),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Not connected', style: TextStyle(fontWeight: FontWeight.w700)),
-                  SizedBox(height: 3),
-                    Text(message,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  const Text('Not connected', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 3),
+                  Text(
+                    message,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  ),
                 ],
               ),
             ),
@@ -251,7 +253,7 @@ class _LanguageSelector extends StatelessWidget {
           Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
-            value: value,
+            initialValue: value,
             isExpanded: true,
             decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 11)),
             items: _languages
