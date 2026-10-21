@@ -1,4 +1,5 @@
 from datetime import timedelta
+import smtplib
 
 from django.core import mail
 from django.test import TestCase, Client, override_settings
@@ -10,6 +11,11 @@ from urllib.parse import urlencode, urlparse
 import re
 
 from .email_otp import verify_email_otp
+from .email_delivery import (
+    EmailDeliveryConfigurationError,
+    classify_email_delivery_error,
+    send_account_email,
+)
 from .models import (
     Address,
     CustomUser,
@@ -713,6 +719,38 @@ class EmailOTPFlowTests(TestCase):
         self.assertIn("error_type=RuntimeError", output)
         self.assertNotIn(self.user.email, output)
         self.assertNotIn("otp-secret-token-secret", output)
+
+    def test_smtp_authentication_failure_logs_only_safe_class_and_code(self):
+        failure = smtplib.SMTPAuthenticationError(
+            535,
+            b"password-secret and reset-token-secret",
+        )
+        failure.smtp_code = 535
+        with self.assertLogs("accounts.views", level="ERROR") as captured:
+            with patch(
+                "accounts.email_delivery.send_mail",
+                side_effect=failure,
+            ):
+                response = self.client.post(
+                    reverse("accounts:email_otp_login"),
+                    {"email": self.user.email},
+                )
+
+        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
+        output = "\n".join(captured.output)
+        self.assertIn("failure_class=smtp_authentication", output)
+        self.assertIn("smtp_code=535", output)
+        self.assertNotIn(self.user.email, output)
+        self.assertNotIn("password-secret", output)
+        self.assertNotIn("reset-token-secret", output)
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+    )
+    def test_production_console_backend_is_rejected_before_fake_success(self):
+        with self.assertRaises(EmailDeliveryConfigurationError):
+            send_account_email("Test", "Test", "recipient@example.com")
 
     def test_email_otp_password_recovery_resets_password_after_verification(self):
         code = self._request_code("accounts:password_reset_otp")

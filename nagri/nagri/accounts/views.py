@@ -43,6 +43,7 @@ from .forms import (
     SafePasswordResetForm,
     SignupForm,
 )
+from .email_delivery import classify_email_delivery_error
 from .email_otp import request_email_otp, verify_email_otp
 from urllib.parse import urlparse
 
@@ -845,10 +846,11 @@ def otp_login_page(request):
 
 
 def _log_email_delivery_failure(exc):
+    failure_class, smtp_code = classify_email_delivery_error(exc)
     logger.error(
         "Account email delivery failed: backend=%s host_configured=%s port=%s "
         "tls=%s username_configured=%s password_configured=%s "
-        "sender_configured=%s error_type=%s",
+        "sender_configured=%s failure_class=%s smtp_code=%s error_type=%s",
         settings.EMAIL_BACKEND,
         bool(settings.EMAIL_HOST),
         settings.EMAIL_PORT,
@@ -856,6 +858,8 @@ def _log_email_delivery_failure(exc):
         bool(settings.EMAIL_HOST_USER),
         bool(settings.EMAIL_HOST_PASSWORD),
         bool(settings.DEFAULT_FROM_EMAIL),
+        failure_class,
+        smtp_code,
         type(exc).__name__,
     )
 
