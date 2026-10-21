@@ -1,12 +1,24 @@
+from datetime import timedelta
+
 from django.core import mail
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
+from django.utils import timezone
+from django.contrib.auth.hashers import check_password
 from unittest.mock import patch
 from urllib.parse import urlencode, urlparse
 import re
 
-from .models import Address, CustomUser, UserProfile
+from .email_otp import verify_email_otp
+from .models import (
+    Address,
+    CustomUser,
+    EmailOTPChallenge,
+    EmailOTPThrottle,
+    UserProfile,
+)
 from .utils import generate_otp, normalize_phone_number
+from .utils import send_otp_via_console
 
 
 class AccountTests(TestCase):
@@ -48,6 +60,14 @@ class AccountTests(TestCase):
         self.assertEqual(len(otp), 6)
         self.assertTrue(otp.isdigit())
 
+    def test_console_sms_backend_never_logs_otp_or_claims_delivery(self):
+        code = "123456"
+        with self.assertLogs("accounts.utils", level="WARNING") as captured:
+            result = send_otp_via_console("+919876543210", code)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn(code, "\n".join(captured.output))
+
     def test_profile_supports_phone_otp_verification(self):
         user = CustomUser.objects.create_user(
             email="otp@example.com",
@@ -72,7 +92,8 @@ class AccountTests(TestCase):
         self.assertEqual(normalize_phone_number("919876543210"), "+919876543210")
         self.assertEqual(normalize_phone_number("09876543210"), "+919876543210")
 
-    def test_request_otp_requires_phone_without_email_and_finds_existing_user(self):
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_request_otp_requires_phone_without_email_and_finds_existing_user(self, send_otp):
         user = CustomUser.objects.create_user(
             email="phone-login@example.com",
             username="phone-login-user",
@@ -84,6 +105,7 @@ class AccountTests(TestCase):
         response = self.client.post("/accounts/request-otp/", {"phone": "9876543210"}, content_type="application/json")
         self.assertEqual(response.status_code, 200)
         self.assertIn("OTP sent successfully", response.json()["detail"])
+        send_otp.assert_called_once()
 
     def test_request_otp_for_unregistered_phone_returns_clear_error(self):
         response = self.client.post("/accounts/request-otp/", {"phone": "9999999999"}, content_type="application/json")
@@ -343,6 +365,7 @@ class SignupFlowTests(TestCase):
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="noreply@example.com",
     SITE_URL="https://web-lulumarket.onrender.com",
+    DEBUG=True,
 )
 class PasswordResetFlowTests(TestCase):
     def setUp(self):
@@ -395,7 +418,7 @@ class PasswordResetFlowTests(TestCase):
                 "new_password2": "NewStrongPass456!",
             },
         )
-        self.assertRedirects(response, reverse("accounts:password_reset_complete"))
+        self.assertRedirects(response, reverse("accounts:email_login"))
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("NewStrongPass456!"))
 
@@ -454,7 +477,7 @@ class PasswordResetFlowTests(TestCase):
         done_response = self.client.get(response.url)
         self.assertContains(
             done_response,
-            "If an account with that email exists, we have sent password reset instructions.",
+            "If an account with that email exists and email delivery is available",
         )
         log_output = "\n".join(captured.output)
         self.assertIn("error_type=RuntimeError", log_output)
@@ -469,6 +492,247 @@ class PasswordResetFlowTests(TestCase):
             )
         )
         self.assertContains(response, "invalid or expired", status_code=200)
+
+    def test_expired_reset_token_is_rejected(self):
+        self.client.post(
+            reverse("accounts:password_reset"),
+            {"email": self.user.email},
+        )
+        reset_url = re.search(
+            r"https://web-lulumarket\.onrender\.com/accounts/reset/[^\s]+",
+            mail.outbox[0].body,
+        ).group(0)
+        with override_settings(PASSWORD_RESET_TIMEOUT=-1):
+            response = self.client.get(urlparse(reset_url).path)
+        self.assertContains(response, "invalid or expired", status_code=200)
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST_USER="",
+        EMAIL_HOST_PASSWORD="",
+        DEFAULT_FROM_EMAIL="",
+    )
+    def test_missing_smtp_configuration_logs_safely_and_keeps_generic_response(self):
+        with self.assertLogs("accounts.views", level="ERROR") as captured:
+            response = self.client.post(
+                reverse("accounts:password_reset"),
+                {"email": self.user.email},
+            )
+        self.assertRedirects(response, reverse("accounts:password_reset_done"))
+        self.assertEqual(len(mail.outbox), 0)
+        log_output = "\n".join(captured.output)
+        self.assertIn("EmailDeliveryConfigurationError", log_output)
+        self.assertNotIn(self.user.email, log_output)
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="noreply@example.com",
+    DEBUG=True,
+)
+class EmailOTPFlowTests(TestCase):
+    def setUp(self):
+        self.user = CustomUser.objects.create_user(
+            email="email-otp@example.com",
+            username="email-otp-user",
+            password="EmailOtpStrongPass123!",
+            is_active=True,
+        )
+        UserProfile.objects.create(
+            user=self.user,
+            phone="+919876543220",
+            is_phone_verified=True,
+        )
+
+    def _request_code(self, url_name):
+        response = self.client.post(
+            reverse(url_name),
+            {"email": self.user.email},
+        )
+        self.assertRedirects(
+            response,
+            reverse(
+                "accounts:email_otp_login_verify"
+                if url_name == "accounts:email_otp_login"
+                else "accounts:password_reset_otp_verify"
+            ),
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        code = re.search(r"\b\d{6}\b", mail.outbox[0].body).group(0)
+        challenge = EmailOTPChallenge.objects.latest("created_at")
+        self.assertNotEqual(challenge.code_hash, code)
+        self.assertTrue(check_password(code, challenge.code_hash))
+        return code
+
+    def test_email_otp_generation_and_successful_login_rotate_session(self):
+        session = self.client.session
+        session["existing"] = "session"
+        session.save()
+        previous_session_key = session.session_key
+        code = self._request_code("accounts:email_otp_login")
+
+        response = self.client.post(
+            reverse("accounts:email_otp_login_verify"),
+            {"email": self.user.email, "code": code},
+        )
+        self.assertRedirects(response, reverse("accounts:dashboard_page"))
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertNotEqual(self.client.session.session_key, previous_session_key)
+        self.assertIsNotNone(
+            EmailOTPChallenge.objects.latest("created_at").consumed_at
+        )
+        self.assertIsNone(
+            verify_email_otp(
+                self.user.email,
+                code,
+                EmailOTPChallenge.Purpose.LOGIN,
+            )
+        )
+
+    def test_unknown_and_inactive_accounts_receive_no_email_or_account_specific_response(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        response = self.client.post(
+            reverse("accounts:email_otp_login"),
+            {"email": self.user.email},
+        )
+        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
+        self.assertEqual(len(mail.outbox), 0)
+        page = self.client.get(response.url)
+        self.assertContains(page, "If an eligible account exists")
+        self.assertNotContains(page, "inactive")
+
+        self.client.post(
+            reverse("accounts:email_otp_login"),
+            {"email": "unknown@example.com"},
+        )
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_email_otp_rejects_incorrect_expired_and_reused_codes(self):
+        code = self._request_code("accounts:email_otp_login")
+        challenge = EmailOTPChallenge.objects.latest("created_at")
+        challenge.expires_at = timezone.now() - timedelta(seconds=1)
+        challenge.save(update_fields=["expires_at"])
+        self.assertIsNone(
+            verify_email_otp(
+                self.user.email,
+                code,
+                EmailOTPChallenge.Purpose.LOGIN,
+            )
+        )
+
+        throttle = EmailOTPThrottle.objects.get(
+            purpose=EmailOTPThrottle.Purpose.LOGIN
+        )
+        throttle.last_requested_at = timezone.now() - timedelta(seconds=61)
+        throttle.save(update_fields=["last_requested_at"])
+        self.client.post(
+            reverse("accounts:email_otp_login"),
+            {"email": self.user.email},
+        )
+        new_code = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group(0)
+        self.assertIsNone(
+            verify_email_otp(
+                self.user.email,
+                "wrong!",
+                EmailOTPChallenge.Purpose.LOGIN,
+            )
+        )
+        self.assertEqual(
+            verify_email_otp(
+                self.user.email,
+                new_code,
+                EmailOTPChallenge.Purpose.LOGIN,
+            ),
+            self.user,
+        )
+        self.assertIsNone(
+            verify_email_otp(
+                self.user.email,
+                new_code,
+                EmailOTPChallenge.Purpose.LOGIN,
+            )
+        )
+
+    def test_email_otp_locks_after_five_incorrect_attempts(self):
+        code = self._request_code("accounts:email_otp_login")
+        for _ in range(5):
+            self.assertIsNone(
+                verify_email_otp(
+                    self.user.email,
+                    "incorrect",
+                    EmailOTPChallenge.Purpose.LOGIN,
+                )
+            )
+        challenge = EmailOTPChallenge.objects.latest("created_at")
+        self.assertEqual(challenge.attempts, 5)
+        self.assertIsNotNone(challenge.consumed_at)
+        self.assertIsNone(
+            verify_email_otp(
+                self.user.email,
+                code,
+                EmailOTPChallenge.Purpose.LOGIN,
+            )
+        )
+
+    def test_email_otp_enforces_resend_cooldown_and_hourly_limit(self):
+        self._request_code("accounts:email_otp_login")
+        response = self.client.post(
+            reverse("accounts:email_otp_login"),
+            {"email": self.user.email},
+        )
+        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
+        self.assertEqual(len(mail.outbox), 1)
+
+        throttle = EmailOTPThrottle.objects.get(
+            purpose=EmailOTPThrottle.Purpose.LOGIN
+        )
+        throttle.request_count = 5
+        throttle.last_requested_at = timezone.now() - timedelta(seconds=61)
+        throttle.save(update_fields=["request_count", "last_requested_at"])
+        self.client.post(
+            reverse("accounts:email_otp_login"),
+            {"email": self.user.email},
+        )
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_email_otp_delivery_error_is_generic_and_logged_without_secrets(self):
+        with self.assertLogs("accounts.views", level="ERROR") as captured:
+            with patch(
+                "accounts.email_delivery.send_mail",
+                side_effect=RuntimeError("otp-secret-token-secret"),
+            ):
+                response = self.client.post(
+                    reverse("accounts:email_otp_login"),
+                    {"email": self.user.email},
+                )
+        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
+        self.assertEqual(len(mail.outbox), 0)
+        output = "\n".join(captured.output)
+        self.assertIn("error_type=RuntimeError", output)
+        self.assertNotIn(self.user.email, output)
+        self.assertNotIn("otp-secret-token-secret", output)
+
+    def test_email_otp_password_recovery_resets_password_after_verification(self):
+        code = self._request_code("accounts:password_reset_otp")
+        response = self.client.post(
+            reverse("accounts:password_reset_otp_verify"),
+            {"email": self.user.email, "code": code},
+        )
+        self.assertRedirects(response, reverse("accounts:password_reset_otp_new"))
+
+        response = self.client.post(
+            reverse("accounts:password_reset_otp_new"),
+            {
+                "new_password1": "RecoveredStrongPass456!",
+                "new_password2": "RecoveredStrongPass456!",
+            },
+        )
+        self.assertRedirects(response, reverse("accounts:email_login"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("RecoveredStrongPass456!"))
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
 
 
 class RoleBasedNavbarTests(TestCase):

@@ -90,6 +90,59 @@ class UserProfile(models.Model):
         return self.full_name or self.user.email
 
 
+class EmailOTPChallenge(models.Model):
+    class Purpose(models.TextChoices):
+        LOGIN = "login", "Login"
+        PASSWORD_RESET = "password_reset", "Password reset"
+
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="email_otp_challenges",
+    )
+    purpose = models.CharField(max_length=20, choices=Purpose.choices)
+    email_digest = models.CharField(max_length=64)
+    code_hash = models.CharField(max_length=128, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["email_digest", "purpose", "-created_at"],
+                name="accounts_email_otp_lookup",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["email_digest", "purpose"],
+                name="accounts_email_otp_unique",
+            ),
+        ]
+
+
+class EmailOTPThrottle(models.Model):
+    class Purpose(models.TextChoices):
+        LOGIN = "login", "Login"
+        PASSWORD_RESET = "password_reset", "Password reset"
+
+    email_digest = models.CharField(max_length=64)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices)
+    window_started_at = models.DateTimeField(default=timezone.now)
+    request_count = models.PositiveSmallIntegerField(default=0)
+    last_requested_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["email_digest", "purpose"],
+                name="accounts_email_otp_throttle_unique",
+            ),
+        ]
+
+
 class Address(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="addresses")
     profile = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name="addresses", null=True, blank=True)

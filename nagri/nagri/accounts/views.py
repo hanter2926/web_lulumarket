@@ -1,9 +1,11 @@
 from datetime import timedelta
 
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
+from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_http_methods
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, renderer_classes
 from rest_framework.response import Response
@@ -12,7 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from orders.models import Order
 
-from .models import Address, CustomUser, PaymentMethod, UserProfile
+from .models import Address, CustomUser, EmailOTPChallenge, PaymentMethod, UserProfile
 from .serializers import AddressSerializer, PaymentMethodSerializer, UserProfileSerializer, UserSerializer
 from .forms_account_settings import ProfileForm, NotificationForm, AppearanceForm, LanguageForm, AddressForm
 from .utils import (
@@ -33,9 +35,15 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib import messages
 from .models import HomeSlider
-from .forms import HomeSliderForm, SignupForm
 from .decorators import owner_required
-from .forms import SafePasswordResetForm
+from .forms import (
+    EmailOTPRequestForm,
+    EmailOTPVerifyForm,
+    HomeSliderForm,
+    SafePasswordResetForm,
+    SignupForm,
+)
+from .email_otp import request_email_otp, verify_email_otp
 from urllib.parse import urlparse
 
 
@@ -125,15 +133,15 @@ class UserViewSet(viewsets.ModelViewSet):
                     profile.otp = ""
                     profile.otp_expires_at = None
                     profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-                    logger.warning("Register API OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+                    logger.warning("Phone OTP provider did not confirm delivery")
                     return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
 
-            except Exception:
+            except Exception as exc:
                 # Delivery exception — invalidate saved OTP and log
                 profile.otp = ""
                 profile.otp_expires_at = None
                 profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-                logger.exception("Failed to send registration phone OTP for phone=%s", phone)
+                logger.error("Phone OTP delivery failed: error_type=%s", type(exc).__name__)
                 return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
 
             # Delivery succeeded — record send timestamp
@@ -247,6 +255,7 @@ class PasswordResetView(auth_views.PasswordResetView):
                     domain_override = parsed.netloc or parsed.path
                 except Exception:
                     domain_override = None
+            use_https = use_https or not settings.DEBUG
 
             form.save(
                 subject_template_name=self.subject_template_name,
@@ -257,17 +266,7 @@ class PasswordResetView(auth_views.PasswordResetView):
                 use_https=use_https,
             )
         except Exception as exc:
-            logger.error(
-                "Password reset email delivery failed: backend=%s host_configured=%s "
-                "port=%s tls=%s username_configured=%s sender_configured=%s error_type=%s",
-                settings.EMAIL_BACKEND,
-                bool(settings.EMAIL_HOST),
-                settings.EMAIL_PORT,
-                settings.EMAIL_USE_TLS,
-                bool(settings.EMAIL_HOST_USER),
-                bool(settings.DEFAULT_FROM_EMAIL),
-                type(exc).__name__,
-            )
+            _log_email_delivery_failure(exc)
 
         return redirect(self.get_success_url())
 
@@ -278,7 +277,15 @@ class PasswordResetDoneView(auth_views.PasswordResetDoneView):
 
 class PasswordResetConfirmView(auth_views.PasswordResetConfirmView):
     template_name = 'registration/password_reset_confirm.html'
-    success_url = reverse_lazy('accounts:password_reset_complete')
+    success_url = reverse_lazy('accounts:email_login')
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        messages.success(
+            self.request,
+            "Your password has been reset. Sign in with your new password.",
+        )
+        return response
 
 
 class PasswordResetCompleteView(auth_views.PasswordResetCompleteView):
@@ -511,16 +518,16 @@ def request_otp(request):
             profile.otp = ""
             profile.otp_expires_at = None
             profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-            logger.warning("OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+            logger.warning("Phone OTP provider did not confirm delivery")
             if browser_request:
                 return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": False, "error": "Unable to send OTP right now. Please try again later."}, status=500)
             return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
 
-    except Exception:
+    except Exception as exc:
         profile.otp = ""
         profile.otp_expires_at = None
         profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-        logger.exception("Failed to send registration phone OTP for phone=%s", phone)
+        logger.error("Phone OTP delivery failed: error_type=%s", type(exc).__name__)
         if browser_request:
             return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": False, "error": "Unable to send OTP right now. Please try again later."}, status=500)
         return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
@@ -591,14 +598,14 @@ def signup_submit(request):
             profile.otp = ""
             profile.otp_expires_at = None
             profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-            logger.warning("Signup OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+            logger.warning("Phone OTP provider did not confirm delivery")
             return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
 
-    except Exception:
+    except Exception as exc:
         profile.otp = ""
         profile.otp_expires_at = None
         profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-        logger.exception("Failed to send signup phone OTP for phone=%s", phone)
+        logger.error("Phone OTP delivery failed: error_type=%s", type(exc).__name__)
         return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
 
     profile.last_otp_sent_at = timezone.now()
@@ -769,15 +776,15 @@ def signup_form_view(request):
                 profile.otp = ""
                 profile.otp_expires_at = None
                 profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-                logger.warning("Signup form OTP provider returned non-sent status for phone=%s provider_result=%s", phone, send_result)
+                logger.warning("Phone OTP provider did not confirm delivery")
                 messages.error(request, "Unable to send verification OTP. Please try again later.")
                 return render(request, "accounts/auth.html", {"active_tab": "signup", "error": "Unable to send verification OTP. Please try again later."})
 
-        except Exception:
+        except Exception as exc:
             profile.otp = ""
             profile.otp_expires_at = None
             profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-            logger.exception("Failed to send signup form phone OTP for phone=%s", phone)
+            logger.error("Phone OTP delivery failed: error_type=%s", type(exc).__name__)
             messages.error(request, "Unable to send verification OTP. Please try again later.")
             return render(request, "accounts/auth.html", {"active_tab": "signup", "error": "Unable to send verification OTP. Please try again later."})
 
@@ -835,6 +842,202 @@ def otp_login_page(request):
         "otp_sent": bool(phone),
         "resend_available_in": resend_available_in,
     })
+
+
+def _log_email_delivery_failure(exc):
+    logger.error(
+        "Account email delivery failed: backend=%s host_configured=%s port=%s "
+        "tls=%s username_configured=%s password_configured=%s "
+        "sender_configured=%s error_type=%s",
+        settings.EMAIL_BACKEND,
+        bool(settings.EMAIL_HOST),
+        settings.EMAIL_PORT,
+        settings.EMAIL_USE_TLS,
+        bool(settings.EMAIL_HOST_USER),
+        bool(settings.EMAIL_HOST_PASSWORD),
+        bool(settings.DEFAULT_FROM_EMAIL),
+        type(exc).__name__,
+    )
+
+
+def _email_otp_request(request, purpose, verify_url_name, template_name):
+    form = EmailOTPRequestForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        email = form.cleaned_data["email"]
+        try:
+            request_email_otp(email, purpose)
+        except Exception as exc:
+            _log_email_delivery_failure(exc)
+
+        request.session["email_otp_email"] = email
+        next_url = request.POST.get("next", "")
+        if next_url and url_has_allowed_host_and_scheme(
+            next_url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        ):
+            request.session["email_otp_next"] = next_url
+        else:
+            request.session.pop("email_otp_next", None)
+        request.session["email_otp_notice"] = (
+            "If an eligible account exists, a code will be sent. "
+            "If you requested one recently, wait before trying again."
+        )
+        return redirect(verify_url_name)
+
+    return render(
+        request,
+        template_name,
+        {
+            "form": form,
+            "phase": "request",
+            "next": request.POST.get("next") or request.GET.get("next", ""),
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def email_otp_login_page(request):
+    return _email_otp_request(
+        request,
+        EmailOTPChallenge.Purpose.LOGIN,
+        "accounts:email_otp_login_verify",
+        "accounts/email_otp_login.html",
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def email_otp_login_verify(request):
+    email = request.session.get("email_otp_email", "")
+    if not email:
+        return redirect("accounts:email_otp_login")
+
+    form = EmailOTPVerifyForm(
+        request.POST or None,
+        initial={"email": email},
+    )
+    error = ""
+    if request.method == "POST":
+        if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
+            user = verify_email_otp(
+                email,
+                form.cleaned_data["code"],
+                EmailOTPChallenge.Purpose.LOGIN,
+            )
+            if user:
+                backend = settings.AUTHENTICATION_BACKENDS[0]
+                auth_login(request, user, backend=backend)
+                next_url = request.session.pop("email_otp_next", "")
+                request.session.pop("email_otp_email", None)
+                request.session.pop("email_otp_notice", None)
+
+                if next_url and url_has_allowed_host_and_scheme(
+                    next_url,
+                    allowed_hosts={request.get_host()},
+                    require_https=request.is_secure(),
+                ):
+                    return redirect(next_url)
+                if user.is_owner:
+                    return redirect("sellers:owner_dashboard")
+                if user.is_vendor:
+                    return redirect("sellers:dashboard")
+                return redirect("accounts:dashboard_page")
+        error = "That code is invalid or expired. Request a new code and try again."
+
+    return render(
+        request,
+        "accounts/email_otp_login.html",
+        {
+            "phase": "verify",
+            "email": email,
+            "form": form,
+            "error": error,
+            "notice": request.session.get("email_otp_notice", ""),
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def password_reset_otp_page(request):
+    return _email_otp_request(
+        request,
+        EmailOTPChallenge.Purpose.PASSWORD_RESET,
+        "accounts:password_reset_otp_verify",
+        "accounts/password_reset_otp.html",
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def password_reset_otp_verify(request):
+    email = request.session.get("email_otp_email", "")
+    if not email:
+        return redirect("accounts:password_reset_otp")
+
+    form = EmailOTPVerifyForm(
+        request.POST or None,
+        initial={"email": email},
+    )
+    error = ""
+    if request.method == "POST":
+        if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
+            user = verify_email_otp(
+                email,
+                form.cleaned_data["code"],
+                EmailOTPChallenge.Purpose.PASSWORD_RESET,
+            )
+            if user:
+                request.session.cycle_key()
+                request.session["password_reset_otp_user_id"] = user.pk
+                request.session["password_reset_otp_expires"] = (
+                    timezone.now() + timedelta(minutes=10)
+                ).timestamp()
+                request.session.pop("email_otp_email", None)
+                request.session.pop("email_otp_notice", None)
+                return redirect("accounts:password_reset_otp_new")
+        error = "That code is invalid or expired. Request a new code and try again."
+
+    return render(
+        request,
+        "accounts/password_reset_otp.html",
+        {
+            "phase": "verify",
+            "email": email,
+            "form": form,
+            "error": error,
+            "notice": request.session.get("email_otp_notice", ""),
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def password_reset_otp_new(request):
+    user_id = request.session.get("password_reset_otp_user_id")
+    expires = request.session.get("password_reset_otp_expires", 0)
+    user = CustomUser.objects.filter(pk=user_id, is_active=True).first() if user_id else None
+    if not user or timezone.now().timestamp() >= expires:
+        request.session.pop("password_reset_otp_user_id", None)
+        request.session.pop("password_reset_otp_expires", None)
+        messages.error(request, "Please verify a new password reset code.")
+        return redirect("accounts:password_reset_otp")
+
+    form = SetPasswordForm(user, request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        request.session.pop("password_reset_otp_user_id", None)
+        request.session.pop("password_reset_otp_expires", None)
+        if request.user.is_authenticated:
+            auth_logout(request)
+        messages.success(
+            request,
+            "Your password has been reset. Sign in with your new password.",
+        )
+        return redirect("accounts:email_login")
+
+    return render(
+        request,
+        "accounts/password_reset_otp.html",
+        {"phase": "set_password", "form": form},
+    )
 
 
 @login_required(login_url="/accounts/auth/")

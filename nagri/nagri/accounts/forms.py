@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
+from .email_delivery import validate_email_delivery_configuration
 from .models import CustomUser
 
 
@@ -98,6 +99,7 @@ class SafePasswordResetForm(DjangoPasswordResetForm):
         We intentionally do not swallow exceptions here so higher layers
         can log them and show generic errors to users.
         """
+        validate_email_delivery_configuration()
         subject = loader.render_to_string(subject_template_name, context)
         subject = "".join(subject.splitlines())
         body = loader.render_to_string(email_template_name, context)
@@ -111,3 +113,18 @@ class SafePasswordResetForm(DjangoPasswordResetForm):
         sent_count = email_message.send()
         if not sent_count:
             raise RuntimeError("Configured email backend did not send the password reset message")
+
+
+class EmailOTPRequestForm(forms.Form):
+    email = forms.EmailField()
+
+    def clean_email(self):
+        return self.cleaned_data["email"].strip().lower()
+
+
+class EmailOTPVerifyForm(forms.Form):
+    email = forms.EmailField()
+    code = forms.RegexField(regex=r"^\d{6}$", max_length=6, min_length=6)
+
+    def clean_email(self):
+        return self.cleaned_data["email"].strip().lower()

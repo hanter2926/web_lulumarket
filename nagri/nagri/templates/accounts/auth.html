@@ -26,10 +26,13 @@
                 <input id="login_password" name="password" type="password" required style="width: 100%; padding: 10px; margin-top: 6px;">
                 <div style="margin-top:8px; text-align: right;">
                     <a href="{% url 'accounts:password_reset' %}" style="font-size:0.95rem; color:#2563eb;">Forgot Password?</a>
+                    <span aria-hidden="true"> · </span>
+                    <a href="{% url 'accounts:password_reset_otp' %}" style="font-size:0.95rem; color:#2563eb;">Reset with Email OTP</a>
                 </div>
             </div>
             <button type="submit" style="width: 100%; padding: 11px; background: #111827; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Login</button>
         </form>
+        <a href="{% url 'accounts:email_otp_login' %}" style="display:block; margin-top:12px; text-align:center;">Login with Email OTP</a>
 
         <div class="auth-mobile-switcher" aria-label="Account options">
             <span>New to NAGRI?</span>

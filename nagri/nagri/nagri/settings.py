@@ -409,11 +409,13 @@ EMAIL_TIMEOUT = 10
 import logging
 logger = logging.getLogger(__name__)
 
-# Log whether email configuration appears to be present (do NOT log passwords)
+# Log configuration presence without exposing sender or host values.
 try:
     logger.info(
-        "Email configuration loaded: host=%s port=%s tls=%s user_configured=%s password_configured=%s from_email=%s",
-        EMAIL_HOST,
+        "Email configuration loaded: backend=%s host_configured=%s port=%s tls=%s "
+        "user_configured=%s password_configured=%s sender_configured=%s",
+        EMAIL_BACKEND,
+        bool(EMAIL_HOST),
         EMAIL_PORT,
         EMAIL_USE_TLS,
         bool(EMAIL_HOST_USER),

@@ -75,7 +75,10 @@
 
             <div class="alternative-login">
                 <a href="{% url 'accounts:otp_login_page' %}" class="btn btn-outline-primary w-100">
-                    <i class="fas fa-mobile-alt"></i> Login with OTP
+                    <i class="fas fa-mobile-alt"></i> Login with Phone OTP
+                </a>
+                <a href="{% url 'accounts:email_otp_login' %}" class="btn btn-outline-primary w-100 mt-2">
+                    <i class="fas fa-envelope"></i> Login with Email OTP
                 </a>
             </div>
 
