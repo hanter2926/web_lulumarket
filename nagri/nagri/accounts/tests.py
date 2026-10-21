@@ -418,6 +418,26 @@ class PasswordResetFlowTests(TestCase):
         self.assertRedirects(response, reverse("accounts:password_reset_done"))
         self.assertEqual(len(mail.outbox), 0)
 
+    def test_inactive_user_does_not_receive_reset_email(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+
+        response = self.client.post(
+            reverse("accounts:password_reset"), {"email": self.user.email}
+        )
+
+        self.assertRedirects(response, reverse("accounts:password_reset_done"))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_malformed_email_is_rejected_without_sending_email(self):
+        response = self.client.post(
+            reverse("accounts:password_reset"), {"email": "not-an-email"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Enter a valid email address.")
+        self.assertEqual(len(mail.outbox), 0)
+
     def test_invalid_reset_token_is_rejected(self):
         response = self.client.get(
             reverse(
