@@ -152,29 +152,36 @@ ASGI_APPLICATION = "nagri.asgi.application"
 # DATABASE
 # ============================================================
 
-USE_SQLITE = os.environ.get("USE_SQLITE", "True").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# ============================================================
+# DATABASE - SUPABASE / LOCAL SQLITE
+# ============================================================
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
 if DATABASE_URL:
-    # Parse the DATABASE_URL (e.g. postgres://user:pass@host:port/dbname)
-    # Use sensible defaults for production: persistent connections and SSL when not in DEBUG
-    db_config = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
-    # Enforce ssl when not debugging (Render provides SSL-enabled Postgres)
+    if dj_database_url is None:
+        raise RuntimeError(
+            "Install dj-database-url to use PostgreSQL"
+        )
+
+    db_config = dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=600,
+    )
+
     if not DEBUG:
-        # Some engines expect sslmode in OPTIONS
-        db_config.setdefault('OPTIONS', {})
-        db_config['OPTIONS'].setdefault('sslmode', 'require')
+        db_config.setdefault("OPTIONS", {})
+        db_config["OPTIONS"].setdefault(
+            "sslmode", "require"
+        )
+
     DATABASES = {
-        'default': db_config
+        "default": db_config
     }
+
 else:
-    # Local computer SQLite
-    
+    # Local development database
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
