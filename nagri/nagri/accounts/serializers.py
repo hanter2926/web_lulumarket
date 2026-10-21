@@ -80,6 +80,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "email",
+            "is_email_verified",
             "username",
             "first_name",
             "last_name",
@@ -92,7 +93,7 @@ class UserSerializer(serializers.ModelSerializer):
             "payment_methods",
             "password",
         ]
-        read_only_fields = ["is_vendor", "is_customer"]
+        read_only_fields = ["is_email_verified", "is_vendor", "is_customer"]
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)

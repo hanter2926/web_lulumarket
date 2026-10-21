@@ -188,7 +188,10 @@ class AccountSecurityTests(TestCase):
         response = self.client.post(reverse("accounts:email_login"), {"email": "pending@example.com", "password": "StrongPass123"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Verify your phone number before logging in")
+        self.assertContains(
+            response,
+            "Verify your email or phone number before logging in",
+        )
         self.assertFalse(response.wsgi_request.user.is_authenticated)
 
     def test_verified_user_can_log_in_with_email_and_password(self):
@@ -308,6 +311,12 @@ class AccountSecurityTests(TestCase):
         self.assertEqual(dashboard_response.status_code, 200)
 
 
+@override_settings(
+    EMAIL_PROVIDER="smtp",
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="noreply@example.com",
+    DEBUG=True,
+)
 class SignupFlowTests(TestCase):
     signup_data = {
         "full_name": "New Customer",
@@ -323,20 +332,63 @@ class SignupFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Create Account")
 
-    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
-    def test_valid_signup_creates_hashed_user_and_profile_and_starts_otp_flow(self, send_otp):
+    @patch("accounts.views.send_otp_to_phone")
+    def test_valid_signup_sends_email_otp_and_verifies_account(self, send_otp):
         response = self.client.post(reverse("accounts:signup_form"), self.signup_data)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Account created. OTP sent to your phone.")
+        self.assertRedirects(
+            response,
+            reverse("accounts:signup_email_verify"),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.signup_data["email"], mail.outbox[0].to)
+        self.assertIn("verify your email address", mail.outbox[0].body)
         user = CustomUser.objects.get(email=self.signup_data["email"])
         self.assertFalse(user.is_active)
+        self.assertFalse(user.is_email_verified)
         self.assertTrue(user.check_password(self.signup_data["password"]))
         self.assertNotEqual(user.password, self.signup_data["password"])
         profile = UserProfile.objects.get(user=user)
         self.assertFalse(profile.is_phone_verified)
         self.assertEqual(profile.phone, "+919876543210")
-        send_otp.assert_called_once()
+        send_otp.assert_not_called()
+
+        code = re.search(r"\b(\d{6})\b", mail.outbox[0].body).group(1)
+        response = self.client.post(
+            reverse("accounts:signup_email_verify"),
+            {"email": self.signup_data["email"], "code": code},
+        )
+
+        self.assertRedirects(response, reverse("accounts:dashboard_page"))
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.is_email_verified)
+        self.assertFalse(UserProfile.objects.get(user=user).is_phone_verified)
+
+        self.client.get(reverse("accounts:logout_page"))
+        response = self.client.post(
+            reverse("accounts:email_login"),
+            {
+                "email": self.signup_data["email"],
+                "password": self.signup_data["password"],
+            },
+        )
+        self.assertRedirects(response, reverse("accounts:dashboard_page"))
+
+    def test_signup_can_resend_email_verification_code(self):
+        self.client.post(reverse("accounts:signup_form"), self.signup_data)
+        self.assertEqual(len(mail.outbox), 1)
+
+        response = self.client.post(reverse("accounts:signup_email_verify_resend"))
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:signup_email_verify"),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertContains(self.client.get(reverse("accounts:signup_email_verify")), "Please wait")
 
     def test_duplicate_email_is_rejected_with_login_guidance(self):
         CustomUser.objects.create_user(

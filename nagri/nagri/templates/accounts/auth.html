@@ -59,6 +59,7 @@
             <div style="margin-bottom: 14px;">
                 <label for="signup_email">Email</label><br>
                 <input id="signup_email" name="email" type="email" value="{{ form.email.value|default:'' }}" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                <small>We’ll send your verification code to this email address.</small>
                 {% if form.email.errors %}<p style="color: #b91c1c;">{{ form.email.errors.0 }}</p>{% endif %}
             </div>
             <div style="margin-bottom: 14px;">
@@ -97,6 +98,7 @@
             <div style="margin-bottom: 14px;">
                 <label for="register_email">Email</label><br>
                 <input id="register_email" name="email" type="email" required style="width: 100%; padding: 10px; margin-top: 6px;">
+                <small>We’ll send your verification code to this email address.</small>
             </div>
             <div style="margin-bottom: 14px;">
                 <label for="register_phone">Phone Number</label><br>

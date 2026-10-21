@@ -22,7 +22,7 @@ https://web-lulumarket.onrender.com
 
 ## 👤 Customer Features
 
-- User Registration and Login
+- User Registration with email OTP verification and Login
 - Custom User Authentication
 - Email-based Login
 - Password Reset
@@ -39,6 +39,25 @@ https://web-lulumarket.onrender.com
 - Multiple Payment Methods
 - Order History
 - Secure Checkout
+
+## Signup Email Verification
+
+New customer accounts receive a six-digit verification code by email. The code expires after five minutes, and resend requests are rate-limited.
+
+Configure a transactional email provider in the production environment. For Brevo, set these Render environment variables:
+
+```text
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=<your Brevo API key>
+BREVO_SENDER_EMAIL=<a sender address verified in Brevo>
+BREVO_SENDER_NAME=NAGRI
+```
+
+Apply database migrations when deploying:
+
+```text
+python manage.py migrate
+```
 
 ---
 

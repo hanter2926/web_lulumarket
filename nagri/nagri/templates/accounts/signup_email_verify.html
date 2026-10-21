@@ -1,0 +1,27 @@
+{% extends 'base/base.html' %}
+
+{% block title %}Verify your email | NAGRI{% endblock %}
+
+{% block content %}
+<main class="container py-5" style="max-width: 34rem;">
+  <section class="card p-4 shadow-sm">
+    <h1 class="h3">Verify your email</h1>
+    <p>Enter the 6-digit code sent to {{ email }}. The code expires in 5 minutes.</p>
+    {% if notice %}<p role="status">{{ notice }}</p>{% endif %}
+    {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" action="{% url 'accounts:signup_email_verify' %}">
+      {% csrf_token %}
+      <label class="form-label" for="{{ form.email.id_for_label }}">Email</label>
+      {{ form.email }}
+      <label class="form-label mt-3" for="id_code">6-digit code</label>
+      <input class="form-control" id="id_code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+      {% if form.code.errors %}<div class="text-danger">{{ form.code.errors }}</div>{% endif %}
+      <button class="btn btn-primary w-100 mt-3" type="submit">Verify email</button>
+    </form>
+    <form method="post" action="{% url 'accounts:signup_email_verify_resend' %}" class="mt-2">
+      {% csrf_token %}
+      <button class="btn btn-link" type="submit">Resend verification code</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

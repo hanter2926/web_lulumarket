@@ -27,12 +27,18 @@ def _email_digest(email):
 
 def _eligible_user(email, purpose):
     user = CustomUser.objects.filter(email__iexact=email).first()
-    if not user or not user.is_active:
+    if not user:
+        return None
+
+    if purpose == EmailOTPChallenge.Purpose.SIGNUP:
+        if user.is_active or user.is_email_verified or not user.has_usable_password():
+            return None
+    elif not user.is_active:
         return None
 
     if purpose == EmailOTPChallenge.Purpose.LOGIN:
         profile = UserProfile.objects.filter(user=user).only("is_phone_verified").first()
-        if not profile or not profile.is_phone_verified:
+        if not profile or not (profile.is_phone_verified or user.is_email_verified):
             return None
     elif not user.has_usable_password():
         return None
@@ -95,7 +101,9 @@ def request_email_otp(email, purpose):
         )
 
     purpose_text = (
-        "sign in"
+        "verify your email address"
+        if purpose == EmailOTPChallenge.Purpose.SIGNUP
+        else "sign in"
         if purpose == EmailOTPChallenge.Purpose.LOGIN
         else "reset your password"
     )
@@ -147,12 +155,23 @@ def verify_email_otp(email, code, purpose):
         challenge.consumed_at = now
         challenge.save(update_fields=["consumed_at"])
         user = challenge.user
-        if not user or not user.is_active:
+        if not user:
+            return None
+
+        if purpose == EmailOTPChallenge.Purpose.SIGNUP:
+            if user.is_active or user.is_email_verified:
+                return None
+            user.is_email_verified = True
+            user.is_active = True
+            user.save(update_fields=["is_email_verified", "is_active", "updated_at"])
+            return user
+
+        if not user.is_active:
             return None
 
         if purpose == EmailOTPChallenge.Purpose.LOGIN:
             profile = UserProfile.objects.filter(user=user).only("is_phone_verified").first()
-            if not profile or not profile.is_phone_verified:
+            if not profile or not (profile.is_phone_verified or user.is_email_verified):
                 return None
         elif not user.has_usable_password():
             return None

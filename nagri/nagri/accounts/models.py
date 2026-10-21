@@ -9,6 +9,7 @@ from django.utils import timezone
 
 class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
+    is_email_verified = models.BooleanField(default=False)
     phone = models.CharField(max_length=20, blank=True, null=True)
     avatar = models.ImageField(upload_to="profiles/", blank=True, null=True)
     is_vendor = models.BooleanField(default=False)
@@ -92,6 +93,7 @@ class UserProfile(models.Model):
 
 class EmailOTPChallenge(models.Model):
     class Purpose(models.TextChoices):
+        SIGNUP = "signup", "Signup verification"
         LOGIN = "login", "Login"
         PASSWORD_RESET = "password_reset", "Password reset"
 
@@ -125,6 +127,7 @@ class EmailOTPChallenge(models.Model):
 
 class EmailOTPThrottle(models.Model):
     class Purpose(models.TextChoices):
+        SIGNUP = "signup", "Signup verification"
         LOGIN = "login", "Login"
         PASSWORD_RESET = "password_reset", "Password reset"
 

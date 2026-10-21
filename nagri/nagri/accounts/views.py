@@ -171,8 +171,13 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
 
         profile = UserProfile.objects.filter(user=user).first()
-        if profile is None or not profile.is_phone_verified:
-            return Response({"detail": "Verify your phone number before logging in."}, status=status.HTTP_403_FORBIDDEN)
+        if profile is None or not (
+            profile.is_phone_verified or user.is_email_verified
+        ):
+            return Response(
+                {"detail": "Verify your email or phone number before logging in."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         auth_login(request, user)
         refresh = RefreshToken.for_user(user)
@@ -704,8 +709,10 @@ def email_login_view(request):
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
 
         profile = UserProfile.objects.filter(user=user).first()
-        if profile is None or not profile.is_phone_verified:
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Verify your phone number before logging in.", "next": next_url})
+        if profile is None or not (
+            profile.is_phone_verified or user.is_email_verified
+        ):
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Verify your email or phone number before logging in.", "next": next_url})
 
         auth_login(request, authenticated_user)
         if request.POST.get("remember"):
@@ -751,50 +758,98 @@ def signup_form_view(request):
             first_name=(full_name.split()[0] if full_name else ""),
             last_name=" ".join(full_name.split()[1:]) if full_name else "",
             is_active=False,
+            is_email_verified=False,
         )
 
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.full_name = full_name or user.get_full_name() or email
         profile.phone = phone
         profile.is_phone_verified = False
-
-        otp_code = generate_otp()
-
-        # Persist OTP before attempting delivery
-        profile.otp = otp_code
-        profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
-        profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "updated_at"])
-
+        profile.save(update_fields=["full_name", "phone", "is_phone_verified", "updated_at"])
+        request.session["signup_email_verification_email"] = email
         try:
-            send_result = send_otp_to_phone(phone, otp_code)
-            status_sent = False
-            if isinstance(send_result, dict):
-                status_sent = str(send_result.get("status") or "").lower() == "sent"
+            result = request_email_otp(email, EmailOTPChallenge.Purpose.SIGNUP)
+            if result == "throttled":
+                request.session["signup_email_verification_notice"] = (
+                    "Please wait before requesting another verification code."
+                )
             else:
-                status_sent = True
-
-            if not status_sent:
-                profile.otp = ""
-                profile.otp_expires_at = None
-                profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-                logger.warning("Phone OTP provider did not confirm delivery")
-                messages.error(request, "Unable to send verification OTP. Please try again later.")
-                return render(request, "accounts/auth.html", {"active_tab": "signup", "error": "Unable to send verification OTP. Please try again later."})
-
+                request.session["signup_email_verification_notice"] = (
+                    "A verification code has been sent to your email. "
+                    "It expires in 5 minutes."
+                )
         except Exception as exc:
-            profile.otp = ""
-            profile.otp_expires_at = None
-            profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-            logger.error("Phone OTP delivery failed: error_type=%s", type(exc).__name__)
-            messages.error(request, "Unable to send verification OTP. Please try again later.")
-            return render(request, "accounts/auth.html", {"active_tab": "signup", "error": "Unable to send verification OTP. Please try again later."})
-
-        profile.last_otp_sent_at = timezone.now()
-        profile.save(update_fields=["last_otp_sent_at", "updated_at"])
-        request.session["otp_phone"] = phone
-        return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "message": "Account created. OTP sent to your phone.", "resend_available_in": OTP_RESEND_COOLDOWN_SECONDS})
+            _log_email_delivery_failure(exc)
+            request.session["signup_email_verification_notice"] = (
+                "Unable to send the verification email right now. "
+                "Please wait a minute and try again."
+            )
+        return redirect("accounts:signup_email_verify")
 
     return render(request, "accounts/auth.html", {"active_tab": "signup", "form": form})
+
+
+@require_http_methods(["GET", "POST"])
+def signup_email_verify(request):
+    email = request.session.get("signup_email_verification_email", "")
+    if not email:
+        return redirect("accounts:signup_form")
+
+    form = EmailOTPVerifyForm(request.POST or None, initial={"email": email})
+    error = ""
+    if request.method == "POST":
+        if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
+            user = verify_email_otp(
+                email,
+                form.cleaned_data["code"],
+                EmailOTPChallenge.Purpose.SIGNUP,
+            )
+            if user:
+                auth_login(request, user, backend=settings.AUTHENTICATION_BACKENDS[0])
+                request.session.pop("signup_email_verification_email", None)
+                request.session.pop("signup_email_verification_notice", None)
+                if user.is_owner:
+                    return redirect("sellers:owner_dashboard")
+                if user.is_vendor:
+                    return redirect("sellers:dashboard")
+                return redirect("accounts:dashboard_page")
+        error = "That code is invalid or expired. Request a new code and try again."
+
+    return render(
+        request,
+        "accounts/signup_email_verify.html",
+        {
+            "email": email,
+            "form": form,
+            "error": error,
+            "notice": request.session.pop("signup_email_verification_notice", ""),
+        },
+    )
+
+
+@require_http_methods(["POST"])
+def signup_email_verify_resend(request):
+    email = request.session.get("signup_email_verification_email", "")
+    if not email:
+        return redirect("accounts:signup_form")
+
+    try:
+        result = request_email_otp(email, EmailOTPChallenge.Purpose.SIGNUP)
+        if result == "throttled":
+            request.session["signup_email_verification_notice"] = (
+                "Please wait before requesting another verification code."
+            )
+        else:
+            request.session["signup_email_verification_notice"] = (
+                "A new verification code has been sent to your email."
+            )
+    except Exception as exc:
+        _log_email_delivery_failure(exc)
+        request.session["signup_email_verification_notice"] = (
+            "Unable to send the verification email right now. "
+            "Please wait a minute and try again."
+        )
+    return redirect("accounts:signup_email_verify")
 
 
 @api_view(["GET"])
