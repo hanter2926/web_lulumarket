@@ -76,9 +76,6 @@ class HomeSliderForm(forms.ModelForm):
 from django.contrib.auth.forms import PasswordResetForm as DjangoPasswordResetForm
 from django.template import loader
 from django.core.mail import EmailMultiAlternatives
-import logging
-
-_logger = logging.getLogger(__name__)
 
 
 class SafePasswordResetForm(DjangoPasswordResetForm):
@@ -113,7 +110,4 @@ class SafePasswordResetForm(DjangoPasswordResetForm):
         # Let exceptions propagate so callers can handle/log them.
         sent_count = email_message.send()
         if not sent_count:
-            # No message sent — surface as an error
-            _logger.warning("Password reset send_mail returned 0 for recipient=%s", to_email)
-            raise Exception("No emails were sent by the configured email backend")
-
+            raise RuntimeError("Configured email backend did not send the password reset message")

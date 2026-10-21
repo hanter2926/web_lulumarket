@@ -256,11 +256,18 @@ class PasswordResetView(auth_views.PasswordResetView):
                 domain_override=domain_override,
                 use_https=use_https,
             )
-        except Exception:
-            email = form.cleaned_data.get('email') if hasattr(form, 'cleaned_data') else None
-            logger.exception("Failed to send password reset email for recipient=%s", email)
-            messages.error(self.request, "Unable to send password reset email right now. Please try again later.")
-            return self.form_invalid(form)
+        except Exception as exc:
+            logger.error(
+                "Password reset email delivery failed: backend=%s host_configured=%s "
+                "port=%s tls=%s username_configured=%s sender_configured=%s error_type=%s",
+                settings.EMAIL_BACKEND,
+                bool(settings.EMAIL_HOST),
+                settings.EMAIL_PORT,
+                settings.EMAIL_USE_TLS,
+                bool(settings.EMAIL_HOST_USER),
+                bool(settings.DEFAULT_FROM_EMAIL),
+                type(exc).__name__,
+            )
 
         return redirect(self.get_success_url())
 

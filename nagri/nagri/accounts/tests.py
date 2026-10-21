@@ -438,6 +438,29 @@ class PasswordResetFlowTests(TestCase):
         self.assertContains(response, "Enter a valid email address.")
         self.assertEqual(len(mail.outbox), 0)
 
+    def test_delivery_failure_is_logged_safely_and_keeps_generic_response(self):
+        failure_detail = "credential-sentinel reset-token-sentinel"
+        with self.assertLogs("accounts.views", level="ERROR") as captured:
+            with patch(
+                "accounts.forms.SafePasswordResetForm.send_mail",
+                side_effect=RuntimeError(failure_detail),
+            ):
+                response = self.client.post(
+                    reverse("accounts:password_reset"),
+                    {"email": self.user.email},
+                )
+
+        self.assertRedirects(response, reverse("accounts:password_reset_done"))
+        done_response = self.client.get(response.url)
+        self.assertContains(
+            done_response,
+            "If an account with that email exists, we have sent password reset instructions.",
+        )
+        log_output = "\n".join(captured.output)
+        self.assertIn("error_type=RuntimeError", log_output)
+        self.assertNotIn(self.user.email, log_output)
+        self.assertNotIn(failure_detail, log_output)
+
     def test_invalid_reset_token_is_rejected(self):
         response = self.client.get(
             reverse(
