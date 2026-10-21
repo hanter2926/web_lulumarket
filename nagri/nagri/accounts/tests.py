@@ -2,6 +2,7 @@ from datetime import timedelta
 import smtplib
 
 from django.core import mail
+from django.db import OperationalError
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -283,6 +284,26 @@ class AccountSecurityTests(TestCase):
         self.assertContains(response, "Your account is inactive")
         self.assertFalse(response.wsgi_request.user.is_authenticated)
 
+    def test_verified_user_with_wrong_password_cannot_log_in(self):
+        user = CustomUser.objects.create_user(
+            email="wrong-password@example.com",
+            username="wrong-password-user",
+            is_active=True,
+            is_email_verified=True,
+        )
+        user.set_password("CorrectPassword123!")
+        user.save(update_fields=["password"])
+        UserProfile.objects.create(user=user, is_phone_verified=False)
+
+        response = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": user.email, "password": "NotTheCorrectPassword123!"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Invalid email or password.")
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
     def test_login_requires_csrf_token(self):
         csrf_client = Client(enforce_csrf_checks=True)
         response = csrf_client.post(
@@ -375,6 +396,124 @@ class SignupFlowTests(TestCase):
             },
         )
         self.assertRedirects(response, reverse("accounts:dashboard_page"))
+
+    @override_settings(
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="mock-api-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+        BREVO_SENDER_NAME="NAGRI",
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(
+            status_code=201,
+            json=lambda: {"messageId": "mock-message-id"},
+        ),
+    )
+    def test_signup_delivers_email_otp_through_brevo(self, post):
+        response = self.client.post(
+            reverse("accounts:signup_form"),
+            self.signup_data,
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:signup_email_verify"),
+            fetch_redirect_response=False,
+        )
+        post.assert_called_once()
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["to"], [{"email": self.signup_data["email"]}])
+        self.assertEqual(payload["sender"]["email"], "sender@example.com")
+        self.assertRegex(payload["textContent"], r"verify your email address is \d{6}")
+        user = CustomUser.objects.get(email=self.signup_data["email"])
+        self.assertFalse(user.is_active)
+        challenge = EmailOTPChallenge.objects.get(
+            user=user,
+            purpose=EmailOTPChallenge.Purpose.SIGNUP,
+        )
+        self.assertIsNone(challenge.consumed_at)
+
+    @override_settings(
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="mock-api-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+        BREVO_SENDER_NAME="NAGRI",
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(
+            status_code=401,
+            json=lambda: {"message": "must not be logged"},
+        ),
+    )
+    def test_signup_brevo_failure_is_logged_safely_and_not_shown_as_success(
+        self,
+        post,
+    ):
+        with self.assertLogs("accounts.views", level="ERROR") as captured:
+            response = self.client.post(
+                reverse("accounts:signup_form"),
+                self.signup_data,
+            )
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:signup_email_verify"),
+            fetch_redirect_response=False,
+        )
+        post.assert_called_once()
+        output = "\n".join(captured.output)
+        self.assertIn("provider=brevo", output)
+        self.assertIn("failure_class=brevo_authentication", output)
+        self.assertIn("status_code=401", output)
+        self.assertNotIn(self.signup_data["email"], output)
+        self.assertNotIn("mock-api-key", output)
+        self.assertNotIn("must not be logged", output)
+
+        page = self.client.get(reverse("accounts:signup_email_verify"))
+        self.assertContains(page, "Unable to send the verification email right now")
+        self.assertNotContains(page, "A verification code has been sent")
+        user = CustomUser.objects.get(email=self.signup_data["email"])
+        self.assertFalse(user.is_active)
+        challenge = EmailOTPChallenge.objects.get(
+            user=user,
+            purpose=EmailOTPChallenge.Purpose.SIGNUP,
+        )
+        self.assertIsNotNone(challenge.consumed_at)
+
+    @patch(
+        "accounts.email_otp.EmailOTPThrottle.objects.get_or_create",
+        side_effect=OperationalError("table does not exist"),
+    )
+    @patch("accounts.email_otp.send_account_email")
+    def test_signup_database_failure_is_categorized_and_skips_delivery(
+        self,
+        send_email,
+        get_or_create,
+    ):
+        with self.assertLogs("accounts.views", level="ERROR") as captured:
+            response = self.client.post(
+                reverse("accounts:signup_form"),
+                self.signup_data,
+            )
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:signup_email_verify"),
+            fetch_redirect_response=False,
+        )
+        get_or_create.assert_called_once()
+        send_email.assert_not_called()
+        output = "\n".join(captured.output)
+        self.assertIn("failure_class=database_operational", output)
+        self.assertNotIn("table does not exist", output)
+        page = self.client.get(reverse("accounts:signup_email_verify"))
+        self.assertContains(page, "Unable to send the verification email right now")
+        self.assertNotContains(page, "A verification code has been sent")
+        user = CustomUser.objects.get(email=self.signup_data["email"])
+        self.assertFalse(user.is_active)
+        self.assertFalse(user.is_email_verified)
 
     def test_signup_can_resend_email_verification_code(self):
         self.client.post(reverse("accounts:signup_form"), self.signup_data)

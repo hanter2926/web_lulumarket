@@ -4,6 +4,7 @@ import smtplib
 import requests
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, send_mail
+from django.db import OperationalError
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,8 @@ def classify_email_delivery_error(exc):
         return "brevo_timeout", None
     if isinstance(exc, requests.ConnectionError):
         return "brevo_connection", None
+    if isinstance(exc, OperationalError):
+        return "database_operational", None
     if isinstance(exc, smtplib.SMTPAuthenticationError):
         failure_class = "smtp_authentication"
     elif isinstance(exc, smtplib.SMTPConnectError):
