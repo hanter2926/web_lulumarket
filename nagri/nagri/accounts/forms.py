@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
-from .email_delivery import validate_email_delivery_configuration
+from .email_delivery import send_account_email
 from .models import CustomUser
 
 
@@ -76,8 +76,6 @@ class HomeSliderForm(forms.ModelForm):
 
 from django.contrib.auth.forms import PasswordResetForm as DjangoPasswordResetForm
 from django.template import loader
-from django.core.mail import EmailMultiAlternatives
-
 
 class SafePasswordResetForm(DjangoPasswordResetForm):
     """PasswordResetForm that surfaces delivery failures instead of
@@ -99,20 +97,20 @@ class SafePasswordResetForm(DjangoPasswordResetForm):
         We intentionally do not swallow exceptions here so higher layers
         can log them and show generic errors to users.
         """
-        validate_email_delivery_configuration()
         subject = loader.render_to_string(subject_template_name, context)
         subject = "".join(subject.splitlines())
         body = loader.render_to_string(email_template_name, context)
-
-        email_message = EmailMultiAlternatives(subject, body, from_email, [to_email])
+        html_body = None
         if html_email_template_name is not None:
-            html_email = loader.render_to_string(html_email_template_name, context)
-            email_message.attach_alternative(html_email, "text/html")
+            html_body = loader.render_to_string(html_email_template_name, context)
 
-        # Let exceptions propagate so callers can handle/log them.
-        sent_count = email_message.send()
-        if not sent_count:
-            raise RuntimeError("Configured email backend did not send the password reset message")
+        send_account_email(
+            subject,
+            body,
+            to_email,
+            html_body=html_body,
+            from_email=from_email,
+        )
 
 
 class EmailOTPRequestForm(forms.Form):

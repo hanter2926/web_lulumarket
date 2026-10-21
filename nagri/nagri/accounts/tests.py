@@ -6,12 +6,14 @@ from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.auth.hashers import check_password
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import urlencode, urlparse
 import re
+from requests import Timeout
 
 from .email_otp import verify_email_otp
 from .email_delivery import (
+    BrevoAPIError,
     EmailDeliveryConfigurationError,
     classify_email_delivery_error,
     send_account_email,
@@ -368,6 +370,7 @@ class SignupFlowTests(TestCase):
 
 
 @override_settings(
+    EMAIL_PROVIDER="smtp",
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="noreply@example.com",
     SITE_URL="https://web-lulumarket.onrender.com",
@@ -406,6 +409,36 @@ class PasswordResetFlowTests(TestCase):
         self.assertIsNotNone(reset_match)
         self.reset_path = urlparse(reset_match.group(0)).path
         self.assertIn("/accounts/reset/", self.reset_path)
+
+    @override_settings(
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+        BREVO_SENDER_NAME="NAGRI",
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(status_code=201, json=lambda: {"messageId": "test-message-id"}),
+    )
+    def test_password_reset_uses_brevo_with_https_reset_url(self, post):
+        response = self.client.post(
+            reverse("accounts:password_reset"),
+            {"email": self.user.email},
+        )
+
+        self.assertRedirects(response, reverse("accounts:password_reset_done"))
+        post.assert_called_once()
+        url = post.call_args.args[0]
+        headers = post.call_args.kwargs["headers"]
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(url, "https://api.brevo.com/v3/smtp/email")
+        self.assertEqual(headers["api-key"], "brevo-test-key")
+        self.assertEqual(payload["sender"]["email"], "sender@example.com")
+        self.assertEqual(payload["to"], [{"email": self.user.email}])
+        self.assertIn(
+            f"https://web-lulumarket.onrender.com/accounts/reset/",
+            payload["textContent"],
+        )
 
     def test_reset_token_sets_new_password_and_old_password_fails(self):
         self.client.post(reverse("accounts:password_reset"), {"email": self.user.email})
@@ -514,6 +547,7 @@ class PasswordResetFlowTests(TestCase):
 
     @override_settings(
         DEBUG=False,
+        EMAIL_PROVIDER="smtp",
         EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_HOST_USER="",
         EMAIL_HOST_PASSWORD="",
@@ -533,6 +567,7 @@ class PasswordResetFlowTests(TestCase):
 
 
 @override_settings(
+    EMAIL_PROVIDER="smtp",
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="noreply@example.com",
     DEBUG=True,
@@ -720,6 +755,83 @@ class EmailOTPFlowTests(TestCase):
         self.assertNotIn(self.user.email, output)
         self.assertNotIn("otp-secret-token-secret", output)
 
+    @override_settings(
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+        BREVO_SENDER_NAME="NAGRI",
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(status_code=201, json=lambda: {"messageId": "test-message-id"}),
+    )
+    def test_email_otp_uses_brevo_api(self, post):
+        response = self.client.post(
+            reverse("accounts:email_otp_login"),
+            {"email": self.user.email},
+        )
+
+        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
+        post.assert_called_once()
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["sender"], {
+            "email": "sender@example.com",
+            "name": "NAGRI",
+        })
+        self.assertEqual(payload["to"], [{"email": self.user.email}])
+        self.assertRegex(payload["textContent"], r"code to sign in is \d{6}")
+
+    @override_settings(
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(status_code=401, json=lambda: {"message": "secret response"}),
+    )
+    def test_brevo_authentication_failure_does_not_fallback_to_smtp(self, post):
+        with patch("accounts.email_delivery.send_mail") as smtp_send:
+            with self.assertRaises(BrevoAPIError) as raised:
+                send_account_email("subject", "body", "recipient@example.com")
+        self.assertEqual(raised.exception.failure_class, "brevo_authentication")
+        self.assertEqual(raised.exception.status_code, 401)
+        post.assert_called_once()
+        smtp_send.assert_not_called()
+
+    @override_settings(
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(status_code=201, json=lambda: {"unexpected": "shape"}),
+    )
+    def test_brevo_malformed_success_response_is_rejected(self, post):
+        with self.assertRaises(BrevoAPIError) as raised:
+            send_account_email("subject", "body", "recipient@example.com")
+        self.assertEqual(raised.exception.failure_class, "brevo_malformed_response")
+        self.assertEqual(raised.exception.status_code, 201)
+        post.assert_called_once()
+
+    @override_settings(
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+    )
+    @patch("accounts.email_delivery.requests.post", side_effect=Timeout())
+    def test_brevo_timeout_is_classified_without_smtp_fallback(self, post):
+        with patch("accounts.email_delivery.send_mail") as smtp_send:
+            with self.assertRaises(Timeout):
+                send_account_email("subject", "body", "recipient@example.com")
+        self.assertEqual(
+            classify_email_delivery_error(Timeout())[0],
+            "brevo_timeout",
+        )
+        post.assert_called_once()
+        smtp_send.assert_not_called()
+
     def test_smtp_authentication_failure_logs_only_safe_class_and_code(self):
         failure = smtplib.SMTPAuthenticationError(
             535,
@@ -739,13 +851,14 @@ class EmailOTPFlowTests(TestCase):
         self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
         output = "\n".join(captured.output)
         self.assertIn("failure_class=smtp_authentication", output)
-        self.assertIn("smtp_code=535", output)
+        self.assertIn("status_code=535", output)
         self.assertNotIn(self.user.email, output)
         self.assertNotIn("password-secret", output)
         self.assertNotIn("reset-token-secret", output)
 
     @override_settings(
         DEBUG=False,
+        EMAIL_PROVIDER="smtp",
         EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
     )
     def test_production_console_backend_is_rejected_before_fake_success(self):

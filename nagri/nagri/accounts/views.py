@@ -848,13 +848,19 @@ def otp_login_page(request):
 def _log_email_delivery_failure(exc):
     failure_class, smtp_code = classify_email_delivery_error(exc)
     logger.error(
-        "Account email delivery failed: backend=%s host_configured=%s port=%s "
-        "tls=%s username_configured=%s password_configured=%s "
-        "sender_configured=%s failure_class=%s smtp_code=%s error_type=%s",
+        "Account email delivery failed: provider=%s backend=%s "
+        "brevo_api_key_configured=%s brevo_sender_configured=%s "
+        "host_configured=%s port=%s tls=%s ssl=%s "
+        "username_configured=%s password_configured=%s sender_configured=%s "
+        "failure_class=%s status_code=%s error_type=%s",
+        settings.EMAIL_PROVIDER or "unset",
         settings.EMAIL_BACKEND,
+        bool(settings.BREVO_API_KEY),
+        bool(settings.BREVO_SENDER_EMAIL),
         bool(settings.EMAIL_HOST),
         settings.EMAIL_PORT,
         settings.EMAIL_USE_TLS,
+        settings.EMAIL_USE_SSL,
         bool(settings.EMAIL_HOST_USER),
         bool(settings.EMAIL_HOST_PASSWORD),
         bool(settings.DEFAULT_FROM_EMAIL),

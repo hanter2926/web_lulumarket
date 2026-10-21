@@ -387,6 +387,11 @@ CHANNEL_LAYERS = {
 # EMAIL
 # ============================================================
 
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "").strip().lower()
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
+BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", "").strip()
+BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "NAGRI").strip()
+
 # Choose email backend via env. For local development you can set
 # EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
 EMAIL_BACKEND = os.getenv(
@@ -397,6 +402,7 @@ EMAIL_BACKEND = os.getenv(
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com").strip()
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").strip().lower() == "true"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").strip().lower() == "true"
 
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "").strip().replace(" ", "")
@@ -412,12 +418,18 @@ logger = logging.getLogger(__name__)
 # Log configuration presence without exposing sender or host values.
 try:
     logger.info(
-        "Email configuration loaded: backend=%s host_configured=%s port=%s tls=%s "
-        "user_configured=%s password_configured=%s sender_configured=%s",
+        "Email configuration loaded: provider=%s backend=%s "
+        "brevo_api_key_configured=%s brevo_sender_configured=%s "
+        "smtp_host_configured=%s smtp_port=%s smtp_tls=%s smtp_ssl=%s "
+        "smtp_user_configured=%s smtp_password_configured=%s smtp_sender_configured=%s",
+        EMAIL_PROVIDER or "unset",
         EMAIL_BACKEND,
+        bool(BREVO_API_KEY),
+        bool(BREVO_SENDER_EMAIL),
         bool(EMAIL_HOST),
         EMAIL_PORT,
         EMAIL_USE_TLS,
+        EMAIL_USE_SSL,
         bool(EMAIL_HOST_USER),
         bool(EMAIL_HOST_PASSWORD),
         bool(DEFAULT_FROM_EMAIL),
