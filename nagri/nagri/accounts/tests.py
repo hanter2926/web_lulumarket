@@ -271,7 +271,9 @@ class AccountStatusAdminTests(TestCase):
         change_url = reverse(
             "admin:accounts_customuser_change", kwargs={"object_id": user.pk}
         )
-        self.assertEqual(self.client.get(change_url).status_code, 200)
+        change_form_response = self.client.get(change_url)
+        self.assertEqual(change_form_response.status_code, 200)
+        date_joined = timezone.localtime(user.date_joined)
         change_response = self.client.post(
             change_url,
             {
@@ -279,6 +281,8 @@ class AccountStatusAdminTests(TestCase):
                 "first_name": "",
                 "last_name": "",
                 "email": user.email,
+                "date_joined_0": date_joined.strftime("%Y-%m-%d"),
+                "date_joined_1": date_joined.strftime("%H:%M:%S"),
                 "is_active": "on",
                 "is_staff": "on",
                 "is_superuser": "on",
@@ -583,7 +587,9 @@ class PhoneOTPAPISecurityTests(TestCase):
     def test_phone_otp_cannot_be_reused_after_successful_verification(self):
         self.user.is_active = False
         self.user.account_status = CustomUser.AccountStatus.PENDING_VERIFICATION
-        self.user.save(update_fields=["is_active", "updated_at"])
+        self.user.save(
+            update_fields=["account_status", "is_active", "updated_at"]
+        )
         self.profile.is_phone_verified = False
         self.profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
         self.profile.save(update_fields=["is_phone_verified", "otp_expires_at", "updated_at"])
@@ -608,6 +614,115 @@ class PhoneOTPAPISecurityTests(TestCase):
         self.assertTrue(self.profile.is_phone_verified)
         self.assertFalse(self.profile.otp)
 
+    def test_shared_phone_otp_attempt_limit_applies_to_both_verification_routes(self):
+        endpoints = (
+            reverse("accounts:verify_otp"),
+            reverse("accounts:users-phone-login"),
+        )
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                self.profile.otp = self.otp
+                self.profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
+                self.profile.otp_attempts = 0
+                self.profile.save(
+                    update_fields=[
+                        "otp",
+                        "otp_expires_at",
+                        "otp_attempts",
+                        "updated_at",
+                    ]
+                )
+
+                for attempt in range(5):
+                    response = self.client.post(
+                        endpoint,
+                        {"phone": self.user.phone, "otp": "000000"},
+                        content_type="application/json",
+                    )
+                    self.assertEqual(
+                        response.status_code,
+                        429 if attempt == 4 else 400,
+                    )
+
+                self.profile.refresh_from_db()
+                self.assertEqual(self.profile.otp_attempts, 5)
+                self.assertFalse(self.profile.otp)
+                locked_response = self.client.post(
+                    endpoint,
+                    {"phone": self.user.phone, "otp": self.otp},
+                    content_type="application/json",
+                )
+                self.assertEqual(locked_response.status_code, 429)
+                self.profile.refresh_from_db()
+                self.assertTrue(self.profile.is_phone_verified)
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_phone_otp_request_cooldown_is_enforced_atomically(self, send_otp):
+        now = timezone.now()
+        with patch("accounts.views.timezone.now", return_value=now):
+            first_response = self.client.post(
+                reverse("accounts:request_otp"),
+                {"phone": self.user.phone},
+                content_type="application/json",
+            )
+            second_response = self.client.post(
+                reverse("accounts:request_otp"),
+                {"phone": self.user.phone},
+                content_type="application/json",
+            )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 429)
+        self.assertIn("wait", second_response.json()["detail"].lower())
+        send_otp.assert_called_once()
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_phone_otp_hourly_request_limit_and_cooldown(self, send_otp):
+        start = timezone.now()
+        with patch(
+            "accounts.views.timezone.now",
+            side_effect=lambda: start
+            + timedelta(seconds=61 * send_otp.call_count),
+        ):
+            for _ in range(5):
+                response = self.client.post(
+                    reverse("accounts:request_otp"),
+                    {"phone": self.user.phone},
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 200)
+
+            limited_response = self.client.post(
+                reverse("accounts:request_otp"),
+                {"phone": self.user.phone},
+                content_type="application/json",
+            )
+
+        self.assertEqual(limited_response.status_code, 429)
+        self.assertIn("hourly", limited_response.json()["detail"].lower())
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.otp_request_count, 5)
+        self.assertEqual(send_otp.call_count, 5)
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_new_phone_otp_resets_failed_attempts(self, send_otp):
+        self.profile.otp_attempts = 4
+        self.profile.last_otp_sent_at = timezone.now() - timedelta(seconds=61)
+        self.profile.save(
+            update_fields=["otp_attempts", "last_otp_sent_at", "updated_at"]
+        )
+
+        response = self.client.post(
+            reverse("accounts:request_otp"),
+            {"phone": self.user.phone},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.otp_attempts, 0)
+        send_otp.assert_called_once()
+
     def test_phone_login_cannot_activate_pending_signup(self):
         self.user.is_active = False
         self.user.account_status = CustomUser.AccountStatus.PENDING_VERIFICATION
@@ -616,7 +731,9 @@ class PhoneOTPAPISecurityTests(TestCase):
         self.profile.save(
             update_fields=["is_phone_verified", "otp_expires_at", "updated_at"]
         )
-        self.user.save(update_fields=["is_active", "updated_at"])
+        self.user.save(
+            update_fields=["account_status", "is_active", "updated_at"]
+        )
 
         response = self.client.post(
             reverse("accounts:users-phone-login"),

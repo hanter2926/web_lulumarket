@@ -89,6 +89,9 @@ class UserProfile(models.Model):
     pending_phone_otp_attempts = models.PositiveSmallIntegerField(default=0)
     otp = models.CharField(max_length=6, blank=True, null=True)
     otp_expires_at = models.DateTimeField(blank=True, null=True)
+    otp_attempts = models.PositiveSmallIntegerField(default=0)
+    otp_request_count = models.PositiveSmallIntegerField(default=0)
+    otp_request_window_started_at = models.DateTimeField(blank=True, null=True)
     is_phone_verified = models.BooleanField(default=False)
     last_otp_sent_at = models.DateTimeField(blank=True, null=True)
     # Notification preferences
