@@ -29,6 +29,7 @@ class Command(BaseCommand):
                 "is_staff": True,
                 "is_superuser": True,
                 "is_active": True,
+                "account_status": User.AccountStatus.ACTIVE,
             },
         )
 
@@ -36,6 +37,7 @@ class Command(BaseCommand):
         user.is_staff = True
         user.is_superuser = True
         user.is_active = True
+        user.account_status = User.AccountStatus.ACTIVE
         user.set_password(password)
         user.save()
 

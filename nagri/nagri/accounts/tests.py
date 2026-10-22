@@ -1,12 +1,15 @@
 from datetime import timedelta
 import json
+import os
 import smtplib
 
 from anymail.exceptions import AnymailRequestsAPIError
+from django.contrib import admin
 from django.core import mail
 from django.core.mail import EmailMessage
+from django.core.management import call_command
 from django.db import OperationalError
-from django.test import TestCase, Client, override_settings
+from django.test import TestCase, Client, RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.auth.hashers import check_password
@@ -15,7 +18,7 @@ from urllib.parse import urlencode, urlparse
 import re
 from requests import Response, Timeout
 
-from .email_otp import verify_email_otp
+from .email_otp import request_email_otp, verify_email_otp
 from .email_delivery import (
     BrevoAPIError,
     EmailDeliveryConfigurationError,
@@ -174,6 +177,42 @@ class AccountTests(TestCase):
         send_otp.assert_called_once()
 
 
+class AccountStatusAdminTests(TestCase):
+    def test_admin_status_changes_keep_is_active_in_sync(self):
+        user = CustomUser.objects.create_user(
+            email="admin-status@example.com",
+            username="admin-status",
+            password="StrongPass123!",
+        )
+        user_admin = admin.site._registry[CustomUser]
+        request = RequestFactory().post("/admin/accounts/customuser/")
+
+        user.account_status = CustomUser.AccountStatus.ADMIN_DISABLED
+        user_admin.save_model(request, user, form=None, change=True)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+
+        user.account_status = CustomUser.AccountStatus.ACTIVE
+        user_admin.save_model(request, user, form=None, change=True)
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+
+    def test_create_admin_command_marks_account_status_active(self):
+        with patch.dict(
+            os.environ,
+            {
+                "ADMIN_EMAIL": "managed-admin@example.com",
+                "ADMIN_PASSWORD": "StrongAdminPass123!",
+                "ADMIN_USERNAME": "managed-admin",
+            },
+        ):
+            call_command("create_admin", stdout=Mock())
+
+        user = CustomUser.objects.get(email="managed-admin@example.com")
+        self.assertTrue(user.is_active)
+        self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
+
+
 class PhoneOTPAPISecurityTests(TestCase):
     otp = "642951"
 
@@ -200,6 +239,8 @@ class PhoneOTPAPISecurityTests(TestCase):
             if isinstance(value, dict):
                 self.assertNotIn("otp", value)
                 self.assertNotIn("otp_expires_at", value)
+                self.assertNotIn("pending_phone_otp", value)
+                self.assertNotIn("pending_phone_otp_expires_at", value)
                 for nested_value in value.values():
                     assert_no_otp_field(nested_value)
             elif isinstance(value, list):
@@ -311,6 +352,7 @@ class PhoneOTPAPISecurityTests(TestCase):
 
     def test_phone_otp_cannot_be_reused_after_successful_verification(self):
         self.user.is_active = False
+        self.user.account_status = CustomUser.AccountStatus.PENDING_VERIFICATION
         self.user.save(update_fields=["is_active", "updated_at"])
         self.profile.is_phone_verified = False
         self.profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
@@ -336,9 +378,34 @@ class PhoneOTPAPISecurityTests(TestCase):
         self.assertTrue(self.profile.is_phone_verified)
         self.assertFalse(self.profile.otp)
 
+    def test_phone_login_cannot_activate_pending_signup(self):
+        self.user.is_active = False
+        self.user.account_status = CustomUser.AccountStatus.PENDING_VERIFICATION
+        self.profile.is_phone_verified = False
+        self.profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
+        self.profile.save(
+            update_fields=["is_phone_verified", "otp_expires_at", "updated_at"]
+        )
+        self.user.save(update_fields=["is_active", "updated_at"])
+
+        response = self.client.post(
+            reverse("accounts:users-phone-login"),
+            {"phone": self.user.phone, "otp": self.otp},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertEqual(
+            self.user.account_status,
+            CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
+
     def test_phone_otp_cannot_reactivate_inactive_phone_verified_account(self):
         self.user.is_active = False
-        self.user.save(update_fields=["is_active", "updated_at"])
+        self.user.account_status = CustomUser.AccountStatus.ADMIN_DISABLED
+        self.user.save(update_fields=["account_status", "is_active", "updated_at"])
         self.profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
         self.profile.save(update_fields=["otp_expires_at", "updated_at"])
 
@@ -363,7 +430,8 @@ class PhoneOTPAPISecurityTests(TestCase):
     @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
     def test_request_otp_does_not_clear_disabled_users_phone_verification(self, send_otp):
         self.user.is_active = False
-        self.user.save(update_fields=["is_active", "updated_at"])
+        self.user.account_status = CustomUser.AccountStatus.ADMIN_DISABLED
+        self.user.save(update_fields=["account_status", "is_active", "updated_at"])
 
         response = self.client.post(
             reverse("accounts:request_otp"),
@@ -376,6 +444,212 @@ class PhoneOTPAPISecurityTests(TestCase):
         self.profile.refresh_from_db()
         self.assertTrue(self.profile.is_phone_verified)
         self.assertEqual(self.profile.otp, self.otp)
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_phone_change_keeps_old_verified_number_until_new_number_is_confirmed(
+        self, send_otp
+    ):
+        self.client.force_login(self.user)
+        new_phone = "+919876543211"
+        with patch("accounts.views.generate_otp", return_value=self.otp):
+            response = self.client.post(
+                reverse("accounts:users-phone-change-request"),
+                {"phone": new_phone},
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self._assert_otp_not_serialized(response.json())
+        send_otp.assert_called_once_with(new_phone, self.otp)
+        self.user.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(self.user.phone, "+919876543210")
+        self.assertEqual(self.profile.phone, "+919876543210")
+        self.assertTrue(self.profile.is_phone_verified)
+        self.assertEqual(self.profile.pending_phone, new_phone)
+        self.assertEqual(self.profile.pending_phone_otp, self.otp)
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_phone_change_verification_promotes_new_number_and_consumes_code(
+        self, send_otp
+    ):
+        self.client.force_login(self.user)
+        new_phone = "+919876543211"
+        with patch("accounts.views.generate_otp", return_value=self.otp):
+            request_response = self.client.post(
+                reverse("accounts:users-phone-change-request"),
+                {"phone": new_phone},
+                content_type="application/json",
+            )
+        self.assertEqual(request_response.status_code, 200)
+
+        response = self.client.post(
+            reverse("accounts:users-phone-change-verify"),
+            {"otp": self.otp},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self._assert_otp_not_serialized(response.json())
+        self.user.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(self.user.phone, new_phone)
+        self.assertEqual(self.profile.phone, new_phone)
+        self.assertTrue(self.profile.is_phone_verified)
+        self.assertIsNone(self.profile.pending_phone)
+        self.assertIsNone(self.profile.pending_phone_otp)
+        self.assertIsNone(self.profile.pending_phone_otp_expires_at)
+
+    def test_invalid_or_expired_phone_change_code_preserves_old_verified_number(self):
+        self.client.force_login(self.user)
+        self.profile.pending_phone = "+919876543211"
+        self.profile.pending_phone_otp = self.otp
+        self.profile.pending_phone_otp_expires_at = timezone.now() + timedelta(minutes=5)
+        self.profile.save(
+            update_fields=[
+                "pending_phone",
+                "pending_phone_otp",
+                "pending_phone_otp_expires_at",
+                "updated_at",
+            ]
+        )
+
+        invalid_response = self.client.post(
+            reverse("accounts:users-phone-change-verify"),
+            {"otp": "000000"},
+            content_type="application/json",
+        )
+        self.assertEqual(invalid_response.status_code, 400)
+
+        self.profile.pending_phone_otp_expires_at = timezone.now() - timedelta(seconds=1)
+        self.profile.save(update_fields=["pending_phone_otp_expires_at", "updated_at"])
+        expired_response = self.client.post(
+            reverse("accounts:users-phone-change-verify"),
+            {"otp": self.otp},
+            content_type="application/json",
+        )
+
+        self.assertEqual(expired_response.status_code, 400)
+        self.user.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(self.user.phone, "+919876543210")
+        self.assertEqual(self.profile.phone, "+919876543210")
+        self.assertTrue(self.profile.is_phone_verified)
+        self.assertEqual(self.profile.pending_phone, "+919876543211")
+
+    def test_phone_change_verification_rejects_a_number_claimed_after_request(self):
+        self.client.force_login(self.user)
+        new_phone = "+919876543211"
+        self.profile.pending_phone = new_phone
+        self.profile.pending_phone_otp = self.otp
+        self.profile.pending_phone_otp_expires_at = timezone.now() + timedelta(minutes=5)
+        self.profile.save(
+            update_fields=[
+                "pending_phone",
+                "pending_phone_otp",
+                "pending_phone_otp_expires_at",
+                "updated_at",
+            ]
+        )
+        CustomUser.objects.create_user(
+            email="claimed-phone@example.com",
+            username="claimed-phone",
+            password="StrongPass123!",
+            phone=new_phone,
+        )
+
+        response = self.client.post(
+            reverse("accounts:users-phone-change-verify"),
+            {"otp": self.otp},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(self.user.phone, "+919876543210")
+        self.assertEqual(self.profile.phone, "+919876543210")
+        self.assertTrue(self.profile.is_phone_verified)
+        self.assertEqual(self.profile.pending_phone, new_phone)
+
+    def test_profile_and_user_apis_cannot_bypass_phone_verification(self):
+        new_phone = "+919876543211"
+        self.client.force_login(self.user)
+        user_response = self.client.patch(
+            reverse("accounts:users-detail", kwargs={"pk": self.user.pk}),
+            {"phone": new_phone},
+            content_type="application/json",
+        )
+        profile_response = self.client.patch(
+            reverse("accounts:profiles-update-profile"),
+            {"phone": new_phone},
+            content_type="application/json",
+        )
+
+        self.assertEqual(user_response.status_code, 200)
+        self.assertEqual(profile_response.status_code, 200)
+        self.user.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertEqual(self.user.phone, "+919876543210")
+        self.assertEqual(self.profile.phone, "+919876543210")
+        self.assertTrue(self.profile.is_phone_verified)
+        self.assertIsNone(self.profile.pending_phone)
+
+    @patch("accounts.views.send_otp_to_phone", side_effect=RuntimeError("otp-secret failure"))
+    def test_phone_change_delivery_error_does_not_log_otp_or_exception_text(self, send_otp):
+        self.client.force_login(self.user)
+        with patch("accounts.views.generate_otp", return_value=self.otp):
+            with self.assertLogs("accounts.views", level="ERROR") as captured:
+                response = self.client.post(
+                    reverse("accounts:users-phone-change-request"),
+                    {"phone": "+919876543211"},
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 500)
+        log_output = "\n".join(captured.output)
+        self.assertNotIn(self.otp, log_output)
+        self.assertNotIn("otp-secret failure", log_output)
+        send_otp.assert_called_once()
+
+    def test_admin_disabled_account_cannot_be_activated_by_phone_otp(self):
+        self.user.is_active = False
+        self.user.account_status = CustomUser.AccountStatus.ADMIN_DISABLED
+        self.profile.is_phone_verified = False
+        self.profile.save(update_fields=["is_phone_verified", "updated_at"])
+        self.user.save(update_fields=["account_status", "is_active", "updated_at"])
+
+        response = self.client.post(
+            reverse("accounts:verify_otp"),
+            {"phone": self.user.phone, "otp": self.otp},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertEqual(
+            self.user.account_status,
+            CustomUser.AccountStatus.ADMIN_DISABLED,
+        )
+
+    def test_pending_signup_account_can_be_activated_by_phone_otp(self):
+        self.user.is_active = False
+        self.user.account_status = CustomUser.AccountStatus.PENDING_VERIFICATION
+        self.profile.is_phone_verified = False
+        self.profile.save(update_fields=["is_phone_verified", "updated_at"])
+        self.user.save(update_fields=["account_status", "is_active", "updated_at"])
+
+        response = self.client.post(
+            reverse("accounts:verify_otp"),
+            {"phone": self.user.phone, "otp": self.otp},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertEqual(self.user.account_status, CustomUser.AccountStatus.ACTIVE)
 
 
 class AccountSecurityTests(TestCase):
@@ -575,6 +849,10 @@ class SignupFlowTests(TestCase):
         user = CustomUser.objects.get(email=self.signup_data["email"])
         self.assertFalse(user.is_active)
         self.assertFalse(user.is_email_verified)
+        self.assertEqual(
+            user.account_status,
+            CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
         self.assertTrue(user.check_password(self.signup_data["password"]))
         self.assertNotEqual(user.password, self.signup_data["password"])
         profile = UserProfile.objects.get(user=user)
@@ -592,6 +870,7 @@ class SignupFlowTests(TestCase):
         user.refresh_from_db()
         self.assertTrue(user.is_active)
         self.assertTrue(user.is_email_verified)
+        self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
         self.assertFalse(UserProfile.objects.get(user=user).is_phone_verified)
 
         self.client.get(reverse("accounts:logout_page"))
@@ -769,6 +1048,35 @@ class SignupFlowTests(TestCase):
         missing_terms = {key: value for key, value in self.signup_data.items() if key != "terms"}
         response = self.client.post(reverse("accounts:signup_form"), missing_terms)
         self.assertContains(response, "This field is required.")
+
+    def test_email_signup_otp_cannot_activate_admin_disabled_account(self):
+        user = CustomUser.objects.create_user(
+            email="disabled-signup@example.com",
+            username="disabled-signup",
+            password="StrongSignupPass123!",
+            is_active=False,
+            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
+        request_email_otp(user.email, EmailOTPChallenge.Purpose.SIGNUP)
+        code = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group(0)
+
+        user.account_status = CustomUser.AccountStatus.ADMIN_DISABLED
+        user.is_active = False
+        user.save(update_fields=["account_status", "is_active", "updated_at"])
+
+        result = verify_email_otp(
+            user.email,
+            code,
+            EmailOTPChallenge.Purpose.SIGNUP,
+        )
+
+        self.assertIsNone(result)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+        self.assertEqual(
+            user.account_status,
+            CustomUser.AccountStatus.ADMIN_DISABLED,
+        )
 
 
 @override_settings(

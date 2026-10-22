@@ -8,7 +8,17 @@ from django.utils import timezone
 
 
 class CustomUser(AbstractUser):
+    class AccountStatus(models.TextChoices):
+        PENDING_VERIFICATION = "pending_verification", "Pending verification"
+        ACTIVE = "active", "Active"
+        ADMIN_DISABLED = "admin_disabled", "Disabled by administrator"
+
     email = models.EmailField(unique=True)
+    account_status = models.CharField(
+        max_length=24,
+        choices=AccountStatus.choices,
+        default=AccountStatus.ACTIVE,
+    )
     is_email_verified = models.BooleanField(default=False)
     phone = models.CharField(max_length=20, blank=True, null=True)
     avatar = models.ImageField(upload_to="profiles/", blank=True, null=True)
@@ -73,6 +83,9 @@ class UserProfile(models.Model):
     state = models.CharField(max_length=100, blank=True, null=True)
     country = models.CharField(max_length=100, blank=True, null=True)
     pincode = models.CharField(max_length=20, blank=True, null=True)
+    pending_phone = models.CharField(max_length=20, blank=True, null=True)
+    pending_phone_otp = models.CharField(max_length=6, blank=True, null=True)
+    pending_phone_otp_expires_at = models.DateTimeField(blank=True, null=True)
     otp = models.CharField(max_length=6, blank=True, null=True)
     otp_expires_at = models.DateTimeField(blank=True, null=True)
     is_phone_verified = models.BooleanField(default=False)

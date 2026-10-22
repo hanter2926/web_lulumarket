@@ -140,9 +140,12 @@ class DeliveryWorker(models.Model):
     @property
     def is_mobile_verified(self):
         profile = getattr(self.user, "profile", None)
-        if profile is not None:
-            return bool(profile.is_phone_verified)
-        return bool(self.user.phone and self.user.phone == self.phone)
+        return bool(
+            profile
+            and profile.is_phone_verified
+            and profile.phone
+            and profile.phone == self.phone
+        )
 
     class Meta:
         ordering = ["-created_at"]

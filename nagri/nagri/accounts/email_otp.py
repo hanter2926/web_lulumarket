@@ -31,9 +31,17 @@ def _eligible_user(email, purpose):
         return None
 
     if purpose == EmailOTPChallenge.Purpose.SIGNUP:
-        if user.is_active or user.is_email_verified or not user.has_usable_password():
+        if (
+            user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
+            or user.is_active
+            or user.is_email_verified
+            or not user.has_usable_password()
+        ):
             return None
-    elif not user.is_active:
+    elif (
+        user.account_status != CustomUser.AccountStatus.ACTIVE
+        or not user.is_active
+    ):
         return None
 
     if purpose == EmailOTPChallenge.Purpose.LOGIN:
@@ -159,14 +167,22 @@ def verify_email_otp(email, code, purpose):
             return None
 
         if purpose == EmailOTPChallenge.Purpose.SIGNUP:
-            if user.is_active or user.is_email_verified:
+            if (
+                user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
+                or user.is_active
+                or user.is_email_verified
+            ):
                 return None
             user.is_email_verified = True
             user.is_active = True
-            user.save(update_fields=["is_email_verified", "is_active", "updated_at"])
+            user.account_status = CustomUser.AccountStatus.ACTIVE
+            user.save(update_fields=["is_email_verified", "is_active", "account_status", "updated_at"])
             return user
 
-        if not user.is_active:
+        if (
+            user.account_status != CustomUser.AccountStatus.ACTIVE
+            or not user.is_active
+        ):
             return None
 
         if purpose == EmailOTPChallenge.Purpose.LOGIN:

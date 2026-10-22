@@ -1,9 +1,52 @@
 from django.contrib import admin
-from .models import UserProfile
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.forms import UserChangeForm, UserCreationForm
+from .models import CustomUser, UserProfile
 from .models import HomeSlider
 from django.utils.html import format_html
 
 admin.site.register(UserProfile)
+
+
+class CustomUserCreationForm(UserCreationForm):
+    class Meta(UserCreationForm.Meta):
+        model = CustomUser
+        fields = ("email", "username")
+
+
+class CustomUserChangeForm(UserChangeForm):
+    class Meta(UserChangeForm.Meta):
+        model = CustomUser
+        fields = "__all__"
+
+
+@admin.register(CustomUser)
+class CustomUserAdmin(UserAdmin):
+    add_form = CustomUserCreationForm
+    form = CustomUserChangeForm
+    fieldsets = UserAdmin.fieldsets + (
+        ("Account status", {"fields": ("account_status",)}),
+    )
+    add_fieldsets = (
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "email",
+                    "username",
+                    "password1",
+                    "password2",
+                    "account_status",
+                ),
+            },
+        ),
+    )
+    list_display = UserAdmin.list_display + ("account_status",)
+
+    def save_model(self, request, obj, form, change):
+        obj.is_active = obj.account_status == CustomUser.AccountStatus.ACTIVE
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(HomeSlider)

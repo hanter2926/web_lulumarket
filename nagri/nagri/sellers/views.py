@@ -1127,10 +1127,7 @@ def shopkeeper_worker_add(request):
         if not email or not phone or store is None:
             messages.error(request, "Please provide valid worker data and assign a store.")
         else:
-            user, created = CustomUser.objects.get_or_create(email=email.lower(), defaults={"username": email.lower().split("@")[0], "is_customer": True, "is_vendor": False, "phone": phone})
-            if not created:
-                user.phone = phone
-                user.save(update_fields=["phone", "updated_at"])
+            user, _ = CustomUser.objects.get_or_create(email=email.lower(), defaults={"username": email.lower().split("@")[0], "is_customer": True, "is_vendor": False})
             worker = DeliveryWorker.objects.create(user=user, shopkeeper=shopkeeper, store=store, phone=phone, status="active", is_available=True)
             messages.success(request, "Worker added successfully.")
             return redirect("sellers:shopkeeper_worker_edit", pk=worker.pk)

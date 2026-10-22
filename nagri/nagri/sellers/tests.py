@@ -34,6 +34,52 @@ class SellerFlowTests(TestCase):
         self.client.post(reverse('sellers:verify_email'), {'otp': otp})
         return SellerApplication.objects.get(user=self.user)
 
+    def test_adding_existing_worker_does_not_change_the_users_verified_phone(self):
+        from accounts.models import UserProfile
+        from sellers.models import DeliveryWorker, Shopkeeper, Store
+
+        existing_user = CustomUser.objects.create_user(
+            email="existing-worker@example.com",
+            username="existing-worker",
+            password="pass",
+            phone="+919876543210",
+        )
+        UserProfile.objects.create(
+            user=existing_user,
+            phone=existing_user.phone,
+            is_phone_verified=True,
+        )
+        shopkeeper = Shopkeeper.objects.create(
+            user=self.user,
+            status="active",
+            shop_name="Test Shop",
+        )
+        store = Store.objects.create(
+            shopkeeper=shopkeeper,
+            name="Test Store",
+            slug="test-worker-phone-store",
+            city="Test City",
+        )
+
+        response = self.client.post(
+            reverse("sellers:shopkeeper_worker_add"),
+            {
+                "email": existing_user.email,
+                "phone": "+919876543211",
+                "store": store.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        existing_user.refresh_from_db()
+        profile = UserProfile.objects.get(user=existing_user)
+        worker = DeliveryWorker.objects.get(user=existing_user)
+        self.assertEqual(existing_user.phone, "+919876543210")
+        self.assertEqual(profile.phone, "+919876543210")
+        self.assertTrue(profile.is_phone_verified)
+        self.assertEqual(worker.phone, "+919876543211")
+        self.assertFalse(worker.is_mobile_verified)
+
     def test_otp_generation_and_verification(self):
         resp = self.client.post(reverse('sellers:send_otp'))
         self.assertEqual(resp.status_code, 302)

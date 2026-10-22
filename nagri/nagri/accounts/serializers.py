@@ -23,7 +23,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["user", "is_phone_verified", "last_otp_sent_at", "created_at", "updated_at"]
+        read_only_fields = ["user", "phone", "is_phone_verified", "last_otp_sent_at", "created_at", "updated_at"]
 
 
 class AddressSerializer(serializers.ModelSerializer):
@@ -91,7 +91,7 @@ class UserSerializer(serializers.ModelSerializer):
             "payment_methods",
             "password",
         ]
-        read_only_fields = ["is_email_verified", "is_vendor", "is_customer"]
+        read_only_fields = ["phone", "is_email_verified", "is_vendor", "is_customer"]
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)

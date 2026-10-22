@@ -5,7 +5,7 @@ from .models import UserProfile, Address
 class ProfileForm(forms.ModelForm):
     class Meta:
         model = UserProfile
-        fields = ['full_name', 'phone', 'avatar']
+        fields = ['full_name', 'avatar']
 
 
 class NotificationForm(forms.ModelForm):

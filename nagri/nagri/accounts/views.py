@@ -71,7 +71,10 @@ def find_user_by_phone(phone):
 
 
 def get_phone_verification_error_message(user):
-    if not getattr(user, "is_active", True):
+    if (
+        user.account_status != CustomUser.AccountStatus.ACTIVE
+        or not getattr(user, "is_active", True)
+    ):
         return "Your account is inactive. Please contact support."
 
     profile = UserProfile.objects.filter(user=user).first()
@@ -81,26 +84,150 @@ def get_phone_verification_error_message(user):
     return "Verify your phone number before logging in."
 
 
-def _consume_phone_otp(user_id, otp):
+def _consume_phone_otp(user_id, otp, allow_pending_signup=True):
     with transaction.atomic():
         user = CustomUser.objects.select_for_update().get(pk=user_id)
         profile = UserProfile.objects.select_for_update().filter(user=user).first()
 
-        if profile and not user.is_active and profile.is_phone_verified:
+        if user.account_status == CustomUser.AccountStatus.ADMIN_DISABLED:
             return user, None, "inactive"
+        if user.account_status == CustomUser.AccountStatus.PENDING_VERIFICATION:
+            if user.is_active or not allow_pending_signup:
+                return user, None, "inactive"
+        elif (
+            user.account_status != CustomUser.AccountStatus.ACTIVE
+            or not user.is_active
+        ):
+            return user, None, "inactive"
+
         if not profile or not profile.otp or not secrets.compare_digest(profile.otp, otp):
             return user, None, "invalid"
         if not profile.otp_expires_at or timezone.now() >= profile.otp_expires_at:
             return user, None, "expired"
 
-        if not user.is_active:
+        if user.account_status == CustomUser.AccountStatus.PENDING_VERIFICATION:
+            user.account_status = CustomUser.AccountStatus.ACTIVE
             user.is_active = True
-            user.save(update_fields=["is_active", "updated_at"])
+            user.save(update_fields=["account_status", "is_active", "updated_at"])
 
         profile.is_phone_verified = True
         profile.otp = ""
         profile.otp_expires_at = None
         profile.save(update_fields=["is_phone_verified", "otp", "otp_expires_at", "updated_at"])
+
+    return user, profile, None
+
+
+def _start_phone_change(user, raw_phone):
+    if (
+        user.account_status != CustomUser.AccountStatus.ACTIVE
+        or not user.is_active
+    ):
+        return status.HTTP_403_FORBIDDEN, "Your account is inactive. Please contact support."
+
+    phone = normalize_phone_number(str(raw_phone or "").strip())
+    if not phone:
+        return status.HTTP_400_BAD_REQUEST, "Enter a valid phone number."
+
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    current_phone = normalize_phone_number(profile.phone or user.phone or "")
+    if phone == current_phone:
+        return status.HTTP_400_BAD_REQUEST, "This phone number is already on your account."
+
+    existing_user = find_user_by_phone(phone)
+    if existing_user and existing_user.pk != user.pk:
+        return status.HTTP_400_BAD_REQUEST, "An account with this phone number already exists."
+    if UserProfile.objects.filter(pending_phone__iexact=phone).exclude(user=user).exists():
+        return status.HTTP_400_BAD_REQUEST, "This phone number is already pending verification."
+
+    now = timezone.now()
+    if profile.last_otp_sent_at and now - profile.last_otp_sent_at < timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS):
+        return status.HTTP_429_TOO_MANY_REQUESTS, "Please wait before requesting another OTP."
+
+    otp_code = generate_otp()
+    profile.pending_phone = phone
+    profile.pending_phone_otp = otp_code
+    profile.pending_phone_otp_expires_at = now + timedelta(minutes=OTP_TTL_MINUTES)
+    profile.save(
+        update_fields=[
+            "pending_phone",
+            "pending_phone_otp",
+            "pending_phone_otp_expires_at",
+            "updated_at",
+        ]
+    )
+
+    try:
+        send_result = send_otp_to_phone(phone, otp_code)
+        status_sent = (
+            str(send_result.get("status") or "").lower() == "sent"
+            if isinstance(send_result, dict)
+            else True
+        )
+        if not status_sent:
+            raise RuntimeError("Phone OTP provider did not confirm delivery")
+    except Exception as exc:
+        profile.pending_phone = None
+        profile.pending_phone_otp = None
+        profile.pending_phone_otp_expires_at = None
+        profile.save(
+            update_fields=[
+                "pending_phone",
+                "pending_phone_otp",
+                "pending_phone_otp_expires_at",
+                "updated_at",
+            ]
+        )
+        logger.error("Phone change OTP delivery failed: error_type=%s", type(exc).__name__)
+        return status.HTTP_500_INTERNAL_SERVER_ERROR, "Unable to send OTP right now. Please try again later."
+
+    profile.last_otp_sent_at = timezone.now()
+    profile.save(update_fields=["last_otp_sent_at", "updated_at"])
+    return status.HTTP_200_OK, "OTP sent to the new phone number."
+
+
+def _consume_phone_change_otp(user_id, otp):
+    with transaction.atomic():
+        user = CustomUser.objects.select_for_update().get(pk=user_id)
+        profile = UserProfile.objects.select_for_update().filter(user=user).first()
+
+        if (
+            user.account_status != CustomUser.AccountStatus.ACTIVE
+            or not user.is_active
+        ):
+            return user, None, "inactive"
+        if not profile or not profile.pending_phone:
+            return user, None, "missing"
+        if not profile.pending_phone_otp or not secrets.compare_digest(profile.pending_phone_otp, otp):
+            return user, None, "invalid"
+        if (
+            not profile.pending_phone_otp_expires_at
+            or timezone.now() >= profile.pending_phone_otp_expires_at
+        ):
+            return user, None, "expired"
+
+        new_phone = profile.pending_phone
+        existing_user = find_user_by_phone(new_phone)
+        if existing_user and existing_user.pk != user.pk:
+            return user, None, "taken"
+
+        profile.phone = new_phone
+        profile.pending_phone = None
+        profile.pending_phone_otp = None
+        profile.pending_phone_otp_expires_at = None
+        profile.is_phone_verified = True
+        profile.save(
+            update_fields=[
+                "phone",
+                "pending_phone",
+                "pending_phone_otp",
+                "pending_phone_otp_expires_at",
+                "is_phone_verified",
+                "updated_at",
+            ]
+        )
+        user.phone = new_phone
+        user.save(update_fields=["phone", "updated_at"])
 
     return user, profile, None
 
@@ -120,13 +247,75 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
 
+    @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def phone_change_request(self, request):
+        response_status, detail = _start_phone_change(
+            request.user, request.data.get("phone", "")
+        )
+        return Response({"detail": detail}, status=response_status)
+
+    @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def phone_change_verify(self, request):
+        otp = (request.data.get("otp") or "").strip()
+        if not otp:
+            return Response(
+                {"detail": "Phone number and OTP are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user, profile, otp_error = _consume_phone_change_otp(
+            request.user.pk, otp
+        )
+        if otp_error == "inactive":
+            return Response(
+                {"detail": "Your account is inactive. Please contact support."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if otp_error == "missing":
+            return Response(
+                {"detail": "No phone number is awaiting verification."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if otp_error == "expired":
+            return Response(
+                {"detail": "OTP has expired. Please request a new one."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if otp_error == "taken":
+            return Response(
+                {"detail": "This phone number is already associated with another account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if otp_error == "invalid":
+            return Response(
+                {"detail": "Invalid OTP."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {"detail": "Phone number verified successfully.", "user": self.get_serializer(user).data}
+        )
+
+    @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def phone_change_resend(self, request):
+        profile = UserProfile.objects.filter(user=request.user).first()
+        if not profile or not profile.pending_phone:
+            return Response(
+                {"detail": "No phone number is awaiting verification."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        response_status, detail = _start_phone_change(
+            request.user, profile.pending_phone
+        )
+        return Response({"detail": detail}, status=response_status)
+
     @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
     def register(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        user.is_active = False
-        user.save(update_fields=["is_active", "updated_at"])
+        user = serializer.save(
+            is_active=False,
+            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
 
         profile, _ = UserProfile.objects.get_or_create(user=user)
         raw_phone = (request.data.get("phone") or "").strip()
@@ -193,7 +382,10 @@ class UserViewSet(viewsets.ModelViewSet):
         if not user or not user.check_password(password):
             return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        if not getattr(user, "is_active", True):
+        if (
+            user.account_status != CustomUser.AccountStatus.ACTIVE
+            or not user.is_active
+        ):
             return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
 
         profile = UserProfile.objects.filter(user=user).first()
@@ -230,7 +422,9 @@ class UserViewSet(viewsets.ModelViewSet):
         if not user:
             return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
-        user, profile, otp_error = _consume_phone_otp(user.pk, otp)
+        user, profile, otp_error = _consume_phone_otp(
+            user.pk, otp, allow_pending_signup=False
+        )
         if otp_error == "inactive":
             return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
         if otp_error == "invalid":
@@ -514,10 +708,20 @@ def request_otp(request):
         return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
-    if not user.is_active and profile.is_phone_verified:
+    if (
+        user.account_status != CustomUser.AccountStatus.ACTIVE
+        or not user.is_active
+    ):
         if browser_request:
             return render(request, "accounts/otp_login.html", {"phone": phone, "error": "Your account is inactive. Please contact support."}, status=403)
         return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
+    if profile.pending_phone:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "Complete or cancel the pending phone change before requesting a login OTP."}, status=409)
+        return Response(
+            {"detail": "Complete or cancel the pending phone change before requesting a login OTP."},
+            status=status.HTTP_409_CONFLICT,
+        )
 
     if profile.last_otp_sent_at and timezone.now() - profile.last_otp_sent_at < timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS):
         if browser_request:
@@ -573,6 +777,61 @@ def request_otp(request):
     return Response({"detail": "OTP sent successfully.", "phone": phone})
 
 
+@login_required
+@require_http_methods(["POST"])
+def phone_change_request(request):
+    response_status, detail = _start_phone_change(
+        request.user, request.POST.get("phone", "")
+    )
+    if response_status == status.HTTP_200_OK:
+        messages.success(request, detail)
+    else:
+        messages.error(request, detail)
+    return redirect("accounts:account_settings")
+
+
+@login_required
+@require_http_methods(["POST"])
+def phone_change_verify(request):
+    otp = (request.POST.get("otp") or "").strip()
+    if not otp:
+        messages.error(request, "Enter the verification code.")
+        return redirect("accounts:account_settings")
+
+    user, profile, otp_error = _consume_phone_change_otp(request.user.pk, otp)
+    if otp_error == "inactive":
+        messages.error(request, "Your account is inactive. Please contact support.")
+    elif otp_error == "missing":
+        messages.error(request, "No phone number is awaiting verification.")
+    elif otp_error == "expired":
+        messages.error(request, "The code has expired. Request a new one.")
+    elif otp_error == "taken":
+        messages.error(request, "This phone number is already associated with another account.")
+    elif otp_error == "invalid":
+        messages.error(request, "The code is invalid.")
+    else:
+        messages.success(request, "Phone number verified and updated.")
+    return redirect("accounts:account_settings")
+
+
+@login_required
+@require_http_methods(["POST"])
+def phone_change_resend(request):
+    profile = UserProfile.objects.filter(user=request.user).first()
+    if not profile or not profile.pending_phone:
+        messages.error(request, "No phone number is awaiting verification.")
+        return redirect("accounts:account_settings")
+
+    response_status, detail = _start_phone_change(
+        request.user, profile.pending_phone
+    )
+    if response_status == status.HTTP_200_OK:
+        messages.success(request, detail)
+    else:
+        messages.error(request, detail)
+    return redirect("accounts:account_settings")
+
+
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def signup_submit(request):
@@ -601,6 +860,7 @@ def signup_submit(request):
         first_name=(full_name.split()[0] if full_name else ""),
         last_name=" ".join(full_name.split()[1:]) if full_name else "",
         is_active=False,
+        account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
     )
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
@@ -677,7 +937,9 @@ def verify_otp(request):
             return render(request, "accounts/otp_login.html", {"phone": phone, "error": "No account found with this phone number. Please register first."}, status=404)
         return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
-    user, profile, otp_error = _consume_phone_otp(user.pk, otp)
+    user, profile, otp_error = _consume_phone_otp(
+        user.pk, otp, allow_pending_signup=True
+    )
     if otp_error == "inactive":
         if browser_request:
             return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "Your account is inactive. Please contact support."}, status=403)
@@ -717,7 +979,10 @@ def email_login_view(request):
         if not user:
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
 
-        if not getattr(user, "is_active", True):
+        if (
+            user.account_status != CustomUser.AccountStatus.ACTIVE
+            or not getattr(user, "is_active", True)
+        ):
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": next_url})
 
         authenticated_user = authenticate(request, username=user.email, password=password)
@@ -775,6 +1040,7 @@ def signup_form_view(request):
             last_name=" ".join(full_name.split()[1:]) if full_name else "",
             is_active=False,
             is_email_verified=False,
+            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
         )
 
         profile, _ = UserProfile.objects.get_or_create(user=user)
