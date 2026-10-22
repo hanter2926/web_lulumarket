@@ -44,13 +44,21 @@ https://web-lulumarket.onrender.com
 
 New customer accounts receive a six-digit verification code by email. The code expires after five minutes, and resend requests are rate-limited.
 
-Configure a transactional email provider in the production environment. For Brevo, set these Render environment variables:
+Production email uses the existing Brevo HTTPS API integration, not SMTP. Set these Render environment variables:
 
 ```text
-EMAIL_PROVIDER=brevo
 BREVO_API_KEY=<your Brevo API key>
-BREVO_SENDER_EMAIL=<a sender address verified in Brevo>
+BREVO_SENDER_EMAIL=<an active, verified sender in your Brevo account>
 BREVO_SENDER_NAME=NAGRI
+```
+
+The sender address must match the active, verified sender in Brevo. Account OTP and password-reset email use the existing direct Brevo API helper; other Django mail uses Anymail's Brevo API backend. Local development uses Django's console backend when `DEBUG=True`. Resend is not selected for production because this project does not control a verified sending domain there.
+Remove any `EMAIL_PROVIDER=resend` or `EMAIL_BACKEND` override from Render so production uses the Brevo HTTPS API configured by Django.
+
+To send a live test from an environment configured for Brevo:
+
+```text
+python manage.py send_test_email recipient@example.com
 ```
 
 Apply database migrations when deploying:

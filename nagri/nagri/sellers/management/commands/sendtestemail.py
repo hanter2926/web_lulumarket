@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Send a test email to confirm SMTP configuration works."
+    help = "Send a test email using the configured email backend."
 
     def add_arguments(self, parser):
         parser.add_argument("recipient", nargs="?", default=None)
@@ -17,17 +17,17 @@ class Command(BaseCommand):
 
         try:
             sent = send_mail(
-                "NAGRI SMTP test email",
-                "This is a Django SMTP test email from NAGRI.",
+                "NAGRI Email Test",
+                "This is a test email from the NAGRI Django application.",
                 settings.DEFAULT_FROM_EMAIL,
                 [recipient],
                 fail_silently=False,
             )
             if sent:
-                self.stdout.write(self.style.SUCCESS(f"SMTP test email sent successfully to {recipient}"))
+                self.stdout.write(self.style.SUCCESS(f"Email test sent successfully to {recipient}"))
                 return
-            self.stdout.write(self.style.WARNING(f"SMTP send_mail returned 0 for {recipient}; check server logs."))
+            self.stdout.write(self.style.WARNING(f"Email backend returned 0 for {recipient}; check server logs."))
         except Exception:
             # Log full exception to logs (development / Render) but raise a generic message to the console
             logger.exception("Failed to send test email")
-            raise CommandError("SMTP test email failed; check application logs for details")
+            raise CommandError("Email test failed; check application logs for details")

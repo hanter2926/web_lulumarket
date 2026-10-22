@@ -1,4 +1,5 @@
 from datetime import timedelta
+from email.utils import formataddr
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -54,6 +55,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "anymail",
     "nagri",
     "unyan",
     # Real-time / WebSockets
@@ -387,17 +389,33 @@ CHANNEL_LAYERS = {
 # EMAIL
 # ============================================================
 
-EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "").strip().lower()
+EMAIL_PROVIDER = "brevo"
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
 BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", "").strip()
 BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "NAGRI").strip()
 
-# Choose email backend via env. For local development you can set
-# EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND",
-    "django.core.mail.backends.smtp.EmailBackend",
+# Keep local development from sending real email. Production uses Brevo's HTTPS API.
+EMAIL_BACKEND = (
+    "django.core.mail.backends.console.EmailBackend"
+    if DEBUG
+    else "anymail.backends.brevo.EmailBackend"
 )
+DEFAULT_FROM_EMAIL = (
+    formataddr((BREVO_SENDER_NAME or "NAGRI", BREVO_SENDER_EMAIL))
+    if BREVO_SENDER_EMAIL
+    else ""
+)
+DEFAULT_REPLY_TO_EMAIL = os.getenv(
+    "DEFAULT_REPLY_TO_EMAIL",
+    "vikrampal505@yahoo.com",
+).strip()
+
+ANYMAIL = {
+    "BREVO_API_KEY": BREVO_API_KEY,
+    "SEND_DEFAULTS": {
+        "reply_to": [DEFAULT_REPLY_TO_EMAIL],
+    },
+}
 
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com").strip()
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
@@ -406,8 +424,6 @@ EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").strip().lower() == "true"
 
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "").strip().replace(" ", "")
-
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER).strip()
 
 # Add explicit timeout to prevent Gunicorn thread locks on SMTP hanging
 EMAIL_TIMEOUT = 10
@@ -421,7 +437,7 @@ try:
         "Email configuration loaded: provider=%s backend=%s "
         "brevo_api_key_configured=%s brevo_sender_configured=%s "
         "smtp_host_configured=%s smtp_port=%s smtp_tls=%s smtp_ssl=%s "
-        "smtp_user_configured=%s smtp_password_configured=%s smtp_sender_configured=%s",
+        "smtp_user_configured=%s smtp_password_configured=%s default_sender_configured=%s",
         EMAIL_PROVIDER or "unset",
         EMAIL_BACKEND,
         bool(BREVO_API_KEY),

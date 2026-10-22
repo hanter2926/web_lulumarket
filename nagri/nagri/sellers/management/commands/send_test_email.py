@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Send a test email to confirm SMTP configuration works."
+    help = "Send a test email using the configured email backend."
 
     def add_arguments(self, parser):
         parser.add_argument("recipient", nargs="?", default=None)
@@ -24,10 +24,10 @@ class Command(BaseCommand):
                 fail_silently=False,
             )
             if sent:
-                self.stdout.write(self.style.SUCCESS(f"SMTP test email sent successfully to {recipient}"))
+                self.stdout.write(self.style.SUCCESS(f"Email test sent successfully to {recipient}"))
                 return
-            self.stdout.write(self.style.WARNING(f"SMTP send_mail returned 0 for {recipient}; check server logs."))
+            self.stdout.write(self.style.WARNING(f"Email backend returned 0 for {recipient}; check server logs."))
         except Exception:
             # Log details to application logs (render/dev) but raise a generic error to console
             logger.exception("Failed to send test email for recipient=%s", recipient)
-            raise CommandError("SMTP test email failed; check application logs for details")
+            raise CommandError("Email test failed; check application logs for details")

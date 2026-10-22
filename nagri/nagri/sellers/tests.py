@@ -3,6 +3,7 @@ import smtplib
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.conf import settings
 from django.test import TestCase, Client
 from django.test.utils import override_settings
 from django.urls import reverse
@@ -68,7 +69,7 @@ class SellerFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.user.email])
-        self.assertEqual(mail.outbox[0].from_email, 'vikrampal803302@gmail.com')
+        self.assertEqual(mail.outbox[0].from_email, settings.DEFAULT_FROM_EMAIL)
 
     @patch('sellers.views.send_mail')
     def test_send_otp_email_is_attempted_with_correct_recipient_and_no_otp_logged(self, mock_send):
@@ -81,7 +82,7 @@ class SellerFlowTests(TestCase):
         # send_mail is called with positional args: subject, message, from_email, recipient_list
         called_args = mock_send.call_args[0]
         self.assertEqual(called_args[3], [self.user.email])
-        self.assertEqual(called_args[2], 'vikrampal803302@gmail.com')
+        self.assertEqual(called_args[2], settings.DEFAULT_FROM_EMAIL)
         otp_match = re.search(r"(\d{6})", called_args[1])
         self.assertIsNotNone(otp_match)
         log_output = '\n'.join(captured.output)

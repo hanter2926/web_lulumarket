@@ -59,15 +59,26 @@ def classify_email_delivery_error(exc):
 def validate_email_delivery_configuration():
     provider = settings.EMAIL_PROVIDER
     if provider == "brevo":
+        backend = settings.EMAIL_BACKEND.strip().lower()
+        if settings.DEBUG and backend in {
+            "django.core.mail.backends.console.emailbackend",
+            "django.core.mail.backends.locmem.emailbackend",
+            "anymail.backends.test.emailbackend",
+        }:
+            return
         if not settings.BREVO_API_KEY or not settings.BREVO_SENDER_EMAIL:
             raise EmailDeliveryConfigurationError(
                 "Brevo email configuration is incomplete"
+            )
+        if not settings.DEBUG and backend != "anymail.backends.brevo.emailbackend":
+            raise EmailDeliveryConfigurationError(
+                "Brevo provider requires Anymail's Brevo email backend"
             )
         return
 
     if provider != "smtp":
         raise EmailDeliveryConfigurationError(
-            "EMAIL_PROVIDER must explicitly be set to brevo or smtp"
+            "EMAIL_PROVIDER must be set to brevo or smtp"
         )
 
     backend = settings.EMAIL_BACKEND.strip().lower()
@@ -152,7 +163,14 @@ def _send_via_brevo(subject, body, recipient, html_body):
 def send_account_email(subject, body, recipient, html_body=None, from_email=None):
     validate_email_delivery_configuration()
 
-    if settings.EMAIL_PROVIDER == "brevo":
+    local_backend = settings.EMAIL_BACKEND.strip().lower() in {
+        "django.core.mail.backends.console.emailbackend",
+        "django.core.mail.backends.locmem.emailbackend",
+        "anymail.backends.test.emailbackend",
+    }
+    if settings.EMAIL_PROVIDER == "brevo" and not (
+        settings.DEBUG and local_backend
+    ):
         _send_via_brevo(subject, body, recipient, html_body)
         return
 
@@ -177,4 +195,4 @@ def send_account_email(subject, body, recipient, html_body=None, from_email=None
     if sent_count != 1:
         raise RuntimeError("Configured email backend did not accept the message")
 
-    logger.info("Transactional email accepted by configured SMTP backend")
+    logger.info("Transactional email accepted by configured email backend")

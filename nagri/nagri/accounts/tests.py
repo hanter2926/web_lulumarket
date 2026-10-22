@@ -1,7 +1,10 @@
 from datetime import timedelta
+import json
 import smtplib
 
+from anymail.exceptions import AnymailRequestsAPIError
 from django.core import mail
+from django.core.mail import EmailMessage
 from django.db import OperationalError
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
@@ -10,7 +13,7 @@ from django.contrib.auth.hashers import check_password
 from unittest.mock import Mock, patch
 from urllib.parse import urlencode, urlparse
 import re
-from requests import Timeout
+from requests import Response, Timeout
 
 from .email_otp import verify_email_otp
 from .email_delivery import (
@@ -398,6 +401,8 @@ class SignupFlowTests(TestCase):
         self.assertRedirects(response, reverse("accounts:dashboard_page"))
 
     @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="mock-api-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -435,6 +440,8 @@ class SignupFlowTests(TestCase):
         self.assertIsNone(challenge.consumed_at)
 
     @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="mock-api-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -602,6 +609,8 @@ class PasswordResetFlowTests(TestCase):
         self.assertIn("/accounts/reset/", self.reset_path)
 
     @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -947,6 +956,98 @@ class EmailOTPFlowTests(TestCase):
         self.assertNotIn("otp-secret-token-secret", output)
 
     @override_settings(
+        DEBUG=True,
+        EMAIL_PROVIDER="brevo",
+        EMAIL_BACKEND="anymail.backends.test.EmailBackend",
+        ANYMAIL={
+            "BREVO_API_KEY": "brevo-test-key",
+            "SEND_DEFAULTS": {"reply_to": ["vikrampal505@yahoo.com"]},
+        },
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+        DEFAULT_FROM_EMAIL="NAGRI <sender@example.com>",
+    )
+    def test_account_email_uses_brevo_compatible_backend_and_defaults(self):
+        send_account_email("subject", "body", "recipient@example.com")
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            mail.outbox[0].anymail_test_params["from"].addr_spec,
+            "sender@example.com",
+        )
+        self.assertEqual(
+            mail.outbox[0].anymail_test_params["from"].display_name,
+            "NAGRI",
+        )
+        self.assertEqual(
+            mail.outbox[0].anymail_test_params["reply_to"][0].addr_spec,
+            "vikrampal505@yahoo.com",
+        )
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_PROVIDER="brevo",
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        ANYMAIL={"BREVO_API_KEY": "brevo-test-key"},
+        DEFAULT_FROM_EMAIL="NAGRI <sender@example.com>",
+    )
+    @patch("requests.Session.request")
+    def test_django_email_uses_brevo_https_api(self, request):
+        response = Response()
+        response.status_code = 201
+        response._content = b'{"messageId":"mock-message-id"}'
+        request.return_value = response
+
+        message = EmailMessage(
+            "subject",
+            "body",
+            "NAGRI <sender@example.com>",
+            ["recipient@example.com"],
+        )
+
+        self.assertEqual(message.send(), 1)
+        request_args = request.call_args.kwargs
+        self.assertEqual(request_args["method"], "POST")
+        self.assertTrue(request_args["url"].startswith("https://api.brevo.com/"))
+        self.assertEqual(request_args["headers"]["api-key"], "brevo-test-key")
+        self.assertEqual(
+            json.loads(request_args["data"])["sender"]["email"],
+            "sender@example.com",
+        )
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_PROVIDER="brevo",
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        ANYMAIL={"BREVO_API_KEY": "brevo-test-key"},
+        DEFAULT_FROM_EMAIL="NAGRI <sender@example.com>",
+    )
+    @patch("requests.Session.request")
+    def test_django_email_api_rejection_raises_instead_of_reporting_success(
+        self,
+        request,
+    ):
+        response = Response()
+        response.status_code = 401
+        response.reason = "Unauthorized"
+        response._content = b'{"message":"invalid key"}'
+        request.return_value = response
+
+        message = EmailMessage(
+            "subject",
+            "body",
+            "NAGRI <sender@example.com>",
+            ["recipient@example.com"],
+        )
+
+        with self.assertRaises(AnymailRequestsAPIError):
+            message.send()
+
+        request.assert_called_once()
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -973,6 +1074,8 @@ class EmailOTPFlowTests(TestCase):
         self.assertRegex(payload["textContent"], r"code to sign in is \d{6}")
 
     @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -991,6 +1094,8 @@ class EmailOTPFlowTests(TestCase):
         smtp_send.assert_not_called()
 
     @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -1007,6 +1112,8 @@ class EmailOTPFlowTests(TestCase):
         post.assert_called_once()
 
     @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
