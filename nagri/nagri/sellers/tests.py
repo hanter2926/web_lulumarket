@@ -495,6 +495,113 @@ class ShopkeeperStoreDeliveryBackendTests(TestCase):
         self.assertEqual(assignment.worker, worker_profile)
         self.assertEqual(assignment.store, store)
 
+    def test_assignment_requires_verified_worker_phone(self):
+        from accounts.models import UserProfile
+        from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
+
+        shopkeeper_user = CustomUser.objects.create_user(
+            email="assignment-shop@example.com",
+            username="assignment-shop",
+            password="pass",
+        )
+        shopkeeper = Shopkeeper.objects.create(
+            user=shopkeeper_user,
+            status="active",
+        )
+        store = Store.objects.create(
+            shopkeeper=shopkeeper,
+            name="Verified Worker Store",
+            slug="verified-worker-store",
+            city="Bengaluru",
+        )
+        category = Category.objects.create(
+            name="Assignment Goods",
+            slug="assignment-goods",
+        )
+        product = Product.objects.create(
+            name="Assignment Product",
+            slug="assignment-product",
+            category=category,
+            price=Decimal("25.00"),
+            seller=shopkeeper_user,
+            store=store,
+        )
+        order = Order.objects.create(
+            user=self.user,
+            order_number="ORD-WORKER-VERIFY",
+            total_amount=Decimal("25.00"),
+            status="paid",
+            payment_method="cod",
+            is_paid=True,
+        )
+        OrderItem.objects.create(
+            order=order,
+            product=product,
+            quantity=1,
+            price=product.price,
+        )
+        unverified_user = CustomUser.objects.create_user(
+            email="unverified-worker@example.com",
+            username="unverified-worker",
+            password="pass",
+        )
+        unverified_worker = DeliveryWorker.objects.create(
+            user=unverified_user,
+            shopkeeper=shopkeeper,
+            store=store,
+            phone="+919876543219",
+            status="active",
+            is_available=True,
+        )
+        verified_user = CustomUser.objects.create_user(
+            email="verified-worker@example.com",
+            username="verified-worker",
+            password="pass",
+            phone="+919876543218",
+        )
+        UserProfile.objects.create(
+            user=verified_user,
+            phone=verified_user.phone,
+            is_phone_verified=True,
+        )
+        verified_worker = DeliveryWorker.objects.create(
+            user=verified_user,
+            shopkeeper=shopkeeper,
+            store=store,
+            phone=verified_user.phone,
+            status="active",
+            is_available=True,
+        )
+        self.client.force_login(shopkeeper_user)
+        url = reverse(
+            "sellers:shopkeeper_assignment_assign",
+            kwargs={"pk": order.pk},
+        )
+
+        unverified_response = self.client.post(
+            url,
+            {"store": store.pk, "worker": unverified_worker.pk},
+        )
+        self.assertEqual(unverified_response.status_code, 302)
+        self.assertFalse(
+            DeliveryAssignment.objects.filter(
+                order=order,
+                worker=unverified_worker,
+            ).exists()
+        )
+
+        verified_response = self.client.post(
+            url,
+            {"store": store.pk, "worker": verified_worker.pk},
+        )
+        self.assertEqual(verified_response.status_code, 302)
+        self.assertTrue(
+            DeliveryAssignment.objects.filter(
+                order=order,
+                worker=verified_worker,
+            ).exists()
+        )
+
     def test_store_and_worker_queries_are_isolated_by_shopkeeper(self):
         from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
 

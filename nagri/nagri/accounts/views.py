@@ -32,7 +32,7 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 from django.contrib.auth import views as auth_views
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib import messages
@@ -48,6 +48,8 @@ from .forms import (
 from .email_delivery import classify_email_delivery_error
 from .email_otp import request_email_otp, verify_email_otp
 from urllib.parse import urlparse
+
+PHONE_CHANGE_OTP_MAX_ATTEMPTS = 5
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -148,11 +150,13 @@ def _start_phone_change(user, raw_phone):
     profile.pending_phone = phone
     profile.pending_phone_otp = otp_code
     profile.pending_phone_otp_expires_at = now + timedelta(minutes=OTP_TTL_MINUTES)
+    profile.pending_phone_otp_attempts = 0
     profile.save(
         update_fields=[
             "pending_phone",
             "pending_phone_otp",
             "pending_phone_otp_expires_at",
+            "pending_phone_otp_attempts",
             "updated_at",
         ]
     )
@@ -170,11 +174,13 @@ def _start_phone_change(user, raw_phone):
         profile.pending_phone = None
         profile.pending_phone_otp = None
         profile.pending_phone_otp_expires_at = None
+        profile.pending_phone_otp_attempts = 0
         profile.save(
             update_fields=[
                 "pending_phone",
                 "pending_phone_otp",
                 "pending_phone_otp_expires_at",
+                "pending_phone_otp_attempts",
                 "updated_at",
             ]
         )
@@ -198,13 +204,27 @@ def _consume_phone_change_otp(user_id, otp):
             return user, None, "inactive"
         if not profile or not profile.pending_phone:
             return user, None, "missing"
-        if not profile.pending_phone_otp or not secrets.compare_digest(profile.pending_phone_otp, otp):
-            return user, None, "invalid"
         if (
             not profile.pending_phone_otp_expires_at
             or timezone.now() >= profile.pending_phone_otp_expires_at
         ):
             return user, None, "expired"
+        if (
+            profile.pending_phone_otp_attempts
+            >= PHONE_CHANGE_OTP_MAX_ATTEMPTS
+        ):
+            return user, None, "locked"
+        if not profile.pending_phone_otp or not secrets.compare_digest(profile.pending_phone_otp, otp):
+            profile.pending_phone_otp_attempts += 1
+            update_fields = ["pending_phone_otp_attempts", "updated_at"]
+            if (
+                profile.pending_phone_otp_attempts
+                >= PHONE_CHANGE_OTP_MAX_ATTEMPTS
+            ):
+                profile.pending_phone_otp = None
+                update_fields.append("pending_phone_otp")
+            profile.save(update_fields=update_fields)
+            return user, None, "locked" if profile.pending_phone_otp_attempts >= PHONE_CHANGE_OTP_MAX_ATTEMPTS else "invalid"
 
         new_phone = profile.pending_phone
         existing_user = find_user_by_phone(new_phone)
@@ -215,6 +235,7 @@ def _consume_phone_change_otp(user_id, otp):
         profile.pending_phone = None
         profile.pending_phone_otp = None
         profile.pending_phone_otp_expires_at = None
+        profile.pending_phone_otp_attempts = 0
         profile.is_phone_verified = True
         profile.save(
             update_fields=[
@@ -222,6 +243,7 @@ def _consume_phone_change_otp(user_id, otp):
                 "pending_phone",
                 "pending_phone_otp",
                 "pending_phone_otp_expires_at",
+                "pending_phone_otp_attempts",
                 "is_phone_verified",
                 "updated_at",
             ]
@@ -230,6 +252,45 @@ def _consume_phone_change_otp(user_id, otp):
         user.save(update_fields=["phone", "updated_at"])
 
     return user, profile, None
+
+
+def _send_signup_phone_otp(profile):
+    now = timezone.now()
+    if (
+        profile.last_otp_sent_at
+        and now - profile.last_otp_sent_at
+        < timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS)
+    ):
+        return status.HTTP_429_TOO_MANY_REQUESTS, "Please wait before requesting another OTP."
+
+    otp_code = generate_otp()
+    profile.otp = otp_code
+    profile.otp_expires_at = now + timedelta(minutes=OTP_TTL_MINUTES)
+    profile.last_otp_sent_at = now
+    profile.save(
+        update_fields=["otp", "otp_expires_at", "last_otp_sent_at", "updated_at"]
+    )
+
+    try:
+        send_result = send_otp_to_phone(profile.phone, otp_code)
+        status_sent = (
+            str(send_result.get("status") or "").lower() == "sent"
+            if isinstance(send_result, dict)
+            else True
+        )
+        if not status_sent:
+            raise RuntimeError("Phone OTP provider did not confirm delivery")
+    except Exception as exc:
+        profile.otp = ""
+        profile.otp_expires_at = None
+        profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+        logger.error("Signup phone OTP delivery failed: error_type=%s", type(exc).__name__)
+        return (
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Unable to send OTP right now. You can request another verification code later.",
+        )
+
+    return status.HTTP_200_OK, "OTP sent to your phone."
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -281,6 +342,11 @@ class UserViewSet(viewsets.ModelViewSet):
                 {"detail": "OTP has expired. Please request a new one."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if otp_error == "locked":
+            return Response(
+                {"detail": "Too many incorrect codes. Request a new verification code."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
         if otp_error == "taken":
             return Response(
                 {"detail": "This phone number is already associated with another account."},
@@ -310,18 +376,36 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
     def register(self, request):
+        raw_phone = (request.data.get("phone") or "").strip()
+        phone = normalize_phone_number(raw_phone)
+        if not phone:
+            return Response(
+                {"detail": "A valid phone number is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        if CustomUser.objects.filter(
+            email__iexact=serializer.validated_data["email"]
+        ).exists():
+            return Response(
+                {"detail": "An account with this email already exists."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if find_user_by_phone(phone):
+            return Response(
+                {"detail": "An account with this phone number already exists."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         user = serializer.save(
+            phone=phone,
             is_active=False,
             account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
         )
 
         profile, _ = UserProfile.objects.get_or_create(user=user)
-        raw_phone = (request.data.get("phone") or "").strip()
-        phone = normalize_phone_number(raw_phone)
-        if raw_phone and not phone:
-            return Response({"detail": "Enter a valid phone number."}, status=400)
         if phone:
             profile.full_name = request.data.get("full_name") or user.get_full_name() or user.email
             profile.phone = phone
@@ -332,7 +416,8 @@ class UserViewSet(viewsets.ModelViewSet):
             # Persist OTP record before attempting delivery
             profile.otp = otp_code
             profile.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MINUTES)
-            profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "updated_at"])
+            profile.last_otp_sent_at = timezone.now()
+            profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "last_otp_sent_at", "updated_at"])
             user.phone = phone
             user.save(update_fields=["phone", "updated_at"])
 
@@ -350,7 +435,13 @@ class UserViewSet(viewsets.ModelViewSet):
                     profile.otp_expires_at = None
                     profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
                     logger.warning("Phone OTP provider did not confirm delivery")
-                    return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
+                    return Response(
+                        {
+                            "detail": "Unable to send OTP right now. You can request another verification code later.",
+                            "resend_endpoint": reverse("accounts:signup_phone_otp_resend"),
+                        },
+                        status=500,
+                    )
 
             except Exception as exc:
                 # Delivery exception — invalidate saved OTP and log
@@ -358,7 +449,13 @@ class UserViewSet(viewsets.ModelViewSet):
                 profile.otp_expires_at = None
                 profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
                 logger.error("Phone OTP delivery failed: error_type=%s", type(exc).__name__)
-                return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
+                return Response(
+                    {
+                        "detail": "Unable to send OTP right now. You can request another verification code later.",
+                        "resend_endpoint": reverse("accounts:signup_phone_otp_resend"),
+                    },
+                    status=500,
+                )
 
             # Delivery succeeded — record send timestamp
             profile.last_otp_sent_at = timezone.now()
@@ -777,6 +874,36 @@ def request_otp(request):
     return Response({"detail": "OTP sent successfully.", "phone": phone})
 
 
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def signup_phone_otp_resend(request):
+    email = (request.data.get("email") or "").strip()
+    phone = normalize_phone_number(str(request.data.get("phone") or "").strip())
+    if not email or not phone:
+        return Response(
+            {"detail": "Email and a valid phone number are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    generic_detail = (
+        "Request accepted. If these details match a pending signup, "
+        "a verification code may be sent."
+    )
+    user = CustomUser.objects.filter(email__iexact=email).first()
+    if not user or (
+        user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
+        or user.is_active
+    ):
+        return Response({"detail": generic_detail}, status=status.HTTP_200_OK)
+
+    profile = UserProfile.objects.filter(user=user, phone=phone).first()
+    if not profile:
+        return Response({"detail": generic_detail}, status=status.HTTP_200_OK)
+
+    _send_signup_phone_otp(profile)
+    return Response({"detail": generic_detail}, status=status.HTTP_200_OK)
+
+
 @login_required
 @require_http_methods(["POST"])
 def phone_change_request(request):
@@ -805,6 +932,8 @@ def phone_change_verify(request):
         messages.error(request, "No phone number is awaiting verification.")
     elif otp_error == "expired":
         messages.error(request, "The code has expired. Request a new one.")
+    elif otp_error == "locked":
+        messages.error(request, "Too many incorrect codes. Request a new verification code.")
     elif otp_error == "taken":
         messages.error(request, "This phone number is already associated with another account.")
     elif otp_error == "invalid":
@@ -868,36 +997,18 @@ def signup_submit(request):
     profile.phone = phone
     profile.is_phone_verified = False
 
-    # Generate OTP and persist before attempting delivery
-    otp_code = generate_otp()
-    profile.otp = otp_code
-    profile.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MINUTES)
-    profile.save(update_fields=["full_name", "phone", "is_phone_verified", "otp", "otp_expires_at", "updated_at"])
-
-    try:
-        send_result = send_otp_to_phone(phone, otp_code)
-        status_sent = False
-        if isinstance(send_result, dict):
-            status_sent = str(send_result.get("status") or "").lower() == "sent"
-        else:
-            status_sent = True
-
-        if not status_sent:
-            profile.otp = ""
-            profile.otp_expires_at = None
-            profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-            logger.warning("Phone OTP provider did not confirm delivery")
-            return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
-
-    except Exception as exc:
-        profile.otp = ""
-        profile.otp_expires_at = None
-        profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
-        logger.error("Phone OTP delivery failed: error_type=%s", type(exc).__name__)
-        return Response({"detail": "Unable to send OTP right now. Please try again later."}, status=500)
-
-    profile.last_otp_sent_at = timezone.now()
-    profile.save(update_fields=["last_otp_sent_at", "updated_at"])
+    profile.save(
+        update_fields=["full_name", "phone", "is_phone_verified", "updated_at"]
+    )
+    response_status, detail = _send_signup_phone_otp(profile)
+    if response_status != status.HTTP_200_OK:
+        return Response(
+            {
+                "detail": detail,
+                "resend_endpoint": reverse("accounts:signup_phone_otp_resend"),
+            },
+            status=response_status,
+        )
 
     return Response({
         "detail": "Account created successfully. OTP sent to your phone.",

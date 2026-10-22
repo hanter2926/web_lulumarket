@@ -20,6 +20,7 @@ urlpatterns = [
     path("register/verify/resend/", views.signup_email_verify_resend, name="signup_email_verify_resend"),
     path("signup/", views.signup_page, name="signup_page"),
     path("signup-submit/", views.signup_submit, name="signup_submit"),
+    path("signup/otp/resend/", views.signup_phone_otp_resend, name="signup_phone_otp_resend"),
     path("logout/", views.logout_view, name="logout_page"),
     path("request-otp/", views.request_otp, name="request_otp"),
     path("verify-otp/", views.verify_otp, name="verify_otp"),

@@ -1188,6 +1188,9 @@ def shopkeeper_assignment_assign(request, pk):
         if worker is None:
             messages.error(request, "Selected worker is not valid for this store.")
             return redirect("sellers:shopkeeper_assignments")
+        if not worker.is_mobile_verified:
+            messages.error(request, "The worker must verify their phone number before receiving an assignment.")
+            return redirect("sellers:shopkeeper_assignments")
         assignment, created = DeliveryAssignment.objects.get_or_create(order=order, shopkeeper=shopkeeper, store=store, worker=worker, defaults={"status": "assigned"})
         if not created:
             assignment.status = "assigned"

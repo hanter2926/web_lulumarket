@@ -86,6 +86,7 @@ class UserProfile(models.Model):
     pending_phone = models.CharField(max_length=20, blank=True, null=True)
     pending_phone_otp = models.CharField(max_length=6, blank=True, null=True)
     pending_phone_otp_expires_at = models.DateTimeField(blank=True, null=True)
+    pending_phone_otp_attempts = models.PositiveSmallIntegerField(default=0)
     otp = models.CharField(max_length=6, blank=True, null=True)
     otp_expires_at = models.DateTimeField(blank=True, null=True)
     is_phone_verified = models.BooleanField(default=False)
