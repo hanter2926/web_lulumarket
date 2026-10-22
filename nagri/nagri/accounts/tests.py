@@ -174,6 +174,210 @@ class AccountTests(TestCase):
         send_otp.assert_called_once()
 
 
+class PhoneOTPAPISecurityTests(TestCase):
+    otp = "642951"
+
+    def setUp(self):
+        self.user = CustomUser.objects.create_user(
+            email="phone-api@example.com",
+            username="phone-api-user",
+            password="StrongPass123!",
+            phone="+919876543210",
+            is_active=True,
+        )
+        self.profile = UserProfile.objects.create(
+            user=self.user,
+            phone=self.user.phone,
+            otp=self.otp,
+            otp_expires_at=timezone.now() + timedelta(minutes=5),
+            is_phone_verified=True,
+        )
+
+    def _assert_otp_not_serialized(self, payload):
+        self.assertNotIn(self.otp, json.dumps(payload))
+
+        def assert_no_otp_field(value):
+            if isinstance(value, dict):
+                self.assertNotIn("otp", value)
+                self.assertNotIn("otp_expires_at", value)
+                for nested_value in value.values():
+                    assert_no_otp_field(nested_value)
+            elif isinstance(value, list):
+                for nested_value in value:
+                    assert_no_otp_field(nested_value)
+
+        assert_no_otp_field(payload)
+
+    def test_public_registration_responses_do_not_expose_phone_otp(self):
+        registration_payloads = (
+            (
+                reverse("accounts:users-register"),
+                {
+                    "email": "router-registration@example.com",
+                    "username": "router-registration",
+                    "password": "StrongPass123!",
+                    "phone": "+919876543211",
+                },
+            ),
+            (
+                reverse("accounts:signup_submit"),
+                {
+                    "email": "signup-registration@example.com",
+                    "password": "StrongPass123!",
+                    "phone": "9876543212",
+                    "full_name": "Signup Registration",
+                },
+            ),
+        )
+
+        with patch("accounts.views.generate_otp", return_value=self.otp), patch(
+            "accounts.views.send_otp_to_phone", return_value={"status": "sent"}
+        ):
+            for endpoint, payload in registration_payloads:
+                with self.subTest(endpoint=endpoint):
+                    response = self.client.post(
+                        endpoint, payload, content_type="application/json"
+                    )
+
+                    self.assertEqual(response.status_code, 201)
+                    self._assert_otp_not_serialized(response.json())
+
+    def test_user_and_profile_api_responses_do_not_expose_phone_otp(self):
+        self.client.force_login(self.user)
+        responses = [
+            self.client.get(reverse("accounts:users-me")),
+            self.client.get(reverse("accounts:users-list")),
+            self.client.get(
+                reverse("accounts:users-detail", kwargs={"pk": self.user.pk})
+            ),
+            self.client.get(reverse("accounts:profiles-list")),
+            self.client.get(
+                reverse("accounts:profiles-detail", kwargs={"pk": self.profile.pk})
+            ),
+            self.client.patch(
+                reverse("accounts:profiles-update-profile"),
+                {"full_name": "Updated name"},
+                content_type="application/json",
+            ),
+        ]
+
+        for response in responses:
+            with self.subTest(path=response.wsgi_request.path):
+                self.assertEqual(response.status_code, 200)
+                self._assert_otp_not_serialized(response.json())
+
+    def test_public_login_response_does_not_expose_phone_otp(self):
+        response = self.client.post(
+            reverse("accounts:users-login"),
+            {"email": self.user.email, "password": "StrongPass123!"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self._assert_otp_not_serialized(response.json())
+
+    def test_phone_otp_requires_a_non_expired_expiry_timestamp(self):
+        for expires_at in (None, timezone.now() - timedelta(seconds=1)):
+            with self.subTest(expires_at=expires_at):
+                self.profile.otp = self.otp
+                self.profile.otp_expires_at = expires_at
+                self.profile.save(update_fields=["otp", "otp_expires_at", "updated_at"])
+
+                response = self.client.post(
+                    reverse("accounts:verify_otp"),
+                    {"phone": self.user.phone, "otp": self.otp},
+                    content_type="application/json",
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("expired", response.json()["detail"].lower())
+                self.profile.refresh_from_db()
+                self.assertTrue(self.profile.is_phone_verified)
+
+    def test_phone_otp_is_expired_at_the_exact_expiry_time(self):
+        expires_at = timezone.now()
+        self.profile.otp_expires_at = expires_at
+        self.profile.save(update_fields=["otp_expires_at", "updated_at"])
+
+        with patch("accounts.views.timezone.now", return_value=expires_at):
+            response = self.client.post(
+                reverse("accounts:users-phone-login"),
+                {"phone": self.user.phone, "otp": self.otp},
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("expired", response.json()["detail"].lower())
+
+    def test_phone_otp_cannot_be_reused_after_successful_verification(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active", "updated_at"])
+        self.profile.is_phone_verified = False
+        self.profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
+        self.profile.save(update_fields=["is_phone_verified", "otp_expires_at", "updated_at"])
+
+        first_response = self.client.post(
+            reverse("accounts:verify_otp"),
+            {"phone": self.user.phone, "otp": self.otp},
+            content_type="application/json",
+        )
+        second_response = self.client.post(
+            reverse("accounts:users-phone-login"),
+            {"phone": self.user.phone, "otp": self.otp},
+            content_type="application/json",
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 400)
+        self.assertEqual(second_response.json()["detail"], "Invalid OTP.")
+        self.user.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertTrue(self.profile.is_phone_verified)
+        self.assertFalse(self.profile.otp)
+
+    def test_phone_otp_cannot_reactivate_inactive_phone_verified_account(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active", "updated_at"])
+        self.profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
+        self.profile.save(update_fields=["otp_expires_at", "updated_at"])
+
+        for endpoint in (
+            reverse("accounts:verify_otp"),
+            reverse("accounts:users-phone-login"),
+        ):
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(
+                    endpoint,
+                    {"phone": self.user.phone, "otp": self.otp},
+                    content_type="application/json",
+                )
+
+                self.assertEqual(response.status_code, 403)
+                self.user.refresh_from_db()
+                self.profile.refresh_from_db()
+                self.assertFalse(self.user.is_active)
+                self.assertTrue(self.profile.is_phone_verified)
+                self.assertEqual(self.profile.otp, self.otp)
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_request_otp_does_not_clear_disabled_users_phone_verification(self, send_otp):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active", "updated_at"])
+
+        response = self.client.post(
+            reverse("accounts:request_otp"),
+            {"phone": self.user.phone},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        send_otp.assert_not_called()
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.is_phone_verified)
+        self.assertEqual(self.profile.otp, self.otp)
+
+
 class AccountSecurityTests(TestCase):
     def test_unverified_user_cannot_log_in_with_email_and_password(self):
         user = CustomUser.objects.create_user(

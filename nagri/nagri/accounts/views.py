@@ -1,8 +1,10 @@
 from datetime import timedelta
+import secrets
 
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -77,6 +79,30 @@ def get_phone_verification_error_message(user):
         return "Verify your phone number before logging in."
 
     return "Verify your phone number before logging in."
+
+
+def _consume_phone_otp(user_id, otp):
+    with transaction.atomic():
+        user = CustomUser.objects.select_for_update().get(pk=user_id)
+        profile = UserProfile.objects.select_for_update().filter(user=user).first()
+
+        if profile and not user.is_active and profile.is_phone_verified:
+            return user, None, "inactive"
+        if not profile or not profile.otp or not secrets.compare_digest(profile.otp, otp):
+            return user, None, "invalid"
+        if not profile.otp_expires_at or timezone.now() >= profile.otp_expires_at:
+            return user, None, "expired"
+
+        if not user.is_active:
+            user.is_active = True
+            user.save(update_fields=["is_active", "updated_at"])
+
+        profile.is_phone_verified = True
+        profile.otp = ""
+        profile.otp_expires_at = None
+        profile.save(update_fields=["is_phone_verified", "otp", "otp_expires_at", "updated_at"])
+
+    return user, profile, None
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -204,21 +230,13 @@ class UserViewSet(viewsets.ModelViewSet):
         if not user:
             return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
-        profile = UserProfile.objects.filter(user=user).first()
-        if not profile or not profile.otp or profile.otp != otp:
+        user, profile, otp_error = _consume_phone_otp(user.pk, otp)
+        if otp_error == "inactive":
+            return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
+        if otp_error == "invalid":
             return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if profile.otp_expires_at and timezone.now() > profile.otp_expires_at:
+        if otp_error == "expired":
             return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not getattr(user, "is_active", True):
-            user.is_active = True
-            user.save(update_fields=["is_active", "updated_at"])
-
-        profile.is_phone_verified = True
-        profile.otp = ""
-        profile.otp_expires_at = None
-        profile.save(update_fields=["is_phone_verified", "otp", "otp_expires_at", "updated_at"])
 
         user.phone = phone
         user.save(update_fields=["phone", "updated_at"])
@@ -496,6 +514,11 @@ def request_otp(request):
         return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
+    if not user.is_active and profile.is_phone_verified:
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "Your account is inactive. Please contact support."}, status=403)
+        return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
+
     if profile.last_otp_sent_at and timezone.now() - profile.last_otp_sent_at < timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS):
         if browser_request:
             remaining = OTP_RESEND_COOLDOWN_SECONDS - int((timezone.now() - profile.last_otp_sent_at).total_seconds())
@@ -503,13 +526,12 @@ def request_otp(request):
         return Response({"detail": f"Please wait {OTP_RESEND_COOLDOWN_SECONDS} seconds before requesting another OTP."}, status=status.HTTP_429_TOO_MANY_REQUESTS)
 
     profile.phone = phone
-    profile.is_phone_verified = False
 
     # Generate OTP and persist before attempting delivery
     otp_code = generate_otp()
     profile.otp = otp_code
     profile.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MINUTES)
-    profile.save(update_fields=["phone", "is_phone_verified", "otp", "otp_expires_at", "updated_at"])
+    profile.save(update_fields=["phone", "otp", "otp_expires_at", "updated_at"])
 
     try:
         send_result = send_otp_to_phone(phone, otp_code)
@@ -655,25 +677,19 @@ def verify_otp(request):
             return render(request, "accounts/otp_login.html", {"phone": phone, "error": "No account found with this phone number. Please register first."}, status=404)
         return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
-    profile = UserProfile.objects.filter(user=user).first()
-    if not profile or not profile.otp or profile.otp != otp:
+    user, profile, otp_error = _consume_phone_otp(user.pk, otp)
+    if otp_error == "inactive":
+        if browser_request:
+            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "Your account is inactive. Please contact support."}, status=403)
+        return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
+    if otp_error == "invalid":
         if browser_request:
             return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "That OTP is incorrect. Please check the code and try again."}, status=400)
         return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if profile.otp_expires_at and timezone.now() > profile.otp_expires_at:
+    if otp_error == "expired":
         if browser_request:
             return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "This OTP has expired. Please request a new one."}, status=400)
         return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if not getattr(user, "is_active", True):
-        user.is_active = True
-        user.save(update_fields=["is_active", "updated_at"])
-
-    profile.is_phone_verified = True
-    profile.otp = ""
-    profile.otp_expires_at = None
-    profile.save(update_fields=["is_phone_verified", "otp", "otp_expires_at", "updated_at"])
 
     auth_login(request, user)
     if browser_request:

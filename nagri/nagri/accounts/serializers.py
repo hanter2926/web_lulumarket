@@ -18,14 +18,12 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "state",
             "country",
             "pincode",
-            "otp",
-            "otp_expires_at",
             "is_phone_verified",
             "last_otp_sent_at",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["user", "otp", "otp_expires_at", "is_phone_verified", "last_otp_sent_at", "created_at", "updated_at"]
+        read_only_fields = ["user", "is_phone_verified", "last_otp_sent_at", "created_at", "updated_at"]
 
 
 class AddressSerializer(serializers.ModelSerializer):
