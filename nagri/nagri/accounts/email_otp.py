@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.crypto import salted_hmac
 
 from .email_delivery import send_account_email
-from .models import CustomUser, EmailOTPChallenge, EmailOTPThrottle, UserProfile
+from .models import CustomUser, EmailOTPChallenge, EmailOTPThrottle
 
 OTP_LIFETIME = timedelta(minutes=5)
 OTP_RESEND_COOLDOWN = timedelta(seconds=60)
@@ -45,9 +45,7 @@ def _eligible_user(email, purpose):
         return None
 
     if purpose == EmailOTPChallenge.Purpose.LOGIN:
-        profile = UserProfile.objects.filter(user=user).only("is_phone_verified").first()
-        if not profile or not (profile.is_phone_verified or user.is_email_verified):
-            return None
+        return user
     elif not user.has_usable_password():
         return None
 
@@ -111,6 +109,10 @@ def request_email_otp(email, purpose):
     purpose_text = (
         "verify your email address"
         if purpose == EmailOTPChallenge.Purpose.SIGNUP
+        or (
+            purpose == EmailOTPChallenge.Purpose.LOGIN
+            and not user.is_email_verified
+        )
         else "sign in"
         if purpose == EmailOTPChallenge.Purpose.LOGIN
         else "reset your password"
@@ -186,9 +188,9 @@ def verify_email_otp(email, code, purpose):
             return None
 
         if purpose == EmailOTPChallenge.Purpose.LOGIN:
-            profile = UserProfile.objects.filter(user=user).only("is_phone_verified").first()
-            if not profile or not (profile.is_phone_verified or user.is_email_verified):
-                return None
+            if not user.is_email_verified:
+                user.is_email_verified = True
+                user.save(update_fields=["is_email_verified", "updated_at"])
         elif not user.has_usable_password():
             return None
 

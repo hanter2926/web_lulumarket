@@ -13,7 +13,8 @@ from rest_framework.decorators import action, api_view, permission_classes, rend
 from rest_framework.response import Response
 from rest_framework.renderers import BrowsableAPIRenderer, JSONRenderer
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from django.http import JsonResponse
+from .email_config import send_message
 from orders.models import Order
 
 from .models import Address, CustomUser, EmailOTPChallenge, PaymentMethod, UserProfile
@@ -59,6 +60,22 @@ class IsOwnerOrAdmin(permissions.BasePermission):
         user = getattr(request, "user", None)
         return bool(user and user.is_authenticated and (user == getattr(obj, "user", None) or user.is_staff or user == obj))
 
+#-----  Email Sending------------------
+def send_test_email(request):
+    success = send_message(
+        to_email="avikeshk47@gmail.com",
+        subject="Test Email",
+        message="Hello! This email was sent using Brevo."
+    )
+
+    if success:
+        return JsonResponse({"success": True, "message": "Email sent successfully."})
+
+    return JsonResponse(
+        {"success": False, "message": "Email sending failed."},
+        status=500
+    )
+# END------------------------------
 
 def find_user_by_phone(phone):
     variants = get_phone_variants(phone)
@@ -504,10 +521,10 @@ class UserViewSet(viewsets.ModelViewSet):
 
         profile = UserProfile.objects.filter(user=user).first()
         if profile is None or not (
-            profile.is_phone_verified or user.is_email_verified
+            profile.is_phone_verified and user.is_email_verified
         ):
             return Response(
-                {"detail": "Verify your email or phone number before logging in."},
+                {"detail": "Verify both your email and phone number before logging in."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -550,6 +567,12 @@ class UserViewSet(viewsets.ModelViewSet):
 
         user.phone = phone
         user.save(update_fields=["phone", "updated_at"])
+
+        if not user.is_email_verified:
+            return Response(
+                {"detail": "Phone verified. Verify your email before logging in."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         auth_login(request, user)
         refresh = RefreshToken.for_user(user)
@@ -1053,10 +1076,19 @@ def verify_otp(request):
             return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "This OTP has expired. Please request a new one."}, status=400)
         return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
 
-    auth_login(request, user)
     if browser_request:
         request.session.pop("otp_phone", None)
+        if not user.is_email_verified:
+            request.session["contact_verification_user_id"] = user.pk
+            return redirect("accounts:verify_contacts")
+        auth_login(request, user)
         return redirect("accounts:dashboard_page")
+    if not user.is_email_verified:
+        return Response(
+            {"detail": "Phone verified. Verify your email before logging in."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    auth_login(request, user)
     refresh = RefreshToken.for_user(user)
     return Response({
         "detail": "Phone number verified successfully.",
@@ -1089,11 +1121,17 @@ def email_login_view(request):
         if authenticated_user is None:
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
 
-        profile = UserProfile.objects.filter(user=user).first()
-        if profile is None or not (
-            profile.is_phone_verified or user.is_email_verified
-        ):
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Verify your email or phone number before logging in.", "next": next_url})
+        profile, _ = UserProfile.objects.get_or_create(
+            user=user,
+            defaults={"phone": user.phone or ""},
+        )
+        if not (profile.is_phone_verified and user.is_email_verified):
+            request.session["contact_verification_user_id"] = user.pk
+            request.session["contact_verification_next"] = next_url
+            request.session["contact_verification_remember"] = bool(
+                request.POST.get("remember")
+            )
+            return redirect("accounts:verify_contacts")
 
         auth_login(request, authenticated_user)
         if request.POST.get("remember"):
@@ -1116,6 +1154,135 @@ def email_login_view(request):
         return redirect("accounts:dashboard_page")
 
     return render(request, "accounts/auth.html", {"active_tab": "login", "next": request.GET.get("next", "")})
+
+
+def _safe_contact_verification_next(request):
+    next_url = request.session.get("contact_verification_next", "")
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return next_url
+    return ""
+
+
+def _finish_contact_verification(request, user):
+    profile = UserProfile.objects.filter(user=user).first()
+    if not user.is_email_verified or not profile or not profile.is_phone_verified:
+        return None
+
+    next_url = _safe_contact_verification_next(request)
+    remember = request.session.pop("contact_verification_remember", False)
+    request.session.pop("contact_verification_user_id", None)
+    request.session.pop("contact_verification_next", None)
+    auth_login(request, user, backend=settings.AUTHENTICATION_BACKENDS[0])
+    request.session.set_expiry(
+        settings.SESSION_COOKIE_AGE if remember else 0
+    )
+
+    if next_url:
+        return redirect(next_url)
+    if user.is_owner:
+        return redirect("sellers:owner_dashboard")
+    if user.is_vendor:
+        return redirect("sellers:dashboard")
+    return redirect("accounts:dashboard_page")
+
+
+@require_http_methods(["GET", "POST"])
+def verify_contacts(request):
+    user_id = request.session.get("contact_verification_user_id")
+    user = CustomUser.objects.filter(
+        pk=user_id,
+        account_status=CustomUser.AccountStatus.ACTIVE,
+        is_active=True,
+    ).first()
+    if not user:
+        request.session.pop("contact_verification_user_id", None)
+        request.session.pop("contact_verification_next", None)
+        request.session.pop("contact_verification_remember", None)
+        return redirect("accounts:email_login")
+
+    profile, _ = UserProfile.objects.get_or_create(
+        user=user,
+        defaults={"phone": user.phone or ""},
+    )
+    error = ""
+    notice = ""
+
+    if request.method == "POST":
+        action_name = request.POST.get("action")
+        if action_name == "send_email" and not user.is_email_verified:
+            try:
+                result = request_email_otp(
+                    user.email,
+                    EmailOTPChallenge.Purpose.LOGIN,
+                )
+                notice = (
+                    "Please wait before requesting another email code."
+                    if result == "throttled"
+                    else "If this account is eligible, a code has been sent to its email address."
+                )
+            except Exception as exc:
+                _log_email_delivery_failure(exc)
+                error = "Unable to send the email code right now. Please try again later."
+        elif action_name == "verify_email" and not user.is_email_verified:
+            code = (request.POST.get("email_code") or "").strip()
+            if verify_email_otp(
+                user.email,
+                code,
+                EmailOTPChallenge.Purpose.LOGIN,
+            ):
+                user.refresh_from_db(fields=["is_email_verified"])
+                notice = "Email verified successfully."
+            else:
+                error = "That email code is invalid or expired. Request a new code and try again."
+        elif action_name == "send_phone" and not profile.is_phone_verified:
+            phone = profile.phone or user.phone or ""
+            if not phone:
+                error = "There is no phone number on this account. Please contact support."
+            else:
+                response_status, detail = _issue_phone_otp(profile.pk, phone)
+                if response_status == status.HTTP_200_OK:
+                    notice = "A verification code has been sent to your phone."
+                else:
+                    error = detail
+        elif action_name == "verify_phone" and not profile.is_phone_verified:
+            code = (request.POST.get("phone_code") or "").strip()
+            _, updated_profile, otp_error = _consume_phone_otp(
+                user.pk,
+                code,
+                allow_pending_signup=False,
+            )
+            if otp_error is None and updated_profile:
+                profile = updated_profile
+                notice = "Phone verified successfully."
+            else:
+                error = {
+                    "locked": "Too many incorrect codes. Request a new code.",
+                    "expired": "This phone code has expired. Request a new code.",
+                }.get(
+                    otp_error,
+                    "That phone code is invalid. Check the code and try again.",
+                )
+        else:
+            error = "Choose an available verification step."
+
+        response = _finish_contact_verification(request, user)
+        if response:
+            return response
+
+    return render(
+        request,
+        "accounts/verify_contacts.html",
+        {
+            "user": user,
+            "profile": profile,
+            "error": error,
+            "notice": notice,
+        },
+    )
 
 
 def logout_view(request):
@@ -1187,14 +1354,10 @@ def signup_email_verify(request):
                 EmailOTPChallenge.Purpose.SIGNUP,
             )
             if user:
-                auth_login(request, user, backend=settings.AUTHENTICATION_BACKENDS[0])
                 request.session.pop("signup_email_verification_email", None)
                 request.session.pop("signup_email_verification_notice", None)
-                if user.is_owner:
-                    return redirect("sellers:owner_dashboard")
-                if user.is_vendor:
-                    return redirect("sellers:dashboard")
-                return redirect("accounts:dashboard_page")
+                request.session["contact_verification_user_id"] = user.pk
+                return redirect("accounts:verify_contacts")
         error = "That code is invalid or expired. Request a new code and try again."
 
     return render(
@@ -1372,12 +1535,16 @@ def email_otp_login_verify(request):
                 EmailOTPChallenge.Purpose.LOGIN,
             )
             if user:
-                backend = settings.AUTHENTICATION_BACKENDS[0]
-                auth_login(request, user, backend=backend)
-                next_url = request.session.pop("email_otp_next", "")
                 request.session.pop("email_otp_email", None)
                 request.session.pop("email_otp_notice", None)
-
+                next_url = request.session.pop("email_otp_next", "")
+                profile = UserProfile.objects.filter(user=user).first()
+                if not profile or not profile.is_phone_verified:
+                    request.session["contact_verification_user_id"] = user.pk
+                    request.session["contact_verification_next"] = next_url
+                    return redirect("accounts:verify_contacts")
+                backend = settings.AUTHENTICATION_BACKENDS[0]
+                auth_login(request, user, backend=backend)
                 if next_url and url_has_allowed_host_and_scheme(
                     next_url,
                     allowed_hosts={request.get_host()},

@@ -40,9 +40,9 @@ https://web-lulumarket.onrender.com
 - Order History
 - Secure Checkout
 
-## Signup Email Verification
+## Email and Phone Verification
 
-New customer accounts receive a six-digit verification code by email. The code expires after five minutes, and resend requests are rate-limited.
+New accounts must verify both their email address and phone number before finishing signup. The email code expires after five minutes; email and phone code requests are rate-limited. Existing accounts that have not verified both contacts are directed to the same verification page when they sign in.
 
 Production email uses the existing Brevo HTTPS API integration, not SMTP. Set these Render environment variables:
 
@@ -54,6 +54,16 @@ BREVO_SENDER_NAME=NAGRI
 
 The sender address must match the active, verified sender in Brevo. Account OTP and password-reset email use the existing direct Brevo API helper; other Django mail uses Anymail's Brevo API backend. Local development uses Django's console backend when `DEBUG=True`. Resend is not selected for production because this project does not control a verified sending domain there.
 Remove any `EMAIL_PROVIDER=resend` or `EMAIL_BACKEND` override from Render so production uses the Brevo HTTPS API configured by Django.
+
+Phone verification uses the configured SMS provider. To enable production delivery with Fast2SMS, set:
+
+```text
+SMS_PROVIDER=fast2sms
+FAST2SMS_API_KEY=<your Fast2SMS API key>
+FAST2SMS_SENDER_ID=FSTSMS
+```
+
+The sender ID is optional if you want to use the provider default. Twilio is also supported by the OTP utility; configure `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER`, and install the `twilio` package in the deployment environment. The default `console` SMS provider intentionally does not deliver or log OTPs, so set up a real SMS provider before enabling phone verification for production users. Keep all provider credentials in environment variables; do not commit them.
 
 To send a live test from an environment configured for Brevo:
 

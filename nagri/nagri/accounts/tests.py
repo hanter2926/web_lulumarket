@@ -307,6 +307,7 @@ class PhoneOTPAPISecurityTests(TestCase):
             password="StrongPass123!",
             phone="+919876543210",
             is_active=True,
+            is_email_verified=True,
         )
         self.profile = UserProfile.objects.create(
             user=self.user,
@@ -1037,6 +1038,77 @@ class PhoneOTPAPISecurityTests(TestCase):
 
 
 class AccountSecurityTests(TestCase):
+    @override_settings(
+        EMAIL_PROVIDER="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_password_login_finishes_only_after_both_contacts_are_verified(
+        self,
+        send_sms,
+    ):
+        user = CustomUser.objects.create_user(
+            email="contact-flow@example.com",
+            username="contact-flow-user",
+            password="StrongPass123",
+            phone="+919876543217",
+            is_active=True,
+        )
+        UserProfile.objects.create(
+            user=user,
+            phone=user.phone,
+            is_phone_verified=False,
+        )
+
+        response = self.client.post(
+            reverse("accounts:email_login"),
+            {
+                "email": user.email,
+                "password": "StrongPass123",
+                "next": "/cart/",
+            },
+        )
+        self.assertRedirects(
+            response,
+            reverse("accounts:verify_contacts"),
+            fetch_redirect_response=False,
+        )
+
+        self.client.post(
+            reverse("accounts:verify_contacts"),
+            {"action": "send_email"},
+        )
+        email_code = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group(0)
+        response = self.client.post(
+            reverse("accounts:verify_contacts"),
+            {"action": "verify_email", "email_code": email_code},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(self.client.session.get("_auth_user_id"))
+
+        self.client.post(
+            reverse("accounts:verify_contacts"),
+            {"action": "send_phone"},
+        )
+        phone_code = UserProfile.objects.get(user=user).otp
+        response = self.client.post(
+            reverse("accounts:verify_contacts"),
+            {"action": "verify_phone", "phone_code": phone_code},
+        )
+
+        self.assertRedirects(response, "/cart/", fetch_redirect_response=False)
+        send_sms.assert_called_once()
+        user.refresh_from_db()
+        profile = UserProfile.objects.get(user=user)
+        self.assertTrue(user.is_email_verified)
+        self.assertTrue(profile.is_phone_verified)
+        self.assertEqual(
+            self.client.session.get("_auth_user_id"),
+            str(user.pk),
+        )
+
     def test_unverified_user_cannot_log_in_with_email_and_password(self):
         user = CustomUser.objects.create_user(
             email="pending@example.com",
@@ -1053,14 +1125,15 @@ class AccountSecurityTests(TestCase):
 
         response = self.client.post(reverse("accounts:email_login"), {"email": "pending@example.com", "password": "StrongPass123"})
 
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "accounts/auth.html")
-        self.assertContains(response, 'role="alert"')
-        self.assertContains(
+        self.assertRedirects(
             response,
-            "Verify your email or phone number before logging in",
+            reverse("accounts:verify_contacts"),
+            fetch_redirect_response=False,
         )
         self.assertFalse(response.wsgi_request.user.is_authenticated)
+        verification_page = self.client.get(response.url)
+        self.assertTemplateUsed(verification_page, "accounts/verify_contacts.html")
+        self.assertContains(verification_page, "Verify your email and phone")
 
     def test_verified_user_can_log_in_with_email_and_password(self):
         user = CustomUser.objects.create_user(
@@ -1069,6 +1142,7 @@ class AccountSecurityTests(TestCase):
             password="StrongPass123",
             phone="+919876543211",
             is_active=True,
+            is_email_verified=True,
         )
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.phone = user.phone
@@ -1086,6 +1160,7 @@ class AccountSecurityTests(TestCase):
             username="case-user",
             password="StrongPass123",
             is_active=True,
+            is_email_verified=True,
         )
         UserProfile.objects.create(user=user, phone="+919876543212", is_phone_verified=True)
 
@@ -1103,6 +1178,7 @@ class AccountSecurityTests(TestCase):
             username="next-user",
             password="StrongPass123",
             is_active=True,
+            is_email_verified=True,
         )
         UserProfile.objects.create(user=user, phone="+919876543213", is_phone_verified=True)
 
@@ -1119,6 +1195,7 @@ class AccountSecurityTests(TestCase):
             username="redirect-user",
             password="StrongPass123",
             is_active=True,
+            is_email_verified=True,
         )
         UserProfile.objects.create(user=user, phone="+919876543214", is_phone_verified=True)
 
@@ -1186,6 +1263,7 @@ class AccountSecurityTests(TestCase):
             username="session-user",
             password="StrongPass123",
             is_active=True,
+            is_email_verified=True,
         )
         UserProfile.objects.create(user=user, phone="+919876543216", is_phone_verified=True)
 
@@ -1252,12 +1330,37 @@ class SignupFlowTests(TestCase):
             {"email": self.signup_data["email"], "code": code},
         )
 
-        self.assertRedirects(response, reverse("accounts:dashboard_page"))
+        self.assertRedirects(
+            response,
+            reverse("accounts:verify_contacts"),
+            fetch_redirect_response=False,
+        )
         user.refresh_from_db()
         self.assertTrue(user.is_active)
         self.assertTrue(user.is_email_verified)
         self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
         self.assertFalse(UserProfile.objects.get(user=user).is_phone_verified)
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+        with patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"}) as send_sms:
+            response = self.client.post(
+                reverse("accounts:verify_contacts"),
+                {"action": "send_phone"},
+            )
+        self.assertEqual(response.status_code, 200)
+        send_sms.assert_called_once()
+        profile = UserProfile.objects.get(user=user)
+        phone_code = profile.otp
+        self.assertTrue(phone_code)
+
+        response = self.client.post(
+            reverse("accounts:verify_contacts"),
+            {"action": "verify_phone", "phone_code": phone_code},
+        )
+        self.assertRedirects(response, reverse("accounts:dashboard_page"))
+        profile.refresh_from_db()
+        self.assertTrue(profile.is_phone_verified)
+        self.assertFalse(profile.otp)
 
         self.client.get(reverse("accounts:logout_page"))
         response = self.client.post(
@@ -1479,6 +1582,7 @@ class PasswordResetFlowTests(TestCase):
             username="reset-user",
             password="OldStrongPass123!",
             is_active=True,
+            is_email_verified=True,
         )
         UserProfile.objects.create(
             user=self.user,
@@ -1717,6 +1821,8 @@ class EmailOTPFlowTests(TestCase):
         )
         self.assertRedirects(response, reverse("accounts:dashboard_page"))
         self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_email_verified)
         self.assertNotEqual(self.client.session.session_key, previous_session_key)
         self.assertIsNotNone(
             EmailOTPChallenge.objects.latest("created_at").consumed_at
@@ -1969,7 +2075,10 @@ class EmailOTPFlowTests(TestCase):
             "name": "NAGRI",
         })
         self.assertEqual(payload["to"], [{"email": self.user.email}])
-        self.assertRegex(payload["textContent"], r"code to sign in is \d{6}")
+        self.assertRegex(
+            payload["textContent"],
+            r"code to verify your email address is \d{6}",
+        )
 
     @override_settings(
         DEBUG=False,
@@ -2086,18 +2195,18 @@ class RoleBasedNavbarTests(TestCase):
     def setUp(self):
         self.client = self.client
         # Create users
-        self.customer = CustomUser.objects.create_user(email="cust@example.com", password="pass123", username="cust")
+        self.customer = CustomUser.objects.create_user(email="cust@example.com", password="pass123", username="cust", is_email_verified=True)
         self.customer.is_active = True
         self.customer.save()
         UserProfile.objects.get_or_create(user=self.customer, defaults={"full_name": "Customer", "phone": "+919000000001", "is_phone_verified": True})
 
-        self.seller = CustomUser.objects.create_user(email="seller@example.com", password="pass123", username="seller")
+        self.seller = CustomUser.objects.create_user(email="seller@example.com", password="pass123", username="seller", is_email_verified=True)
         self.seller.is_vendor = True
         self.seller.is_active = True
         self.seller.save()
         UserProfile.objects.get_or_create(user=self.seller, defaults={"full_name": "Seller", "phone": "+919000000002", "is_phone_verified": True})
 
-        self.owner = CustomUser.objects.create_user(email="owner@example.com", password="pass123", username="owner")
+        self.owner = CustomUser.objects.create_user(email="owner@example.com", password="pass123", username="owner", is_email_verified=True)
         self.owner.is_owner = True
         self.owner.is_active = True
         self.owner.save()
