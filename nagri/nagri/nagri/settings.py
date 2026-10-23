@@ -386,7 +386,7 @@ CHANNEL_LAYERS = {
 
 
 # ============================================================
-# EMAIL - BREVO API via django-anymail
+# EMAIL - Brevo API configuration for account email delivery
 # ============================================================
 
 EMAIL_PROVIDER = "brevo"

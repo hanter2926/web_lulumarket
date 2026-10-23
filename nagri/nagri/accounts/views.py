@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.renderers import BrowsableAPIRenderer, JSONRenderer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.http import JsonResponse
-from .email_config import send_message
+from nagri.email_config import send_message
 from orders.models import Order
 
 from .models import Address, CustomUser, EmailOTPChallenge, PaymentMethod, UserProfile
@@ -63,7 +63,7 @@ class IsOwnerOrAdmin(permissions.BasePermission):
 #-----  Email Sending------------------
 def send_test_email(request):
     success = send_message(
-        to_email="avikeshk47@gmail.com",
+        to_email="vikrampal803302@gmail.com",
         subject="Test Email",
         message="Hello! This email was sent using Brevo."
     )

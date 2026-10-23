@@ -1374,7 +1374,7 @@ class SignupFlowTests(TestCase):
 
     @override_settings(
         DEBUG=False,
-        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="mock-api-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -1449,6 +1449,10 @@ class SignupFlowTests(TestCase):
         self.assertNotIn(self.signup_data["email"], output)
         self.assertNotIn("mock-api-key", output)
         self.assertNotIn("must not be logged", output)
+        payload = post.call_args.kwargs["json"]
+        self.assertNotIn(payload["textContent"], output)
+        otp = re.search(r"\b\d{6}\b", payload["textContent"]).group(0)
+        self.assertNotIn(otp, output)
 
         page = self.client.get(reverse("accounts:signup_email_verify"))
         self.assertContains(page, "Unable to send the verification email right now")
@@ -1612,7 +1616,7 @@ class PasswordResetFlowTests(TestCase):
 
     @override_settings(
         DEBUG=False,
-        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -1773,6 +1777,12 @@ class PasswordResetFlowTests(TestCase):
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     DEFAULT_FROM_EMAIL="noreply@example.com",
     DEBUG=True,
+)
+@override_settings(
+    DEBUG=True,
+    EMAIL_PROVIDER="smtp",
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="noreply@example.com",
 )
 class EmailOTPFlowTests(TestCase):
     def setUp(self):
@@ -1960,33 +1970,40 @@ class EmailOTPFlowTests(TestCase):
         self.assertNotIn("otp-secret-token-secret", output)
 
     @override_settings(
-        DEBUG=True,
+        DEBUG=False,
         EMAIL_PROVIDER="brevo",
-        EMAIL_BACKEND="anymail.backends.test.EmailBackend",
-        ANYMAIL={
-            "BREVO_API_KEY": "brevo-test-key",
-            "SEND_DEFAULTS": {"reply_to": ["vikrampal505@yahoo.com"]},
-        },
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
-        DEFAULT_FROM_EMAIL="NAGRI <sender@example.com>",
+        BREVO_SENDER_NAME="NAGRI",
     )
-    def test_account_email_uses_brevo_compatible_backend_and_defaults(self):
+    @patch("accounts.email_delivery.send_mail")
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(
+            status_code=201,
+            json=lambda: {"messageId": "mock-message-id"},
+        ),
+    )
+    def test_production_brevo_uses_custom_api_without_anymail_backend(
+        self,
+        post,
+        smtp_send,
+    ):
         send_account_email("subject", "body", "recipient@example.com")
 
-        self.assertEqual(len(mail.outbox), 1)
+        post.assert_called_once()
         self.assertEqual(
-            mail.outbox[0].anymail_test_params["from"].addr_spec,
-            "sender@example.com",
+            post.call_args.kwargs["json"]["sender"],
+            {"email": "sender@example.com", "name": "NAGRI"},
         )
         self.assertEqual(
-            mail.outbox[0].anymail_test_params["from"].display_name,
-            "NAGRI",
+            post.call_args.kwargs["headers"]["api-key"],
+            "brevo-test-key",
         )
-        self.assertEqual(
-            mail.outbox[0].anymail_test_params["reply_to"][0].addr_spec,
-            "vikrampal505@yahoo.com",
-        )
+        self.assertEqual(post.call_args.kwargs["timeout"], (3.05, 10))
+        self.assertFalse(post.call_args.kwargs["allow_redirects"])
+        smtp_send.assert_not_called()
 
     @override_settings(
         DEBUG=False,
@@ -2051,7 +2068,7 @@ class EmailOTPFlowTests(TestCase):
 
     @override_settings(
         DEBUG=False,
-        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
@@ -2082,60 +2099,135 @@ class EmailOTPFlowTests(TestCase):
 
     @override_settings(
         DEBUG=False,
-        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
     )
-    @patch(
-        "accounts.email_delivery.requests.post",
-        return_value=Mock(status_code=401, json=lambda: {"message": "secret response"}),
-    )
-    def test_brevo_authentication_failure_does_not_fallback_to_smtp(self, post):
-        with patch("accounts.email_delivery.send_mail") as smtp_send:
-            with self.assertRaises(BrevoAPIError) as raised:
-                send_account_email("subject", "body", "recipient@example.com")
-        self.assertEqual(raised.exception.failure_class, "brevo_authentication")
-        self.assertEqual(raised.exception.status_code, 401)
-        post.assert_called_once()
+    @patch("accounts.email_delivery.send_mail")
+    @patch("accounts.email_delivery.requests.post")
+    def test_brevo_authentication_failures_do_not_fallback_to_smtp(
+        self,
+        post,
+        smtp_send,
+    ):
+        for status_code in (401, 403):
+            with self.subTest(status_code=status_code):
+                post.reset_mock()
+                post.return_value = Mock(
+                    status_code=status_code,
+                    json=lambda: {"message": "must not be logged"},
+                )
+                with self.assertRaises(BrevoAPIError) as raised:
+                    send_account_email(
+                        "subject",
+                        "body",
+                        "recipient@example.com",
+                    )
+                self.assertEqual(
+                    raised.exception.failure_class,
+                    "brevo_authentication",
+                )
+                self.assertEqual(raised.exception.status_code, status_code)
+                post.assert_called_once()
         smtp_send.assert_not_called()
 
     @override_settings(
         DEBUG=False,
-        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
     )
+    @patch("accounts.email_delivery.send_mail")
     @patch(
         "accounts.email_delivery.requests.post",
         return_value=Mock(status_code=201, json=lambda: {"unexpected": "shape"}),
     )
-    def test_brevo_malformed_success_response_is_rejected(self, post):
+    def test_brevo_malformed_success_response_is_rejected(
+        self,
+        post,
+        smtp_send,
+    ):
         with self.assertRaises(BrevoAPIError) as raised:
             send_account_email("subject", "body", "recipient@example.com")
         self.assertEqual(raised.exception.failure_class, "brevo_malformed_response")
         self.assertEqual(raised.exception.status_code, 201)
         post.assert_called_once()
+        smtp_send.assert_not_called()
 
     @override_settings(
         DEBUG=False,
-        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
         EMAIL_PROVIDER="brevo",
         BREVO_API_KEY="brevo-test-key",
         BREVO_SENDER_EMAIL="sender@example.com",
     )
+    @patch("accounts.email_delivery.send_mail")
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(
+            status_code=201,
+            json=Mock(side_effect=ValueError("sensitive response body")),
+        ),
+    )
+    def test_brevo_invalid_json_response_is_rejected_without_smtp_fallback(
+        self,
+        post,
+        smtp_send,
+    ):
+        with self.assertRaises(BrevoAPIError) as raised:
+            send_account_email("subject", "body", "recipient@example.com")
+
+        self.assertEqual(raised.exception.failure_class, "brevo_malformed_response")
+        self.assertEqual(raised.exception.status_code, 201)
+        post.assert_called_once()
+        smtp_send.assert_not_called()
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+    )
+    @patch("accounts.email_delivery.send_mail")
     @patch("accounts.email_delivery.requests.post", side_effect=Timeout())
-    def test_brevo_timeout_is_classified_without_smtp_fallback(self, post):
-        with patch("accounts.email_delivery.send_mail") as smtp_send:
-            with self.assertRaises(Timeout):
-                send_account_email("subject", "body", "recipient@example.com")
+    def test_brevo_timeout_is_classified_without_smtp_fallback(
+        self,
+        post,
+        smtp_send,
+    ):
+        with self.assertRaises(Timeout):
+            send_account_email("subject", "body", "recipient@example.com")
         self.assertEqual(
             classify_email_delivery_error(Timeout())[0],
             "brevo_timeout",
         )
         post.assert_called_once()
         smtp_send.assert_not_called()
+
+    def test_brevo_requires_api_key_and_sender_in_production(self):
+        invalid_configurations = (
+            {"BREVO_API_KEY": "", "BREVO_SENDER_EMAIL": "sender@example.com"},
+            {"BREVO_API_KEY": "brevo-test-key", "BREVO_SENDER_EMAIL": ""},
+        )
+        with patch("accounts.email_delivery.requests.post") as post:
+            for configuration in invalid_configurations:
+                with self.subTest(configuration=configuration):
+                    with override_settings(
+                        DEBUG=False,
+                        EMAIL_PROVIDER="brevo",
+                        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+                        **configuration,
+                    ):
+                        with self.assertRaises(EmailDeliveryConfigurationError):
+                            send_account_email(
+                                "subject",
+                                "body",
+                                "recipient@example.com",
+                            )
+        post.assert_not_called()
 
     def test_smtp_authentication_failure_logs_only_safe_class_and_code(self):
         failure = smtplib.SMTPAuthenticationError(
