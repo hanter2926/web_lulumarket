@@ -12,7 +12,7 @@
     <div class="auth-panel auth-panel--login" data-auth-panel="login" style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff;">
         <h2>Login</h2>
         {% if error and active_tab == 'login' %}
-            <p style="color: #b91c1c;">{{ error }}</p>
+            <div class="alert alert-danger" role="alert">{{ error }}</div>
         {% endif %}
         <form method="post" action="{% url 'accounts:email_login' %}">
             {% csrf_token %}

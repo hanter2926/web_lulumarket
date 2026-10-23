@@ -1054,6 +1054,8 @@ class AccountSecurityTests(TestCase):
         response = self.client.post(reverse("accounts:email_login"), {"email": "pending@example.com", "password": "StrongPass123"})
 
         self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "accounts/auth.html")
+        self.assertContains(response, 'role="alert"')
         self.assertContains(
             response,
             "Verify your email or phone number before logging in",
