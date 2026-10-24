@@ -4,6 +4,7 @@ from django.db.models import Count, Q
 from django.shortcuts import render
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from .models import Category, Product, SubCategory
@@ -91,10 +92,19 @@ def product_list_view(request):
     return render(request, "products/product_list.html", context)
 
 
+class IsStaffOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return request.method in permissions.SAFE_METHODS or bool(
+            request.user
+            and request.user.is_authenticated
+            and request.user.is_staff
+        )
+
+
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all().order_by("id")
     serializer_class = CategorySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsStaffOrReadOnly]
 
     @action(detail=True, methods=["get"])
     def subcategories(self, request, pk=None):
@@ -103,17 +113,24 @@ class CategoryViewSet(viewsets.ModelViewSet):
         serializer = SubCategorySerializer(subcategories, many=True)
         return Response(serializer.data)
 
+    def perform_destroy(self, instance):
+        if instance.products.filter(order_items__isnull=False).exists():
+            raise PermissionDenied(
+                "Cannot delete a category containing products referenced by orders."
+            )
+        super().perform_destroy(instance)
+
 
 class SubCategoryViewSet(viewsets.ModelViewSet):
     queryset = SubCategory.objects.select_related("category").all().order_by("id")
     serializer_class = SubCategorySerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsStaffOrReadOnly]
 
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related("category", "subcategory", "inventory").prefetch_related('images').all().order_by("id")
     serializer_class = ProductSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [IsStaffOrReadOnly]
 
     def get_queryset(self):
         queryset = Product.objects.select_related("category", "subcategory", "inventory").all()
@@ -163,6 +180,13 @@ class ProductViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_bestseller=bestseller.lower() == "true")
 
         return queryset.order_by("-is_featured", "-is_bestseller", "-rating", "id")
+
+    def perform_destroy(self, instance):
+        if instance.order_items.exists():
+            raise PermissionDenied(
+                "Cannot delete a product referenced by order history."
+            )
+        super().perform_destroy(instance)
 
     @action(detail=False, methods=["get"])
     def featured(self, request):
