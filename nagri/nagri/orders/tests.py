@@ -83,6 +83,54 @@ class OrderTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertIn(reverse('payment_page', args=[order.id]), resp.url)
 
+    def test_customer_order_api_cannot_set_paid_or_paid_status(self):
+        order = Order.objects.create(
+            user=self.user,
+            order_number="ORD-API-PAYMENT-1",
+            total_amount=Decimal("100.00"),
+            status="pending",
+            is_paid=False,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.patch(
+            f"/orders/orders/{order.id}/",
+            data={"is_paid": True, "status": "paid"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertFalse(order.is_paid)
+        self.assertEqual(order.status, "pending")
+
+    def test_staff_order_api_can_update_status_but_not_mark_order_paid(self):
+        staff_user = get_user_model().objects.create_user(
+            username="order-staff",
+            email="order-staff@example.com",
+            password="pass",
+            is_staff=True,
+        )
+        order = Order.objects.create(
+            user=self.user,
+            order_number="ORD-API-PAYMENT-2",
+            total_amount=Decimal("100.00"),
+            status="pending",
+            is_paid=False,
+        )
+        self.client.force_login(staff_user)
+
+        response = self.client.patch(
+            f"/orders/orders/{order.id}/",
+            data={"is_paid": True, "status": "shipped"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertFalse(order.is_paid)
+        self.assertEqual(order.status, "shipped")
+
     def _create_cancellable_order(self, number="ORD-CANCEL-1", status="pending", is_paid=False):
         return Order.objects.create(
             user=self.user,

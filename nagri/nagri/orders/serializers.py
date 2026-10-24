@@ -40,5 +40,12 @@ class OrderSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = [
-            "user", "created_at", "updated_at", "cancellation_reason", "cancellation_comment", "cancelled_at",
+            "user", "created_at", "updated_at", "is_paid", "cancellation_reason", "cancellation_comment", "cancelled_at",
         ]
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+        if not getattr(getattr(request, "user", None), "is_staff", False):
+            fields["status"].read_only = True
+        return fields
