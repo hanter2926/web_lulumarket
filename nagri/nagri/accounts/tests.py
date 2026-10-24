@@ -1445,6 +1445,7 @@ class SignupFlowTests(TestCase):
         output = "\n".join(captured.output)
         self.assertIn("provider=brevo", output)
         self.assertIn("failure_class=brevo_authentication", output)
+        self.assertIn("safe_detail=Brevo rejected API authentication", output)
         self.assertIn("status_code=401", output)
         self.assertNotIn(self.signup_data["email"], output)
         self.assertNotIn("mock-api-key", output)

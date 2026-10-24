@@ -1447,12 +1447,33 @@ def otp_login_page(request):
 
 def _log_email_delivery_failure(exc):
     failure_class, smtp_code = classify_email_delivery_error(exc)
+    safe_details = {
+        "email_configuration": "Email delivery configuration is incomplete or invalid",
+        "brevo_authentication": "Brevo rejected API authentication",
+        "brevo_api_rejected": "Brevo rejected the API request",
+        "brevo_malformed_response": "Brevo returned an invalid response",
+        "brevo_timeout": "Brevo API request timed out",
+        "brevo_connection": "Could not connect to Brevo API",
+        "database_operational": "Database operation failed",
+        "smtp_authentication": "SMTP authentication failed",
+        "smtp_connection": "SMTP connection failed",
+        "smtp_disconnected": "SMTP server disconnected",
+        "smtp_recipient_rejected": "SMTP recipient was rejected",
+        "smtp_sender_rejected": "SMTP sender was rejected",
+        "smtp_response": "SMTP server returned an error",
+        "network_or_timeout": "Network operation failed or timed out",
+        "email_backend": "Email backend failed",
+    }
+    safe_detail = safe_details.get(
+        failure_class,
+        "Email delivery failed; no safe detail available",
+    )
     logger.error(
         "Account email delivery failed: provider=%s backend=%s "
         "brevo_api_key_configured=%s brevo_sender_configured=%s "
         "host_configured=%s port=%s tls=%s ssl=%s "
         "username_configured=%s password_configured=%s sender_configured=%s "
-        "failure_class=%s status_code=%s error_type=%s",
+        "failure_class=%s safe_detail=%s status_code=%s error_type=%s",
         settings.EMAIL_PROVIDER or "unset",
         settings.EMAIL_BACKEND,
         bool(settings.BREVO_API_KEY),
@@ -1465,6 +1486,7 @@ def _log_email_delivery_failure(exc):
         bool(settings.EMAIL_HOST_PASSWORD),
         bool(settings.DEFAULT_FROM_EMAIL),
         failure_class,
+        safe_detail,
         smtp_code,
         type(exc).__name__,
     )
