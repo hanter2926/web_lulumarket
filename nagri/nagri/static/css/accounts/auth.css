@@ -3,10 +3,6 @@
     display: none;
 }
 
-.auth-panel--register {
-    display: none !important;
-}
-
 @media (max-width: 768px) {
     .auth-layout {
         display: block !important;

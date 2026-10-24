@@ -334,7 +334,14 @@ class PhoneOTPAPISecurityTests(TestCase):
 
         assert_no_otp_field(payload)
 
-    def test_public_registration_responses_do_not_expose_phone_otp(self):
+    @override_settings(
+        EMAIL_PROVIDER="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
+    @patch("accounts.views.send_otp_to_phone")
+    def test_public_registration_sends_email_otp_without_phone_otp(self, send_sms):
         registration_payloads = (
             (
                 reverse("accounts:users-register"),
@@ -356,17 +363,131 @@ class PhoneOTPAPISecurityTests(TestCase):
             ),
         )
 
-        with patch("accounts.views.generate_otp", return_value=self.otp), patch(
-            "accounts.views.send_otp_to_phone", return_value={"status": "sent"}
-        ):
-            for endpoint, payload in registration_payloads:
-                with self.subTest(endpoint=endpoint):
-                    response = self.client.post(
-                        endpoint, payload, content_type="application/json"
-                    )
+        for endpoint, payload in registration_payloads:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(
+                    endpoint, payload, content_type="application/json"
+                )
 
-                    self.assertEqual(response.status_code, 201)
-                    self._assert_otp_not_serialized(response.json())
+                self.assertEqual(response.status_code, 201)
+                result = response.json()
+                self._assert_otp_not_serialized(result)
+                self.assertTrue(result["email_verification_required"])
+                self.assertEqual(
+                    result["verify_endpoint"],
+                    reverse("accounts:signup_email_otp_verify"),
+                )
+                user = CustomUser.objects.get(email=payload["email"])
+                self.assertFalse(user.is_active)
+                self.assertFalse(user.is_email_verified)
+                self.assertEqual(
+                    user.account_status,
+                    CustomUser.AccountStatus.PENDING_VERIFICATION,
+                )
+                profile = UserProfile.objects.get(user=user)
+                self.assertFalse(profile.is_phone_verified)
+                self.assertFalse(profile.otp)
+
+        self.assertEqual(len(mail.outbox), 2)
+        send_sms.assert_not_called()
+
+    @override_settings(
+        EMAIL_PROVIDER="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
+    def test_api_signup_email_verification_activates_only_matching_user(self):
+        payload = {
+            "email": "verified-api-signup@example.com",
+            "username": "verified-api-signup",
+            "password": "StrongPass123!",
+            "phone": "+919876543217",
+        }
+        response = self.client.post(
+            reverse("accounts:users-register"),
+            payload,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        user = CustomUser.objects.get(email=payload["email"])
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        response = self.client.post(
+            reverse("accounts:signup_email_otp_verify"),
+            {"email": payload["email"], "code": code},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.is_email_verified)
+        self.assertTrue(user.is_active)
+        self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
+
+        other = CustomUser.objects.create_user(
+            email="unrelated-pending@example.com",
+            username="unrelated-pending",
+            password="StrongPass123!",
+            is_active=False,
+            is_email_verified=False,
+            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
+        self.assertFalse(other.is_active)
+        self.assertFalse(other.is_email_verified)
+
+        response = self.client.post(
+            reverse("accounts:signup_email_otp_verify"),
+            {"email": other.email, "code": code},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        other.refresh_from_db()
+        self.assertFalse(other.is_active)
+        self.assertFalse(other.is_email_verified)
+
+    @override_settings(
+        EMAIL_PROVIDER="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
+    def test_signup_submit_email_otp_must_be_verified_before_activation(self):
+        email = "signup-submit-verification@example.com"
+        response = self.client.post(
+            reverse("accounts:signup_submit"),
+            {
+                "email": email,
+                "password": "StrongPass123!",
+                "phone": "9876543219",
+                "full_name": "Signup Submit",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        user = CustomUser.objects.get(email=email)
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        wrong_code = "000000" if code != "000000" else "000001"
+
+        response = self.client.post(
+            reverse("accounts:signup_email_otp_verify"),
+            {"email": email, "code": wrong_code},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+        self.assertFalse(user.is_email_verified)
+
+        response = self.client.post(
+            reverse("accounts:signup_email_otp_verify"),
+            {"email": email, "code": code},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.is_email_verified)
+        self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
 
     def test_api_registration_rejects_missing_or_invalid_phone_before_creating_user(self):
         initial_count = CustomUser.objects.count()
@@ -398,125 +519,169 @@ class PhoneOTPAPISecurityTests(TestCase):
 
         self.assertEqual(CustomUser.objects.count(), initial_count)
 
-    @patch("accounts.views.send_otp_to_phone", side_effect=RuntimeError("provider down"))
-    def test_api_signup_delivery_failure_keeps_retryable_pending_account(
-        self, send_otp
-    ):
+    @override_settings(
+        EMAIL_PROVIDER="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
+    def test_api_signup_email_delivery_failure_keeps_retryable_pending_account(self):
         email = "retryable-signup@example.com"
         phone = "+919876543211"
-        with patch("accounts.views.generate_otp", return_value=self.otp):
-            response = self.client.post(
-                reverse("accounts:users-register"),
-                {
-                    "email": email,
-                    "username": "retryable-signup",
-                    "password": "StrongPass123!",
-                    "phone": phone,
-                },
-                content_type="application/json",
-            )
-
-        self.assertEqual(response.status_code, 500)
-        self.assertEqual(
-            response.json()["resend_endpoint"],
-            reverse("accounts:signup_phone_otp_resend"),
-        )
-        user = CustomUser.objects.get(email=email)
-        profile = UserProfile.objects.get(user=user)
-        self.assertFalse(user.is_active)
-        self.assertEqual(
-            user.account_status,
-            CustomUser.AccountStatus.PENDING_VERIFICATION,
-        )
-        self.assertFalse(profile.otp)
-        self.assertIsNone(profile.otp_expires_at)
-        self.assertIsNotNone(profile.last_otp_sent_at)
-        send_otp.assert_called_once_with(phone, self.otp)
-
-        profile.last_otp_sent_at = timezone.now() - timedelta(seconds=61)
-        profile.save(update_fields=["last_otp_sent_at", "updated_at"])
-        with patch("accounts.views.generate_otp", return_value="135789"), patch(
-            "accounts.views.send_otp_to_phone",
-            side_effect=RuntimeError("provider still down"),
+        with patch(
+            "accounts.email_otp.send_account_email",
+            side_effect=RuntimeError("mail provider unavailable"),
         ):
-            failed_retry_response = self.client.post(
-                reverse("accounts:signup_phone_otp_resend"),
-                {"email": email, "phone": phone},
-                content_type="application/json",
-            )
+            with self.assertLogs("accounts.views", level="ERROR"):
+                response = self.client.post(
+                    reverse("accounts:users-register"),
+                    {
+                        "email": email,
+                        "username": "retryable-signup",
+                        "password": "StrongPass123!",
+                        "phone": phone,
+                    },
+                    content_type="application/json",
+                )
 
-        self.assertEqual(failed_retry_response.status_code, 200)
-        self.assertIn("may be sent", failed_retry_response.json()["detail"])
-        self.assertNotIn("sent successfully", failed_retry_response.json()["detail"])
-        profile.refresh_from_db()
-        self.assertFalse(profile.otp)
-        self.assertIsNone(profile.otp_expires_at)
-
-        profile.last_otp_sent_at = timezone.now() - timedelta(seconds=61)
-        profile.save(update_fields=["last_otp_sent_at", "updated_at"])
-        with patch("accounts.views.generate_otp", return_value="135790"), patch(
-            "accounts.views.send_otp_to_phone", return_value={"status": "sent"}
-        ) as retry_send:
-            retry_response = self.client.post(
-                reverse("accounts:signup_phone_otp_resend"),
-                {"email": email, "phone": phone},
-                content_type="application/json",
-            )
-
-        self.assertEqual(retry_response.status_code, 200)
-        self.assertNotIn("135790", json.dumps(retry_response.json()))
-        retry_send.assert_called_once_with(phone, "135790")
-        profile.refresh_from_db()
-        self.assertEqual(profile.otp, "135790")
-
-    @patch("accounts.views.send_otp_to_phone", side_effect=RuntimeError("provider down"))
-    def test_signup_submit_delivery_failure_can_use_same_resend_route(self, send_otp):
-        email = "submit-retryable@example.com"
-        phone = "+919876543212"
-        with patch("accounts.views.generate_otp", return_value=self.otp):
-            response = self.client.post(
-                reverse("accounts:signup_submit"),
-                {
-                    "email": email,
-                    "password": "StrongPass123!",
-                    "phone": phone,
-                    "full_name": "Submit Retryable",
-                },
-                content_type="application/json",
-            )
-
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 502)
         self.assertEqual(
             response.json()["resend_endpoint"],
-            reverse("accounts:signup_phone_otp_resend"),
+            reverse("accounts:signup_email_otp_resend"),
         )
         user = CustomUser.objects.get(email=email)
-        profile = UserProfile.objects.get(user=user)
+        self.assertFalse(user.is_active)
+        self.assertFalse(user.is_email_verified)
         self.assertEqual(
             user.account_status,
             CustomUser.AccountStatus.PENDING_VERIFICATION,
         )
-        self.assertFalse(profile.otp)
-        self.assertIsNone(profile.otp_expires_at)
-        self.assertIsNotNone(profile.last_otp_sent_at)
-        send_otp.assert_called_once_with(phone, self.otp)
 
-        profile.last_otp_sent_at = timezone.now() - timedelta(seconds=61)
-        profile.save(update_fields=["last_otp_sent_at", "updated_at"])
-        with patch("accounts.views.generate_otp", return_value="135791"), patch(
-            "accounts.views.send_otp_to_phone", return_value={"status": "sent"}
-        ) as retry_send:
-            retry_response = self.client.post(
+        throttle = EmailOTPThrottle.objects.get(
+            purpose=EmailOTPThrottle.Purpose.SIGNUP,
+        )
+        throttle.last_requested_at = timezone.now() - timedelta(seconds=11)
+        throttle.save(update_fields=["last_requested_at"])
+        retry_response = self.client.post(
+            reverse("accounts:signup_email_otp_resend"),
+            {"email": email},
+            content_type="application/json",
+        )
+        self.assertEqual(retry_response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+
+    @override_settings(
+        EMAIL_PROVIDER="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
+    def test_legacy_signup_resend_route_does_not_send_phone_otp(self):
+        email = "legacy-resend@example.com"
+        phone = "+919876543211"
+        user = CustomUser.objects.create_user(
+            email=email,
+            username="legacy-resend",
+            password="StrongPass123!",
+            phone=phone,
+            is_active=False,
+            is_email_verified=False,
+            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
+        UserProfile.objects.create(user=user, phone=phone)
+
+        with patch("accounts.views.send_otp_to_phone") as send_sms:
+            response = self.client.post(
                 reverse("accounts:signup_phone_otp_resend"),
                 {"email": email, "phone": phone},
                 content_type="application/json",
             )
 
-        self.assertEqual(retry_response.status_code, 200)
-        self.assertNotIn("135791", json.dumps(retry_response.json()))
-        retry_send.assert_called_once_with(phone, "135791")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("may be sent", response.json()["detail"])
+        send_sms.assert_not_called()
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_phone_otp_cannot_activate_pending_email_unverified_signup(self):
+        user = CustomUser.objects.create_user(
+            email="phone-cannot-activate@example.com",
+            username="phone-cannot-activate",
+            password="StrongPass123!",
+            phone="+919876543218",
+            is_active=False,
+            is_email_verified=False,
+            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
+        profile = UserProfile.objects.create(
+            user=user,
+            phone=user.phone,
+            otp=self.otp,
+            otp_expires_at=timezone.now() + timedelta(minutes=5),
+        )
+        response = self.client.post(
+            reverse("accounts:verify_otp"),
+            {"phone": user.phone, "otp": self.otp},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        user.refresh_from_db()
         profile.refresh_from_db()
-        self.assertEqual(profile.otp, "135791")
+        self.assertFalse(user.is_active)
+        self.assertFalse(user.is_email_verified)
+        self.assertEqual(
+            user.account_status,
+            CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
+        self.assertFalse(profile.is_phone_verified)
+
+    @override_settings(
+        EMAIL_PROVIDER="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
+    def test_api_password_login_requires_email_verification_but_not_phone_verification(self):
+        self.profile.is_phone_verified = False
+        self.profile.save(update_fields=["is_phone_verified", "updated_at"])
+        wrong_password_response = self.client.post(
+            reverse("accounts:users-login"),
+            {"email": self.user.email, "password": "wrong-password"},
+            content_type="application/json",
+        )
+        self.assertEqual(wrong_password_response.status_code, 401)
+
+        response = self.client.post(
+            reverse("accounts:users-login"),
+            {"email": self.user.email, "password": "StrongPass123!"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.json())
+
+        self.user.is_email_verified = False
+        self.user.save(update_fields=["is_email_verified", "updated_at"])
+        response = self.client.post(
+            reverse("accounts:users-login"),
+            {"email": self.user.email, "password": "StrongPass123!"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Verify your email", response.json()["detail"])
+
+        self.user.is_email_verified = True
+        self.user.is_active = False
+        self.user.account_status = CustomUser.AccountStatus.ADMIN_DISABLED
+        self.user.save(
+            update_fields=["is_email_verified", "is_active", "account_status"]
+        )
+        response = self.client.post(
+            reverse("accounts:users-login"),
+            {"email": self.user.email, "password": "StrongPass123!"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("inactive", response.json()["detail"])
+
 
     def test_user_and_profile_api_responses_do_not_expose_phone_otp(self):
         self.client.force_login(self.user)
@@ -586,11 +751,6 @@ class PhoneOTPAPISecurityTests(TestCase):
         self.assertIn("expired", response.json()["detail"].lower())
 
     def test_phone_otp_cannot_be_reused_after_successful_verification(self):
-        self.user.is_active = False
-        self.user.account_status = CustomUser.AccountStatus.PENDING_VERIFICATION
-        self.user.save(
-            update_fields=["account_status", "is_active", "updated_at"]
-        )
         self.profile.is_phone_verified = False
         self.profile.otp_expires_at = timezone.now() + timedelta(minutes=5)
         self.profile.save(update_fields=["is_phone_verified", "otp_expires_at", "updated_at"])
@@ -1018,12 +1178,20 @@ class PhoneOTPAPISecurityTests(TestCase):
             CustomUser.AccountStatus.ADMIN_DISABLED,
         )
 
-    def test_pending_signup_account_can_be_activated_by_phone_otp(self):
+    def test_pending_signup_account_cannot_be_activated_by_phone_otp(self):
         self.user.is_active = False
+        self.user.is_email_verified = False
         self.user.account_status = CustomUser.AccountStatus.PENDING_VERIFICATION
         self.profile.is_phone_verified = False
         self.profile.save(update_fields=["is_phone_verified", "updated_at"])
-        self.user.save(update_fields=["account_status", "is_active", "updated_at"])
+        self.user.save(
+            update_fields=[
+                "account_status",
+                "is_active",
+                "is_email_verified",
+                "updated_at",
+            ]
+        )
 
         response = self.client.post(
             reverse("accounts:verify_otp"),
@@ -1031,10 +1199,16 @@ class PhoneOTPAPISecurityTests(TestCase):
             content_type="application/json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 403)
         self.user.refresh_from_db()
-        self.assertTrue(self.user.is_active)
-        self.assertEqual(self.user.account_status, CustomUser.AccountStatus.ACTIVE)
+        self.profile.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertFalse(self.user.is_email_verified)
+        self.assertEqual(
+            self.user.account_status,
+            CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
+        self.assertFalse(self.profile.is_phone_verified)
 
 
 class AccountSecurityTests(TestCase):
@@ -1044,8 +1218,8 @@ class AccountSecurityTests(TestCase):
         DEFAULT_FROM_EMAIL="noreply@example.com",
         DEBUG=True,
     )
-    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
-    def test_password_login_finishes_only_after_both_contacts_are_verified(
+    @patch("accounts.views.send_otp_to_phone")
+    def test_password_login_requires_email_verification_but_not_phone_verification(
         self,
         send_sms,
     ):
@@ -1085,31 +1259,18 @@ class AccountSecurityTests(TestCase):
             reverse("accounts:verify_contacts"),
             {"action": "verify_email", "email_code": email_code},
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(self.client.session.get("_auth_user_id"))
-
-        self.client.post(
-            reverse("accounts:verify_contacts"),
-            {"action": "send_phone"},
-        )
-        phone_code = UserProfile.objects.get(user=user).otp
-        response = self.client.post(
-            reverse("accounts:verify_contacts"),
-            {"action": "verify_phone", "phone_code": phone_code},
-        )
-
         self.assertRedirects(response, "/cart/", fetch_redirect_response=False)
-        send_sms.assert_called_once()
+        send_sms.assert_not_called()
         user.refresh_from_db()
         profile = UserProfile.objects.get(user=user)
         self.assertTrue(user.is_email_verified)
-        self.assertTrue(profile.is_phone_verified)
+        self.assertFalse(profile.is_phone_verified)
         self.assertEqual(
             self.client.session.get("_auth_user_id"),
             str(user.pk),
         )
 
-    def test_unverified_user_cannot_log_in_with_email_and_password(self):
+    def test_unverified_email_requires_email_verification_but_not_phone(self):
         user = CustomUser.objects.create_user(
             email="pending@example.com",
             username="pending-user",
@@ -1133,7 +1294,8 @@ class AccountSecurityTests(TestCase):
         self.assertFalse(response.wsgi_request.user.is_authenticated)
         verification_page = self.client.get(response.url)
         self.assertTemplateUsed(verification_page, "accounts/verify_contacts.html")
-        self.assertContains(verification_page, "Verify your email and phone")
+        self.assertContains(verification_page, "Verify your email")
+        self.assertNotContains(verification_page, "Step 2: Phone")
 
     def test_verified_user_can_log_in_with_email_and_password(self):
         user = CustomUser.objects.create_user(
@@ -1153,6 +1315,33 @@ class AccountSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("accounts:dashboard_page"), response.url)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+
+    def test_pending_signup_with_correct_password_is_sent_to_email_verification(self):
+        user = CustomUser.objects.create_user(
+            email="pending-signup@example.com",
+            username="pending-signup",
+            password="StrongPass123",
+            is_active=False,
+            is_email_verified=False,
+            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
+        )
+
+        response = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": user.email, "password": "StrongPass123"},
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:signup_email_verify"),
+            fetch_redirect_response=False,
+        )
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        self.assertEqual(
+            self.client.session["signup_email_verification_email"],
+            user.email,
+        )
 
     def test_verified_user_can_log_in_with_case_variant_email(self):
         user = CustomUser.objects.create_user(
@@ -1298,6 +1487,14 @@ class SignupFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Create Account")
 
+    def test_login_page_has_one_registration_option_and_no_otp_login_link(self):
+        response = self.client.get(reverse("accounts:login_page"))
+
+        self.assertContains(response, "Create an account")
+        self.assertNotContains(response, "Login with Email OTP")
+        self.assertNotContains(response, 'data-auth-panel="register"')
+        self.assertNotContains(response, "data-auth-switch=\"register\"")
+
     @patch("accounts.views.send_otp_to_phone")
     def test_valid_signup_sends_email_otp_and_verifies_account(self, send_otp):
         response = self.client.post(reverse("accounts:signup_form"), self.signup_data)
@@ -1332,7 +1529,7 @@ class SignupFlowTests(TestCase):
 
         self.assertRedirects(
             response,
-            reverse("accounts:verify_contacts"),
+            reverse("accounts:dashboard_page"),
             fetch_redirect_response=False,
         )
         user.refresh_from_db()
@@ -1340,27 +1537,11 @@ class SignupFlowTests(TestCase):
         self.assertTrue(user.is_email_verified)
         self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
         self.assertFalse(UserProfile.objects.get(user=user).is_phone_verified)
-        self.assertFalse(response.wsgi_request.user.is_authenticated)
-
-        with patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"}) as send_sms:
-            response = self.client.post(
-                reverse("accounts:verify_contacts"),
-                {"action": "send_phone"},
-            )
-        self.assertEqual(response.status_code, 200)
-        send_sms.assert_called_once()
-        profile = UserProfile.objects.get(user=user)
-        phone_code = profile.otp
-        self.assertTrue(phone_code)
-
-        response = self.client.post(
-            reverse("accounts:verify_contacts"),
-            {"action": "verify_phone", "phone_code": phone_code},
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertEqual(
+            self.client.session.get("_auth_user_id"),
+            str(user.pk),
         )
-        self.assertRedirects(response, reverse("accounts:dashboard_page"))
-        profile.refresh_from_db()
-        self.assertTrue(profile.is_phone_verified)
-        self.assertFalse(profile.otp)
 
         self.client.get(reverse("accounts:logout_page"))
         response = self.client.post(

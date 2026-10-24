@@ -150,6 +150,10 @@ def verify_email_otp(email, code, purpose):
         ):
             return None
 
+        user = challenge.user
+        if not user or user.email.strip().casefold() != email.strip().casefold():
+            return None
+
         if challenge.expires_at <= now or challenge.attempts >= OTP_MAX_ATTEMPTS:
             challenge.consumed_at = now
             challenge.save(update_fields=["consumed_at"])
@@ -164,9 +168,6 @@ def verify_email_otp(email, code, purpose):
 
         challenge.consumed_at = now
         challenge.save(update_fields=["consumed_at"])
-        user = challenge.user
-        if not user:
-            return None
 
         if purpose == EmailOTPChallenge.Purpose.SIGNUP:
             if (
