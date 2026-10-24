@@ -87,6 +87,7 @@ class Order(models.Model):
     
     # Payment Provider
     payment_provider = models.CharField(max_length=50, blank=True, default="razorpay")
+    inventory_reserved = models.BooleanField(default=False)
     razorpay_order_id = models.CharField(max_length=255, blank=True, null=True)
     razorpay_payment_id = models.CharField(max_length=255, blank=True, null=True)
     razorpay_signature = models.CharField(max_length=255, blank=True, null=True)

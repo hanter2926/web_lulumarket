@@ -117,7 +117,10 @@ class DeliveryAssignmentSerializer(serializers.ModelSerializer):
             "delivered_at",
             "notes",
         ]
-        read_only_fields = ["id", "order", "store", "shopkeeper", "worker", "assigned_at", "picked_up_at", "delivered_at"]
+        read_only_fields = [
+            "id", "order", "store", "shopkeeper", "worker", "status",
+            "assigned_at", "picked_up_at", "delivered_at",
+        ]
 
 
 class DeliveryIncidentSerializer(serializers.ModelSerializer):

@@ -207,6 +207,23 @@ class DeliveryAssignment(models.Model):
     def can_transition_to(self, new_status):
         return new_status in self.VALID_TRANSITIONS.get(self.status, set())
 
+    def apply_status_transition(self, new_status):
+        if not self.can_transition_to(new_status):
+            raise ValidationError({"status": "This status change is not allowed for the current assignment state."})
+        self.status = new_status
+        if new_status == "assigned":
+            self.assigned_at = timezone.now()
+            self.picked_up_at = None
+            self.delivered_at = None
+        elif new_status == "accepted":
+            self.picked_up_at = None
+            self.delivered_at = None
+        elif new_status == "picked_up":
+            self.picked_up_at = timezone.now()
+            self.delivered_at = None
+        elif new_status == "delivered":
+            self.delivered_at = timezone.now()
+
     def __str__(self):
         return f"Assignment for {self.order.order_number}"
 

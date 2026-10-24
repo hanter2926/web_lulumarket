@@ -1,7 +1,22 @@
 from django.contrib import admin
+from django import forms
 from django.utils.html import format_html
 
 from .models import Area, DeliveryAssignment, DeliveryIncident, DeliveryWorker, RouteIssue, SellerApplication, Shopkeeper, Store
+
+
+class DeliveryAssignmentAdminForm(forms.ModelForm):
+    class Meta:
+        model = DeliveryAssignment
+        fields = "__all__"
+
+    def clean_status(self):
+        new_status = self.cleaned_data["status"]
+        if self.instance.pk:
+            current_status = DeliveryAssignment.objects.values_list("status", flat=True).get(pk=self.instance.pk)
+            if new_status != current_status and new_status not in DeliveryAssignment.VALID_TRANSITIONS.get(current_status, set()):
+                raise forms.ValidationError("This status change is not allowed for the current assignment state.")
+        return new_status
 
 
 @admin.register(Area)
@@ -34,9 +49,20 @@ class DeliveryWorkerAdmin(admin.ModelAdmin):
 
 @admin.register(DeliveryAssignment)
 class DeliveryAssignmentAdmin(admin.ModelAdmin):
+    form = DeliveryAssignmentAdminForm
     list_display = ("id", "order", "store", "shopkeeper", "worker", "status", "assigned_at")
     list_filter = ("status", "shopkeeper", "store")
     search_fields = ("order__order_number", "worker__user__email")
+    readonly_fields = ("assigned_at", "picked_up_at", "delivered_at")
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            current_status = DeliveryAssignment.objects.values_list("status", flat=True).get(pk=obj.pk)
+            new_status = obj.status
+            obj.status = current_status
+            if new_status != current_status:
+                obj.apply_status_transition(new_status)
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(DeliveryIncident)

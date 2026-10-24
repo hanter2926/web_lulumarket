@@ -18,7 +18,7 @@ import logging
 from django.db import DatabaseError, transaction
 
 from cart.models import Cart
-from products.models import Product
+from products.models import Inventory, Product
 from accounts.models import Address
 from rewards.utils import (
     calculate_reward_adjustment,
@@ -29,6 +29,22 @@ from rewards.utils import (
 from .models import Order, OrderItem, UpiPaymentSubmission
 from .serializers import OrderItemSerializer, OrderSerializer
 from django.urls import reverse
+
+MAX_ORDER_QUANTITY = 99
+
+
+def _parse_order_quantity(value):
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    if isinstance(value, str) and not value.isdecimal():
+        return None
+    try:
+        quantity = int(value)
+    except ValueError:
+        return None
+    if quantity < 1 or quantity > MAX_ORDER_QUANTITY:
+        return None
+    return quantity
 
 
 def razorpay_is_configured():
@@ -336,57 +352,108 @@ def checkout_review_view(request):
     total = discounted_subtotal - reward_discount_amount + delivery_charge
     
     if request.method == 'POST':
-        # Create order
-        order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
-        order = Order.objects.create(
-            user=user,
-            order_number=order_number,
-            subtotal=original_subtotal,
-            discount_amount=discount_amount,
-            delivery_charge=delivery_charge,
-            total_amount=total,
-            shipping_address=address,
-            shipping_address_name=address.full_name,
-            shipping_address_phone=address.phone,
-            shipping_address_line1=address.address_line_1,
-            shipping_address_line2=address.address_line_2,
-            shipping_address_city=address.city,
-            shipping_address_state=address.state,
-            shipping_address_postal_code=address.pincode,
-            shipping_address_country=address.country,
-            delivery_method=delivery_method,
-            payment_method=payment_method,
-            coupon_code=coupon_code,
-            status='pending',
-            is_paid=False,
-        )
+        with transaction.atomic():
+            cart_items = list(cart.items.select_for_update().order_by("product_id"))
+            if not cart_items:
+                messages.warning(request, 'Your cart is empty.')
+                return redirect('cart_detail')
+            if any(_parse_order_quantity(item.quantity) is None for item in cart_items):
+                messages.error(request, f'Each quantity must be between 1 and {MAX_ORDER_QUANTITY}.')
+                return redirect('checkout_review')
 
-        if order.payment_method == 'cod':
-            mark_reward_claim_used_for_order(order)
-        
-        # Create order items
-        for cart_item in cart_items:
-            OrderItem.objects.create(
-                order=order,
-                product=cart_item.product,
-                quantity=cart_item.quantity,
-                price=cart_item.product.price,
+            product_ids = [item.product_id for item in cart_items]
+            locked_products = {
+                product.pk: product
+                for product in Product.objects.select_for_update().filter(pk__in=product_ids).order_by("pk")
+            }
+            locked_inventory = {
+                inventory.product_id: inventory
+                for inventory in Inventory.objects.select_for_update()
+                .filter(product_id__in=product_ids)
+                .order_by("product_id")
+            }
+            for cart_item in cart_items:
+                inventory = locked_inventory.get(cart_item.product_id)
+                if inventory is None or inventory.stock_quantity < cart_item.quantity:
+                    messages.error(
+                        request,
+                        'One or more products no longer have enough stock. Please update your cart.',
+                    )
+                    return redirect('checkout_review')
+
+            discounted_subtotal = Decimal("0.00")
+            original_subtotal = Decimal("0.00")
+            for cart_item in cart_items:
+                product = locked_products[cart_item.product_id]
+                discounted_subtotal += product.price * cart_item.quantity
+                original_price = (
+                    product.compare_price
+                    if product.compare_price and product.compare_price > product.price
+                    else product.price
+                )
+                original_subtotal += original_price * cart_item.quantity
+                inventory = locked_inventory[product.pk]
+                inventory.stock_quantity -= cart_item.quantity
+                inventory.save(update_fields=["stock_quantity", "last_updated"])
+
+            delivery_charge = get_delivery_charge(delivery_method)
+            discount_amount = max(original_subtotal - discounted_subtotal, Decimal("0.00"))
+            reward_claim = get_available_claim_for_checkout(user)
+            reward_adjustment = calculate_reward_adjustment(
+                reward_claim,
+                discounted_subtotal,
+                delivery_charge,
             )
-        
-        # Clear cart
-        cart.items.all().delete()
+            reward_discount_amount = reward_adjustment["reward_discount"]
+            delivery_charge = reward_adjustment["delivery_charge"]
+            total = discounted_subtotal - reward_discount_amount + delivery_charge
+            if reward_claim:
+                coupon_code = reward_claim.reward_code
+                request.session['checkout_coupon'] = coupon_code
 
-        # Clear session
-        for key in list(request.session.keys()):
-            if key.startswith('checkout_'):
-                del request.session[key]
+            order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
+            order = Order.objects.create(
+                user=user,
+                order_number=order_number,
+                subtotal=original_subtotal,
+                discount_amount=discount_amount,
+                delivery_charge=delivery_charge,
+                total_amount=total,
+                shipping_address=address,
+                shipping_address_name=address.full_name,
+                shipping_address_phone=address.phone,
+                shipping_address_line1=address.address_line_1,
+                shipping_address_line2=address.address_line_2,
+                shipping_address_city=address.city,
+                shipping_address_state=address.state,
+                shipping_address_postal_code=address.pincode,
+                shipping_address_country=address.country,
+                delivery_method=delivery_method,
+                payment_method=payment_method,
+                coupon_code=coupon_code,
+                status='pending',
+                inventory_reserved=True,
+                is_paid=False,
+            )
 
-        # Redirect based on payment method
-        # For COD, show order success (order placed) page immediately.
+            if order.payment_method == 'cod':
+                mark_reward_claim_used_for_order(order)
+
+            for cart_item in cart_items:
+                OrderItem.objects.create(
+                    order=order,
+                    product=locked_products[cart_item.product_id],
+                    quantity=cart_item.quantity,
+                    price=locked_products[cart_item.product_id].price,
+                )
+
+            cart.items.all().delete()
+            for key in list(request.session.keys()):
+                if key.startswith('checkout_'):
+                    del request.session[key]
+
         if order.payment_method == 'cod':
             return redirect('payment_success', order_id=order.id)
-
-        # For online methods redirect to payment page where gateway flows happen.
         return redirect('payment_page', order_id=order.id)
     
     context = {
@@ -445,17 +512,21 @@ def payment_page_view(request, order_id):
         return render(request, 'payment/payment.html', context)
 
     try:
-        # Create razorpay order if missing
-        if not order.razorpay_order_id:
-            client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
-            razorpay_order = client.order.create({
-                'amount': int(order.total_amount * 100),
-                'currency': 'INR',
-                'receipt': order.order_number,
-                'notes': {'order_id': str(order.id), 'user_id': str(order.user.id)},
-            })
-            order.razorpay_order_id = razorpay_order.get('id')
-            order.save(update_fields=['razorpay_order_id', 'updated_at'])
+        with transaction.atomic():
+            order = Order.objects.select_for_update().get(pk=order.pk, user=request.user)
+            if order.status == "cancelled" or order.is_paid:
+                messages.error(request, "This order is no longer available for payment.")
+                return redirect("order_detail", order_id=order.id)
+            if not order.razorpay_order_id:
+                client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+                razorpay_order = client.order.create({
+                    'amount': int(order.total_amount * 100),
+                    'currency': 'INR',
+                    'receipt': order.order_number,
+                    'notes': {'order_id': str(order.id), 'user_id': str(order.user.id)},
+                })
+                order.razorpay_order_id = razorpay_order.get('id')
+                order.save(update_fields=['razorpay_order_id', 'updated_at'])
     except Exception:
         # If gateway creation failed unexpectedly, show a friendly message without crashing the order flow
         logging.exception("Razorpay order creation failed for order %s", getattr(order, 'id', None))
@@ -540,6 +611,18 @@ def verify_razorpay_signature(order_id, payment_id, razorpay_signature, secret):
     return hmac.compare_digest(generated, razorpay_signature)
 
 
+def _razorpay_payment_matches_order(payment, order, payment_id):
+    if not isinstance(payment, dict):
+        return False
+    return (
+        payment.get("id") == payment_id
+        and payment.get("order_id") == order.razorpay_order_id
+        and payment.get("status") == "captured"
+        and payment.get("currency") == "INR"
+        and payment.get("amount") == int(order.total_amount * 100)
+    )
+
+
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def verify_payment(request):
@@ -547,37 +630,55 @@ def verify_payment(request):
     razorpay_payment_id = request.data.get("razorpay_payment_id")
     razorpay_signature = request.data.get("razorpay_signature")
 
-    if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature]):
+    if not all(
+        isinstance(value, str) and value
+        for value in (razorpay_order_id, razorpay_payment_id, razorpay_signature)
+    ):
         return Response({"detail": "Missing payment verification data."}, status=status.HTTP_400_BAD_REQUEST)
     order = get_object_or_404(Order, razorpay_order_id=razorpay_order_id, user=request.user)
 
-    # Idempotent: if already marked paid, return success
-    if order.is_paid and order.razorpay_payment_id == razorpay_payment_id:
-        return Response({"detail": "Payment already verified.", "order_id": order.id}, status=status.HTTP_200_OK)
-
-    try:
-        valid = verify_razorpay_signature(
-            razorpay_order_id,
-            razorpay_payment_id,
-            razorpay_signature,
-            settings.RAZORPAY_KEY_SECRET,
-        )
-    except Exception as exc:
-        logging.exception("Error while verifying razorpay signature")
-        return Response({"detail": "Internal error verifying payment."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+    valid = verify_razorpay_signature(
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+        settings.RAZORPAY_KEY_SECRET,
+    )
     if not valid:
-        # Do not mark as paid; keep order pending so customer can retry.
-        order.status = "pending"
-        order.save(update_fields=["status", "updated_at"]) 
         return Response({"detail": "Payment verification failed."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Mark order as paid in a single safe write
-    order.razorpay_payment_id = razorpay_payment_id
-    order.razorpay_signature = razorpay_signature
-    order.is_paid = True
-    order.status = "paid"
-    order.save(update_fields=["razorpay_payment_id", "razorpay_signature", "is_paid", "status", "updated_at"])
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order.pk)
+        if order.status == "cancelled":
+            return Response({"detail": "Cancelled orders cannot be marked paid."}, status=status.HTTP_400_BAD_REQUEST)
+        if order.is_paid:
+            if order.razorpay_payment_id == razorpay_payment_id:
+                return Response({"detail": "Payment already verified.", "order_id": order.id}, status=status.HTTP_200_OK)
+            return Response({"detail": "Order has already been paid."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+            payment = client.payment.fetch(razorpay_payment_id)
+        except Exception:
+            logging.exception("Error while fetching Razorpay payment %s", razorpay_payment_id)
+            return Response(
+                {"detail": "Unable to confirm payment with Razorpay."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if not _razorpay_payment_matches_order(payment, order, razorpay_payment_id):
+            return Response(
+                {"detail": "Payment details do not match this order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order.razorpay_payment_id = razorpay_payment_id
+        order.razorpay_signature = razorpay_signature
+        order.is_paid = True
+        order.status = "paid"
+        order.inventory_reserved = False
+        order.save(update_fields=[
+            "razorpay_payment_id", "razorpay_signature", "is_paid", "status", "inventory_reserved", "updated_at",
+        ])
     mark_reward_claim_used_for_order(order)
 
     return Response({"detail": "Payment verified and order marked as paid.", "order_id": order.id}, status=status.HTTP_200_OK)
@@ -616,11 +717,26 @@ def payment_webhook(request):
         return Response({"detail": "Webhook verification error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     order = get_object_or_404(Order, razorpay_order_id=order_id)
-    order.razorpay_payment_id = payment_id
-    order.razorpay_signature = signature or order.razorpay_signature
-    order.is_paid = True
-    order.status = "paid"
-    order.save(update_fields=["razorpay_payment_id", "razorpay_signature", "is_paid", "status", "updated_at"])
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order.pk)
+        if (
+            payment_entity.get("status") != "captured"
+            or payment_entity.get("currency") != "INR"
+            or payment_entity.get("amount") != int(order.total_amount * 100)
+        ):
+            return Response({"detail": "Payment details do not match this order."}, status=status.HTTP_400_BAD_REQUEST)
+        if order.status == "cancelled":
+            return Response({"detail": "Cancelled orders cannot be marked paid."}, status=status.HTTP_400_BAD_REQUEST)
+        if order.is_paid and order.razorpay_payment_id != payment_id:
+            return Response({"detail": "Order has already been paid."}, status=status.HTTP_400_BAD_REQUEST)
+        order.razorpay_payment_id = payment_id
+        order.razorpay_signature = signature or order.razorpay_signature
+        order.is_paid = True
+        order.status = "paid"
+        order.inventory_reserved = False
+        order.save(update_fields=[
+            "razorpay_payment_id", "razorpay_signature", "is_paid", "status", "inventory_reserved", "updated_at",
+        ])
     mark_reward_claim_used_for_order(order)
     return Response({"status": "ok"}, status=status.HTTP_200_OK)
 
@@ -675,13 +791,33 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({"comment": "Cancellation comment cannot exceed 500 characters."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
+            order = Order.objects.select_for_update().get(pk=order.pk)
+            if order.status == "cancelled":
+                return Response(self.get_serializer(order).data, status=status.HTTP_200_OK)
+            if order.status not in Order.CANCELLABLE_STATUSES:
+                return Response(
+                    {"detail": "Only pending or processing orders can be cancelled."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if order.razorpay_order_id:
+                return Response(
+                    {"detail": "This order has an active online payment. Contact support to cancel it safely."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if order.inventory_reserved:
+                for item in order.items.all().order_by("product_id"):
+                    inventory = Inventory.objects.select_for_update().filter(product_id=item.product_id).first()
+                    if inventory is not None:
+                        inventory.stock_quantity += item.quantity
+                        inventory.save(update_fields=["stock_quantity", "last_updated"])
+                order.inventory_reserved = False
             order.status = "cancelled"
             order.cancellation_reason = reason
             order.cancellation_comment = comment.strip()
             order.cancelled_at = timezone.now()
             order.cancelled_by = request.user
             order.save(update_fields=[
-                "status", "cancellation_reason", "cancellation_comment", "cancelled_at", "cancelled_by", "updated_at",
+                "status", "inventory_reserved", "cancellation_reason", "cancellation_comment", "cancelled_at", "cancelled_by", "updated_at",
             ])
 
         serializer = self.get_serializer(order)
@@ -691,72 +827,124 @@ class OrderViewSet(viewsets.ModelViewSet):
     def create_order(self, request):
         user = request.user
         product_id = request.data.get("product_id")
-        quantity = int(request.data.get("quantity", 1) or 1)
         cart_id = request.data.get("cart_id")
-
         if cart_id:
-            cart = get_object_or_404(Cart, id=cart_id, user=user)
-            cart_items = cart.items.select_related("product")
-            if not cart_items.exists():
-                return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
-            order_items = []
-            discounted_subtotal = Decimal("0.00")
-            original_subtotal = Decimal("0.00")
-            for item in cart_items:
-                order_items.append({
-                    "product": item.product,
-                    "quantity": item.quantity,
-                    "price": item.product.price,
-                })
-                discounted_subtotal += (item.product.price or Decimal(0)) * item.quantity
-                try:
-                    orig_price = item.product.compare_price if (item.product.compare_price and item.product.compare_price > item.product.price) else item.product.price
-                except Exception:
-                    orig_price = item.product.price
-                original_subtotal += (orig_price or Decimal(0)) * item.quantity
-            # final payable for cart path
-            total_amount = discounted_subtotal
+            quantity = None
         else:
             if not product_id:
                 return Response({"detail": "product_id is required."}, status=status.HTTP_400_BAD_REQUEST)
-            product = get_object_or_404(Product, id=product_id)
-            discounted_subtotal = Decimal(str(product.price)) * quantity
-            try:
-                orig_price = product.compare_price if (product.compare_price and product.compare_price > product.price) else product.price
-            except Exception:
-                orig_price = product.price
-            original_subtotal = (orig_price or Decimal(0)) * quantity
+            quantity = _parse_order_quantity(request.data.get("quantity"))
+            if quantity is None:
+                return Response(
+                    {"quantity": f"Quantity must be an integer between 1 and {MAX_ORDER_QUANTITY}."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        with transaction.atomic():
+            if cart_id:
+                cart = get_object_or_404(Cart, id=cart_id, user=user)
+                cart_items = list(cart.items.select_for_update().order_by("product_id"))
+                if not cart_items:
+                    return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
+                if any(
+                    _parse_order_quantity(item.quantity) is None
+                    for item in cart_items
+                ):
+                    return Response(
+                        {"detail": f"Cart item quantities must be between 1 and {MAX_ORDER_QUANTITY}."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                product_ids = [item.product_id for item in cart_items]
+                products = {
+                    product.pk: product
+                    for product in Product.objects.select_for_update().filter(pk__in=product_ids).order_by("pk")
+                }
+                order_items = [
+                    {
+                        "product": products[item.product_id],
+                        "quantity": item.quantity,
+                        "price": products[item.product_id].price,
+                    }
+                    for item in cart_items
+                ]
+            else:
+                product = get_object_or_404(
+                    Product.objects.select_for_update(),
+                    id=product_id,
+                )
+                order_items = [{"product": product, "quantity": quantity, "price": product.price}]
+                product_ids = [product.pk]
+
+            inventory_by_product = {
+                inventory.product_id: inventory
+                for inventory in Inventory.objects.select_for_update()
+                .filter(product_id__in=product_ids)
+                .order_by("product_id")
+            }
+            for item in order_items:
+                inventory = inventory_by_product.get(item["product"].pk)
+                if inventory is None or inventory.stock_quantity < item["quantity"]:
+                    return Response(
+                        {"detail": f"Insufficient stock for {item['product'].name}."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            discounted_subtotal = Decimal("0.00")
+            original_subtotal = Decimal("0.00")
+            for item in order_items:
+                product = item["product"]
+                discounted_subtotal += product.price * item["quantity"]
+                original_price = (
+                    product.compare_price
+                    if product.compare_price and product.compare_price > product.price
+                    else product.price
+                )
+                original_subtotal += original_price * item["quantity"]
+                inventory = inventory_by_product[product.pk]
+                inventory.stock_quantity -= item["quantity"]
+                inventory.save(update_fields=["stock_quantity", "last_updated"])
+
             total_amount = discounted_subtotal
-            order_items = [{"product": product, "quantity": quantity, "price": product.price}]
-
-        order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
-        # Use computed original_subtotal and discounted total_amount
-        try:
-            _orig = original_subtotal
-        except NameError:
-            _orig = discounted_subtotal if 'discounted_subtotal' in locals() else Decimal(0)
-        discount_amount = (_orig - total_amount) if _orig and _orig > total_amount else Decimal(0)
-
-        order = Order.objects.create(
-            user=user,
-            order_number=order_number,
-            subtotal=_orig,
-            discount_amount=discount_amount,
-            delivery_charge=Decimal(0),
-            total_amount=total_amount,
-            status="pending",
-            payment_provider="razorpay",
-            is_paid=False,
-        )
-
-        for item in order_items:
-            OrderItem.objects.create(
-                order=order,
-                product=item["product"],
-                quantity=item["quantity"],
-                price=item["price"],
+            order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
+            discount_amount = max(original_subtotal - total_amount, Decimal("0.00"))
+            order = Order.objects.create(
+                user=user,
+                order_number=order_number,
+                subtotal=original_subtotal,
+                discount_amount=discount_amount,
+                delivery_charge=Decimal(0),
+                total_amount=total_amount,
+                status="pending",
+                payment_provider="razorpay",
+                inventory_reserved=True,
+                is_paid=False,
             )
+            for item in order_items:
+                OrderItem.objects.create(
+                    order=order,
+                    product=item["product"],
+                    quantity=item["quantity"],
+                    price=item["price"],
+                )
 
+            if razorpay_is_configured():
+                try:
+                    client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+                    razorpay_order = client.order.create({
+                        "amount": int(total_amount * 100),
+                        "currency": "INR",
+                        "receipt": order_number,
+                        "notes": {"order_id": str(order.id), "user_id": str(user.id)},
+                    })
+                except Exception:
+                    logging.exception("Razorpay order creation failed for order %s", order.id)
+                    transaction.set_rollback(True)
+                    return Response(
+                        {"detail": "Razorpay order creation failed."},
+                        status=status.HTTP_502_BAD_GATEWAY,
+                    )
+                order.razorpay_order_id = razorpay_order.get("id")
+                order.save(update_fields=["razorpay_order_id", "updated_at"])
         if not razorpay_is_configured():
             return Response({
                 "order_id": order.id,
@@ -771,21 +959,6 @@ class OrderViewSet(viewsets.ModelViewSet):
                 "description": "Order Payment",
                 "image": "https://example.com/logo.png",
             }, status=status.HTTP_200_OK)
-
-        try:
-            client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
-            razorpay_order = client.order.create({
-                "amount": int(total_amount * 100),
-                "currency": "INR",
-                "receipt": order_number,
-                "notes": {"order_id": str(order.id), "user_id": str(user.id)},
-            })
-        except Exception as exc:
-            order.delete()
-            return Response({"detail": f"Razorpay order creation failed: {exc}"}, status=status.HTTP_400_BAD_REQUEST)
-
-        order.razorpay_order_id = razorpay_order.get("id")
-        order.save(update_fields=["razorpay_order_id", "updated_at"])
 
         return Response({
             "order_id": order.id,

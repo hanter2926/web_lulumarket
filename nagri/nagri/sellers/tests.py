@@ -922,6 +922,81 @@ class ShopkeeperStoreDeliveryBackendTests(TestCase):
         assignment_a.refresh_from_db()
         self.assertEqual(assignment_a.status, 'accepted')
 
+    def test_delivery_assignment_api_enforces_transitions_permissions_and_timestamps(self):
+        from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
+
+        owner = CustomUser.objects.create_user(
+            email="transition-owner@example.com", username="transition-owner", password="pass", is_owner=True
+        )
+        shopkeeper_user = CustomUser.objects.create_user(
+            email="transition-shop@example.com", username="transition-shop", password="pass"
+        )
+        worker_user = CustomUser.objects.create_user(
+            email="transition-worker@example.com", username="transition-worker", password="pass"
+        )
+        shop = Shopkeeper.objects.create(user=shopkeeper_user, owner=owner, status="active")
+        store = Store.objects.create(shopkeeper=shop, name="Transition Store", slug="transition-store", city="Test")
+        worker = DeliveryWorker.objects.create(
+            user=worker_user,
+            shopkeeper=shop,
+            store=store,
+            status="active",
+            phone="5555555555",
+            is_available=True,
+        )
+        order = Order.objects.create(
+            user=self.user,
+            order_number="ORD-TRANSITION-1",
+            total_amount=Decimal("25.00"),
+            status="paid",
+            payment_method="cod",
+            is_paid=True,
+        )
+        assignment = DeliveryAssignment.objects.create(
+            order=order, store=store, shopkeeper=shop, worker=worker, status="assigned"
+        )
+        url = f"/sellers/api/assignments/{assignment.pk}/"
+        api = APIClient()
+
+        api.force_authenticate(user=shopkeeper_user)
+        forbidden_response = api.patch(url, {"status": "delivered"}, format="json")
+        self.assertEqual(forbidden_response.status_code, 403)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.status, "assigned")
+        self.assertIsNone(assignment.delivered_at)
+
+        api.force_authenticate(user=worker_user)
+        invalid_response = api.patch(url, {"status": "delivered"}, format="json")
+        self.assertEqual(invalid_response.status_code, 400)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.status, "assigned")
+
+        accepted_response = api.patch(url, {"status": "accepted"}, format="json")
+        self.assertEqual(accepted_response.status_code, 200)
+        pickup_response = api.patch(url, {"status": "picked_up"}, format="json")
+        self.assertEqual(pickup_response.status_code, 200)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.status, "picked_up")
+        self.assertIsNotNone(assignment.picked_up_at)
+        self.assertIsNone(assignment.delivered_at)
+
+        api.patch(url, {"status": "delayed"}, format="json")
+        accepted_again_response = api.patch(url, {"status": "accepted"}, format="json")
+        self.assertEqual(accepted_again_response.status_code, 200)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.status, "accepted")
+        self.assertIsNone(assignment.picked_up_at)
+        self.assertIsNone(assignment.delivered_at)
+
+        api.patch(url, {"status": "picked_up"}, format="json")
+        api.patch(url, {"status": "out_for_delivery"}, format="json")
+        delivered_response = api.patch(url, {"status": "delivered"}, format="json")
+        self.assertEqual(delivered_response.status_code, 200)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.status, "delivered")
+        self.assertIsNotNone(assignment.picked_up_at)
+        self.assertIsNotNone(assignment.delivered_at)
+
     def test_shopkeeper_api_is_scoped_by_user_and_worker_only_sees_own_assignments(self):
         from sellers.models import DeliveryAssignment, DeliveryWorker, Shopkeeper, Store
 

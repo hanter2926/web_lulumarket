@@ -6,6 +6,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Case, F, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, redirect, render
@@ -16,6 +17,7 @@ from django.conf import settings
 from django.http import HttpResponseForbidden
 from rest_framework import permissions, status, viewsets
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied, ValidationError as APIValidationError
 
 from .models import Area, DeliveryAssignment, DeliveryIncident, DeliveryWorker, RouteIssue, SellerApplication, Shopkeeper, Store
 from .serializers import (
@@ -252,6 +254,32 @@ class DeliveryAssignmentViewSet(viewsets.ModelViewSet):
         if getattr(user, "delivery_worker_profile", None):
             return self.queryset.filter(worker__user=user)
         return self.queryset.filter(shopkeeper__user=user)
+
+    def perform_update(self, serializer):
+        if "status" not in self.request.data:
+            serializer.save()
+            return
+
+        assignment = serializer.instance
+        user = self.request.user
+        is_worker = assignment.worker.user_id == user.id
+        is_privileged = user.is_superuser or getattr(user, "is_owner", False) or user.is_staff
+        if not is_worker and not is_privileged:
+            raise PermissionDenied("Only the assigned worker or an administrator may update delivery status.")
+
+        new_status = self.request.data.get("status")
+        if not isinstance(new_status, str) or new_status not in dict(DeliveryAssignment.STATUS_CHOICES):
+            raise APIValidationError({"status": "Invalid delivery status."})
+
+        with transaction.atomic():
+            assignment = DeliveryAssignment.objects.select_for_update().get(pk=assignment.pk)
+            if new_status != assignment.status:
+                try:
+                    assignment.apply_status_transition(new_status)
+                except ValidationError as exc:
+                    raise APIValidationError(exc.message_dict) from exc
+            serializer.instance = assignment
+            serializer.save()
 
 
 @login_required
@@ -1193,8 +1221,13 @@ def shopkeeper_assignment_assign(request, pk):
             return redirect("sellers:shopkeeper_assignments")
         assignment, created = DeliveryAssignment.objects.get_or_create(order=order, shopkeeper=shopkeeper, store=store, worker=worker, defaults={"status": "assigned"})
         if not created:
-            assignment.status = "assigned"
-            assignment.save(update_fields=["status", "updated_at"])
+            if assignment.status != "assigned":
+                try:
+                    assignment.apply_status_transition("assigned")
+                except ValidationError:
+                    messages.error(request, "This delivery assignment cannot be reassigned from its current status.")
+                    return redirect("sellers:shopkeeper_assignments")
+                assignment.save(update_fields=["status", "assigned_at", "picked_up_at", "delivered_at"])
         messages.success(request, "Delivery assignment created successfully.")
         return redirect("sellers:shopkeeper_assignments")
     return render(request, "sellers/shopkeeper_assignment_form.html", {"shopkeeper": shopkeeper, "order": order, "stores": Store.objects.filter(shopkeeper=shopkeeper), "workers": DeliveryWorker.objects.filter(shopkeeper=shopkeeper, status="active", is_available=True)})
@@ -1268,15 +1301,13 @@ def worker_assignment_update(request, pk):
         if new_status not in dict(DeliveryAssignment.STATUS_CHOICES):
             messages.error(request, "Invalid delivery status.")
             return redirect("sellers:worker_assignments")
-        if not assignment.can_transition_to(new_status):
-            messages.error(request, "This status change is not allowed for the current assignment state.")
-            return redirect("sellers:worker_assignments")
-        assignment.status = new_status
-        if new_status == "picked_up":
-            assignment.picked_up_at = timezone.now()
-        if new_status == "delivered":
-            assignment.delivered_at = timezone.now()
-        assignment.save(update_fields=["status", "picked_up_at", "delivered_at"])
+        with transaction.atomic():
+            assignment = DeliveryAssignment.objects.select_for_update().get(pk=assignment.pk, worker=worker)
+            if not assignment.can_transition_to(new_status):
+                messages.error(request, "This status change is not allowed for the current assignment state.")
+                return redirect("sellers:worker_assignments")
+            assignment.apply_status_transition(new_status)
+            assignment.save(update_fields=["status", "assigned_at", "picked_up_at", "delivered_at"])
         messages.success(request, "Delivery status updated.")
         return redirect("sellers:worker_assignments")
     return redirect("sellers:worker_assignments")
