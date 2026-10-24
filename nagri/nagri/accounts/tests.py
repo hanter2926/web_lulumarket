@@ -1944,7 +1944,7 @@ class EmailOTPFlowTests(TestCase):
         throttle = EmailOTPThrottle.objects.get(
             purpose=EmailOTPThrottle.Purpose.LOGIN
         )
-        throttle.request_count = 5
+        throttle.request_count = 15
         throttle.last_requested_at = timezone.now() - timedelta(seconds=61)
         throttle.save(update_fields=["request_count", "last_requested_at"])
         self.client.post(
