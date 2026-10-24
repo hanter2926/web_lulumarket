@@ -1,5 +1,7 @@
 import os
+import runpy
 import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import dj_database_url
@@ -104,10 +106,10 @@ staging_database["OPTIONS"] = {
 staging_database["TEST"] = {"NAME": TEST_DATABASE_NAME}
 
 os.environ["DATABASE_URL"] = ""
-import nagri.settings as project_settings
+_base_settings = runpy.run_path(str(Path(__file__).with_name("settings.py")))
 
-for _setting_name, _setting_value in vars(project_settings).items():
-    if not _setting_name.startswith("_"):
+for _setting_name, _setting_value in _base_settings.items():
+    if _setting_name.isupper() and not _setting_name.startswith("DATABASE"):
         globals()[_setting_name] = _setting_value
 
 DATABASES = {"default": staging_database}
