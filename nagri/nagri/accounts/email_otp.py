@@ -11,7 +11,7 @@ from .email_delivery import send_account_email
 from .models import CustomUser, EmailOTPChallenge, EmailOTPThrottle
 
 OTP_LIFETIME = timedelta(minutes=5)
-OTP_RESEND_COOLDOWN = timedelta(seconds=60)
+OTP_RESEND_COOLDOWN = timedelta(seconds=10)
 OTP_REQUEST_WINDOW = timedelta(hours=1)
 OTP_MAX_REQUESTS_PER_WINDOW = 15
 OTP_MAX_ATTEMPTS = 5

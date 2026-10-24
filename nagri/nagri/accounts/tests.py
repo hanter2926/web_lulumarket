@@ -1881,7 +1881,7 @@ class EmailOTPFlowTests(TestCase):
         throttle = EmailOTPThrottle.objects.get(
             purpose=EmailOTPThrottle.Purpose.LOGIN
         )
-        throttle.last_requested_at = timezone.now() - timedelta(seconds=61)
+        throttle.last_requested_at = timezone.now() - timedelta(seconds=11)
         throttle.save(update_fields=["last_requested_at"])
         self.client.post(
             reverse("accounts:email_otp_login"),
@@ -1934,24 +1934,49 @@ class EmailOTPFlowTests(TestCase):
 
     def test_email_otp_enforces_resend_cooldown_and_hourly_limit(self):
         self._request_code("accounts:email_otp_login")
+        throttle = EmailOTPThrottle.objects.get(
+            purpose=EmailOTPThrottle.Purpose.LOGIN
+        )
+
+        throttle.last_requested_at = timezone.now() - timedelta(seconds=9)
+        throttle.save(update_fields=["last_requested_at"])
         response = self.client.post(
             reverse("accounts:email_otp_login"),
             {"email": self.user.email},
         )
         self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
         self.assertEqual(len(mail.outbox), 1)
+        throttle.refresh_from_db()
+        self.assertEqual(throttle.request_count, 1)
 
-        throttle = EmailOTPThrottle.objects.get(
-            purpose=EmailOTPThrottle.Purpose.LOGIN
-        )
-        throttle.request_count = 15
-        throttle.last_requested_at = timezone.now() - timedelta(seconds=61)
-        throttle.save(update_fields=["request_count", "last_requested_at"])
+        throttle.last_requested_at = timezone.now() - timedelta(seconds=11)
+        throttle.save(update_fields=["last_requested_at"])
         self.client.post(
             reverse("accounts:email_otp_login"),
             {"email": self.user.email},
         )
-        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(len(mail.outbox), 2)
+        throttle.refresh_from_db()
+        self.assertEqual(throttle.request_count, 2)
+
+        for _ in range(13):
+            throttle.last_requested_at = timezone.now() - timedelta(seconds=11)
+            throttle.save(update_fields=["last_requested_at"])
+            self.client.post(
+                reverse("accounts:email_otp_login"),
+                {"email": self.user.email},
+            )
+            throttle.refresh_from_db()
+        self.assertEqual(throttle.request_count, 15)
+        self.assertEqual(len(mail.outbox), 15)
+
+        self.client.post(
+            reverse("accounts:email_otp_login"),
+            {"email": self.user.email},
+        )
+        self.assertEqual(len(mail.outbox), 15)
+        throttle.refresh_from_db()
+        self.assertEqual(throttle.request_count, 15)
 
     def test_email_otp_delivery_error_is_generic_and_logged_without_secrets(self):
         with self.assertLogs("accounts.views", level="ERROR") as captured:
@@ -1965,6 +1990,11 @@ class EmailOTPFlowTests(TestCase):
                 )
         self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
         self.assertEqual(len(mail.outbox), 0)
+        throttle = EmailOTPThrottle.objects.get(
+            purpose=EmailOTPThrottle.Purpose.LOGIN
+        )
+        self.assertEqual(throttle.request_count, 1)
+        self.assertIsNotNone(throttle.last_requested_at)
         output = "\n".join(captured.output)
         self.assertIn("error_type=RuntimeError", output)
         self.assertNotIn(self.user.email, output)
