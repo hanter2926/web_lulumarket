@@ -1,5 +1,4 @@
 import os
-import runpy
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -105,12 +104,23 @@ staging_database["OPTIONS"] = {
 }
 staging_database["TEST"] = {"NAME": TEST_DATABASE_NAME}
 
-os.environ["DATABASE_URL"] = ""
-_base_settings = runpy.run_path(str(Path(__file__).with_name("settings.py")))
+BASE_DIR = Path(__file__).resolve().parent.parent
+from nagri.common_settings import build_common_settings
 
-for _setting_name, _setting_value in _base_settings.items():
-    if _setting_name.isupper() and not _setting_name.startswith("DATABASE"):
-        globals()[_setting_name] = _setting_value
+globals().update(
+    build_common_settings(
+        BASE_DIR,
+        include_external_services=False,
+        phase="before_database",
+    )
+)
+globals().update(
+    build_common_settings(
+        BASE_DIR,
+        include_external_services=False,
+        phase="after_database",
+    )
+)
 
 DATABASES = {"default": staging_database}
 TEST_RUNNER = "nagri.postgres_test_settings.FailClosedPostgresTestRunner"
