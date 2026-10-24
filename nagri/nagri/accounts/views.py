@@ -485,15 +485,15 @@ class UserViewSet(viewsets.ModelViewSet):
             user.phone = phone
             user.save(update_fields=["phone", "updated_at"])
 
-            response_status, detail = _issue_phone_otp(profile.pk, phone)
-            if response_status != status.HTTP_200_OK:
-                return Response(
-                    {
-                        "detail": detail,
-                        "resend_endpoint": reverse("accounts:signup_phone_otp_resend"),
-                    },
-                    status=response_status,
-                )
+           # response_status, detail = _issue_phone_otp(profile.pk, phone)
+           # if response_status != status.HTTP_200_OK:
+               # return Response(
+                   # {
+                   #     "detail": detail,
+                   #     "resend_endpoint": reverse("accounts:signup_phone_otp_resend"),
+                   # },
+                   # status=response_status,
+               # )
 
         return Response({
             "detail": "User registered successfully. Verify your phone OTP to complete setup.",
@@ -519,14 +519,14 @@ class UserViewSet(viewsets.ModelViewSet):
         ):
             return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
 
-        profile = UserProfile.objects.filter(user=user).first()
-        if profile is None or not (
-            profile.is_phone_verified and user.is_email_verified
-        ):
-            return Response(
-                {"detail": "Verify both your email and phone number before logging in."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        # profile = UserProfile.objects.filter(user=user).first()
+        # if profile is None or not (
+        #     profile.is_phone_verified and user.is_email_verified
+        # ):
+        #     return Response(
+        #         {"detail": "Verify both your email and phone number before logging in."},
+        #         status=status.HTTP_403_FORBIDDEN,
+        #     )
 
         auth_login(request, user)
         refresh = RefreshToken.for_user(user)
@@ -1008,15 +1008,15 @@ def signup_submit(request):
     profile.save(
         update_fields=["full_name", "phone", "is_phone_verified", "updated_at"]
     )
-    response_status, detail = _send_signup_phone_otp(profile)
-    if response_status != status.HTTP_200_OK:
-        return Response(
-            {
-                "detail": detail,
-                "resend_endpoint": reverse("accounts:signup_phone_otp_resend"),
-            },
-            status=response_status,
-        )
+   #response_status, detail = _send_signup_phone_otp(profile)
+    #  if response_status != status.HTTP_200_OK:
+    #     return Response(
+    #         {
+    #             "detail": detail,
+    #             "resend_endpoint": reverse("accounts:signup_phone_otp_resend"),
+    #         },
+    #         status=response_status,
+    #     )
 
     return Response({
         "detail": "Account created successfully. OTP sent to your phone.",
@@ -1169,8 +1169,8 @@ def _safe_contact_verification_next(request):
 
 def _finish_contact_verification(request, user):
     profile = UserProfile.objects.filter(user=user).first()
-    if not user.is_email_verified or not profile or not profile.is_phone_verified:
-        return None
+    # if not user.is_email_verified or not profile or not profile.is_phone_verified:
+    #     return None
 
     next_url = _safe_contact_verification_next(request)
     remember = request.session.pop("contact_verification_remember", False)
