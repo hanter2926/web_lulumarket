@@ -1,4 +1,5 @@
 import logging
+import re
 import smtplib
 
 import requests
@@ -10,19 +11,86 @@ from django.db import OperationalError
 logger = logging.getLogger(__name__)
 BREVO_EMAIL_URL = "https://api.brevo.com/v3/smtp/email"
 
+BREVO_EMAIL_PATTERN = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
+BREVO_OTP_PATTERN = re.compile(r"(?<!\d)\d{6}(?!\d)")
+BREVO_AUTH_HEADER_PATTERN = re.compile(
+    r"\b(?:proxy-)?authorization\s*[:=]\s*[^\r\n,;]+",
+    re.IGNORECASE,
+)
+BREVO_BEARER_PATTERN = re.compile(
+    r"\bbearer\s+[A-Za-z0-9._~+/=-]+",
+    re.IGNORECASE,
+)
+BREVO_CREDENTIAL_PATTERN = re.compile(
+    r"\b(api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|token|"
+    r"password|secret|otp)\b\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)",
+    re.IGNORECASE,
+)
 
 class EmailDeliveryConfigurationError(RuntimeError):
     pass
 
 
 class BrevoAPIError(RuntimeError):
-    def __init__(self, status_code, failure_class):
+    def __init__(
+        self,
+        status_code,
+        failure_class,
+        response_code=None,
+        response_message=None,
+    ):
         self.status_code = status_code
         self.failure_class = failure_class
         super().__init__(failure_class)
+        self.response_code = response_code
+        self.response_message = response_message
 
 
 def classify_email_delivery_error(exc):
+def _redact_brevo_response_value(value, max_length=240):
+    if not isinstance(value, str):
+        return None
+
+    sanitized = "".join(
+        " " if ord(character) < 32 or ord(character) == 127 else character
+        for character in value
+    )
+    sensitive_values = [
+        settings.BREVO_API_KEY,
+        settings.ANYMAIL.get("BREVO_API_KEY", ""),
+        settings.EMAIL_HOST_PASSWORD,
+        settings.SECRET_KEY,
+        settings.DATABASES.get("default", {}).get("PASSWORD", ""),
+    ]
+    for sensitive_value in sorted(
+        {item for item in sensitive_values if item},
+        key=len,
+        reverse=True,
+    ):
+        sanitized = sanitized.replace(sensitive_value, "[redacted]")
+
+    sanitized = BREVO_AUTH_HEADER_PATTERN.sub("Authorization: [redacted]", sanitized)
+    sanitized = BREVO_BEARER_PATTERN.sub("Bearer [redacted]", sanitized)
+    sanitized = BREVO_CREDENTIAL_PATTERN.sub(r"\1=[redacted]", sanitized)
+    sanitized = BREVO_EMAIL_PATTERN.sub("[email redacted]", sanitized)
+    sanitized = BREVO_OTP_PATTERN.sub("[code redacted]", sanitized)
+    return sanitized[:max_length]
+
+
+def _brevo_response_details(response):
+    try:
+        response_data = response.json()
+    except ValueError:
+        return None, None
+
+    if not isinstance(response_data, dict):
+        return None, None
+    return (
+        _redact_brevo_response_value(response_data.get("code"), max_length=80),
+        _redact_brevo_response_value(response_data.get("message")),
+    )
+
+
     if isinstance(exc, BrevoAPIError):
         return exc.failure_class, exc.status_code
     if isinstance(exc, requests.Timeout):
@@ -131,12 +199,17 @@ def _send_via_brevo(subject, body, recipient, html_body):
 
     if not 200 <= response.status_code < 300:
         status_code = response.status_code
-        failure_class = (
-            "brevo_authentication"
-            if status_code in (401, 403)
-            else "brevo_api_rejected"
+        failure_class = {
+            401: "brevo_unauthorized",
+            403: "brevo_forbidden",
+        }.get(status_code, "brevo_api_rejected")
+        response_code, response_message = _brevo_response_details(response)
+        raise BrevoAPIError(
+            status_code,
+            failure_class,
+            response_code=response_code,
+            response_message=response_message,
         )
-        raise BrevoAPIError(status_code, failure_class)
 
     try:
         result = response.json()

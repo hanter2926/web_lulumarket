@@ -1550,7 +1550,8 @@ def _log_email_delivery_failure(exc):
     failure_class, smtp_code = classify_email_delivery_error(exc)
     safe_details = {
         "email_configuration": "Email delivery configuration is incomplete or invalid",
-        "brevo_authentication": "Brevo rejected API authentication",
+        "brevo_unauthorized": "Brevo returned HTTP 401 Unauthorized",
+        "brevo_forbidden": "Brevo returned HTTP 403 Forbidden",
         "brevo_api_rejected": "Brevo rejected the API request",
         "brevo_malformed_response": "Brevo returned an invalid response",
         "brevo_timeout": "Brevo API request timed out",
@@ -1574,7 +1575,8 @@ def _log_email_delivery_failure(exc):
         "brevo_api_key_configured=%s brevo_sender_configured=%s "
         "host_configured=%s port=%s tls=%s ssl=%s "
         "username_configured=%s password_configured=%s sender_configured=%s "
-        "failure_class=%s safe_detail=%s status_code=%s error_type=%s",
+        "failure_class=%s safe_detail=%s status_code=%s error_type=%s "
+        "brevo_error_code=%s brevo_error_message=%s",
         settings.EMAIL_PROVIDER or "unset",
         settings.EMAIL_BACKEND,
         bool(settings.BREVO_API_KEY),
@@ -1603,6 +1605,8 @@ def _email_otp_request(request, purpose, verify_url_name, template_name):
             _log_email_delivery_failure(exc)
 
         request.session["email_otp_email"] = email
+        getattr(exc, "response_code", None),
+        getattr(exc, "response_message", None),
         next_url = request.POST.get("next", "")
         if next_url and url_has_allowed_host_and_scheme(
             next_url,

@@ -1603,8 +1603,14 @@ class SignupFlowTests(TestCase):
     @patch(
         "accounts.email_delivery.requests.post",
         return_value=Mock(
-            status_code=401,
-            json=lambda: {"message": "must not be logged"},
+            status_code=403,
+            json=lambda: {
+                "code": "unauthorized",
+                "message": (
+                    "Invalid API key mock-api-key for user@example.com. "
+                    "OTP 123456; Authorization: Bearer secret-token"
+                ),
+            },
         ),
     )
     def test_signup_brevo_failure_is_logged_safely_and_not_shown_as_success(
@@ -1625,12 +1631,17 @@ class SignupFlowTests(TestCase):
         post.assert_called_once()
         output = "\n".join(captured.output)
         self.assertIn("provider=brevo", output)
-        self.assertIn("failure_class=brevo_authentication", output)
-        self.assertIn("safe_detail=Brevo rejected API authentication", output)
-        self.assertIn("status_code=401", output)
+        self.assertIn("failure_class=brevo_forbidden", output)
+        self.assertIn("safe_detail=Brevo returned HTTP 403 Forbidden", output)
+        self.assertIn("status_code=403", output)
+        self.assertIn("brevo_error_code=unauthorized", output)
+        self.assertIn("brevo_error_message=", output)
         self.assertNotIn(self.signup_data["email"], output)
         self.assertNotIn("mock-api-key", output)
-        self.assertNotIn("must not be logged", output)
+        self.assertNotIn("user@example.com", output)
+        self.assertNotIn("123456", output)
+        self.assertNotIn("secret-token", output)
+        self.assertIn("[redacted]", output)
         payload = post.call_args.kwargs["json"]
         self.assertNotIn(payload["textContent"], output)
         otp = re.search(r"\b\d{6}\b", payload["textContent"]).group(0)
@@ -2323,7 +2334,10 @@ class EmailOTPFlowTests(TestCase):
         post,
         smtp_send,
     ):
-        for status_code in (401, 403):
+        for status_code, expected_failure in (
+            (401, "brevo_unauthorized"),
+            (403, "brevo_forbidden"),
+        ):
             with self.subTest(status_code=status_code):
                 post.reset_mock()
                 post.return_value = Mock(
@@ -2338,7 +2352,7 @@ class EmailOTPFlowTests(TestCase):
                     )
                 self.assertEqual(
                     raised.exception.failure_class,
-                    "brevo_authentication",
+                    expected_failure,
                 )
                 self.assertEqual(raised.exception.status_code, status_code)
                 post.assert_called_once()
