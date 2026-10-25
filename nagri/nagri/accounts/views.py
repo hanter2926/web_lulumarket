@@ -65,7 +65,7 @@ class IsOwnerOrAdmin(permissions.BasePermission):
 #-----  Email Sending------------------
 def send_test_email(request):
     success = send_message(
-        to_email="vikrampal803302@gmail.com",
+        to_email="vikrampal505@yahoo.com",
         subject="Test Email",
         message="Hello! This email was sent using Brevo."
     )
