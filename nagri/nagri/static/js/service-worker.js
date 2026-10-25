@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'nagri-static-v4';
-const PAGE_CACHE = 'nagri-pages-v4';
+const STATIC_CACHE = 'nagri-static-v5';
+const PAGE_CACHE = 'nagri-pages-v5';
 const OFFLINE_URL = '/offline/';
 const PRECACHE_URLS = [
   OFFLINE_URL,
@@ -43,6 +43,26 @@ function isNavigation(request) {
   return request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html');
 }
 
+function cacheResponse(cacheName, request, response) {
+  if (response.bodyUsed) return;
+
+  let responseCopy;
+  try {
+    responseCopy = response.clone();
+  } catch (error) {
+    console.warn('Service worker could not clone a response for caching:', error);
+    return;
+  }
+
+  caches.open(cacheName)
+    .then(function (cache) {
+      return cache.put(request, responseCopy);
+    })
+    .catch(function (error) {
+      console.warn('Service worker could not cache a response:', error);
+    });
+}
+
 self.addEventListener('install', function (event) {
   event.waitUntil(caches.open(STATIC_CACHE).then(function (cache) {
     return Promise.all(PRECACHE_URLS.map(function (url) {
@@ -67,8 +87,7 @@ self.addEventListener('fetch', function (event) {
     if (isPrivateRequest(request)) return;
     event.respondWith(fetch(request).then(function (response) {
       if (response.ok) {
-        const copy = response.clone();
-        caches.open(PAGE_CACHE).then(function (cache) { return cache.put(request, copy); });
+        cacheResponse(PAGE_CACHE, request, response);
       }
       return response;
     }).catch(function () {
@@ -85,9 +104,7 @@ self.addEventListener('fetch', function (event) {
     event.respondWith(caches.match(request).then(function (cached) {
       return cached || fetch(request).then(function (response) {
         if (response.ok) {
-          caches.open(STATIC_CACHE).then(function (cache) {
-            return cache.put(request, response.clone());
-          });
+          cacheResponse(STATIC_CACHE, request, response);
         }
         return response;
       });

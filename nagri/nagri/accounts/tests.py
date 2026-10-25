@@ -17,6 +17,7 @@ from django.contrib.auth.hashers import check_password
 from unittest.mock import Mock, patch
 from urllib.parse import urlencode, urlparse
 import re
+from requests import ConnectionError as RequestConnectionError
 from requests import Response, Timeout
 
 from .email_otp import request_email_otp, verify_email_otp
@@ -25,12 +26,14 @@ from .email_delivery import (
     EmailDeliveryConfigurationError,
     classify_email_delivery_error,
     send_account_email,
+    validate_email_delivery_configuration,
 )
 from .models import (
     Address,
     CustomUser,
     EmailOTPChallenge,
     EmailOTPThrottle,
+    PendingSignup,
     UserProfile,
 )
 from .utils import generate_otp, normalize_phone_number
@@ -377,16 +380,13 @@ class PhoneOTPAPISecurityTests(TestCase):
                     result["verify_endpoint"],
                     reverse("accounts:signup_email_otp_verify"),
                 )
-                user = CustomUser.objects.get(email=payload["email"])
-                self.assertFalse(user.is_active)
-                self.assertFalse(user.is_email_verified)
-                self.assertEqual(
-                    user.account_status,
-                    CustomUser.AccountStatus.PENDING_VERIFICATION,
+                self.assertFalse(
+                    CustomUser.objects.filter(email=payload["email"]).exists()
                 )
-                profile = UserProfile.objects.get(user=user)
-                self.assertFalse(profile.is_phone_verified)
-                self.assertFalse(profile.otp)
+                pending = PendingSignup.objects.get(email=payload["email"])
+                self.assertTrue(
+                    check_password(payload["password"], pending.password_hash)
+                )
 
         self.assertEqual(len(mail.outbox), 2)
         send_sms.assert_not_called()
@@ -411,7 +411,9 @@ class PhoneOTPAPISecurityTests(TestCase):
         )
         self.assertEqual(response.status_code, 201)
 
-        user = CustomUser.objects.get(email=payload["email"])
+        self.assertFalse(
+            CustomUser.objects.filter(email=payload["email"]).exists()
+        )
         code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
         response = self.client.post(
             reverse("accounts:signup_email_otp_verify"),
@@ -419,6 +421,7 @@ class PhoneOTPAPISecurityTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
+        user = CustomUser.objects.get(email=payload["email"])
         user.refresh_from_db()
         self.assertTrue(user.is_email_verified)
         self.assertTrue(user.is_active)
@@ -451,6 +454,56 @@ class PhoneOTPAPISecurityTests(TestCase):
         DEFAULT_FROM_EMAIL="noreply@example.com",
         DEBUG=True,
     )
+    def test_duplicate_pending_signup_cannot_replace_staged_password(self):
+        payload = {
+            "email": "staged-password@example.com",
+            "username": "staged-password",
+            "password": "OriginalStrongPass123!",
+            "phone": "+919876543216",
+        }
+        response = self.client.post(
+            reverse("accounts:users-register"),
+            payload,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        pending = PendingSignup.objects.get(email=payload["email"])
+        original_password_hash = pending.password_hash
+
+        duplicate_response = self.client.post(
+            reverse("accounts:users-register"),
+            {
+                **payload,
+                "password": "AttackerChosenPass123!",
+                "phone": "+919876543215",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(duplicate_response.status_code, 409)
+        pending.refresh_from_db()
+        self.assertEqual(pending.password_hash, original_password_hash)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertFalse(
+            CustomUser.objects.filter(email=payload["email"]).exists()
+        )
+
+        code = re.search(r"\b(\d{6})\b", mail.outbox[0].body).group(1)
+        verify_response = self.client.post(
+            reverse("accounts:signup_email_otp_verify"),
+            {"email": payload["email"], "code": code},
+            content_type="application/json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        user = CustomUser.objects.get(email=payload["email"])
+        self.assertTrue(user.check_password("OriginalStrongPass123!"))
+        self.assertFalse(user.check_password("AttackerChosenPass123!"))
+
+    @override_settings(
+        EMAIL_PROVIDER="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
     def test_signup_submit_email_otp_must_be_verified_before_activation(self):
         email = "signup-submit-verification@example.com"
         response = self.client.post(
@@ -464,7 +517,8 @@ class PhoneOTPAPISecurityTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 201)
-        user = CustomUser.objects.get(email=email)
+        self.assertFalse(CustomUser.objects.filter(email=email).exists())
+        PendingSignup.objects.get(email=email)
         code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
         wrong_code = "000000" if code != "000000" else "000001"
 
@@ -474,9 +528,7 @@ class PhoneOTPAPISecurityTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 400)
-        user.refresh_from_db()
-        self.assertFalse(user.is_active)
-        self.assertFalse(user.is_email_verified)
+        self.assertFalse(CustomUser.objects.filter(email=email).exists())
 
         response = self.client.post(
             reverse("accounts:signup_email_otp_verify"),
@@ -484,6 +536,7 @@ class PhoneOTPAPISecurityTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
+        user = CustomUser.objects.get(email=email)
         user.refresh_from_db()
         self.assertTrue(user.is_active)
         self.assertTrue(user.is_email_verified)
@@ -503,6 +556,11 @@ class PhoneOTPAPISecurityTests(TestCase):
                 "password": "StrongPass123!",
                 "phone": "not-a-phone",
             },
+            {
+                "email": "not-an-email",
+                "password": "StrongPass123!",
+                "phone": "+919876543214",
+            },
         )
 
         for payload in payloads:
@@ -518,6 +576,21 @@ class PhoneOTPAPISecurityTests(TestCase):
                 )
 
         self.assertEqual(CustomUser.objects.count(), initial_count)
+
+    def test_signup_submit_rejects_invalid_email_before_staging(self):
+        response = self.client.post(
+            reverse("accounts:signup_submit"),
+            {
+                "email": "invalid-email",
+                "password": "StrongPass123!",
+                "phone": "+919876543214",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "Enter a valid email address.")
+        self.assertFalse(PendingSignup.objects.exists())
+        self.assertFalse(CustomUser.objects.filter(email="invalid-email").exists())
 
     @override_settings(
         EMAIL_PROVIDER="smtp",
@@ -549,13 +622,8 @@ class PhoneOTPAPISecurityTests(TestCase):
             response.json()["resend_endpoint"],
             reverse("accounts:signup_email_otp_resend"),
         )
-        user = CustomUser.objects.get(email=email)
-        self.assertFalse(user.is_active)
-        self.assertFalse(user.is_email_verified)
-        self.assertEqual(
-            user.account_status,
-            CustomUser.AccountStatus.PENDING_VERIFICATION,
-        )
+        self.assertFalse(CustomUser.objects.filter(email=email).exists())
+        self.assertTrue(PendingSignup.objects.filter(email=email).exists())
 
         throttle = EmailOTPThrottle.objects.get(
             purpose=EmailOTPThrottle.Purpose.SIGNUP,
@@ -1219,9 +1287,8 @@ class AccountSecurityTests(TestCase):
         DEBUG=True,
     )
     @patch("accounts.views.send_otp_to_phone")
-    def test_password_login_requires_email_verification_but_not_phone_verification(
-        self,
-        send_sms,
+    def test_password_login_rejects_unverified_users_without_requesting_login_otp(
+        self, send_sms
     ):
         user = CustomUser.objects.create_user(
             email="contact-flow@example.com",
@@ -1241,36 +1308,20 @@ class AccountSecurityTests(TestCase):
             {
                 "email": user.email,
                 "password": "StrongPass123",
-                "next": "/cart/",
             },
         )
-        self.assertRedirects(
-            response,
-            reverse("accounts:verify_contacts"),
-            fetch_redirect_response=False,
-        )
-
-        self.client.post(
-            reverse("accounts:verify_contacts"),
-            {"action": "send_email"},
-        )
-        email_code = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group(0)
-        response = self.client.post(
-            reverse("accounts:verify_contacts"),
-            {"action": "verify_email", "email_code": email_code},
-        )
-        self.assertRedirects(response, "/cart/", fetch_redirect_response=False)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Verify your email before logging in.")
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        self.assertEqual(len(mail.outbox), 0)
         send_sms.assert_not_called()
         user.refresh_from_db()
         profile = UserProfile.objects.get(user=user)
-        self.assertTrue(user.is_email_verified)
+        self.assertFalse(user.is_email_verified)
         self.assertFalse(profile.is_phone_verified)
-        self.assertEqual(
-            self.client.session.get("_auth_user_id"),
-            str(user.pk),
-        )
+        self.assertNotIn("_auth_user_id", self.client.session)
 
-    def test_unverified_email_requires_email_verification_but_not_phone(self):
+    def test_legacy_contact_verification_url_does_not_send_email_otp(self):
         user = CustomUser.objects.create_user(
             email="pending@example.com",
             username="pending-user",
@@ -1284,18 +1335,10 @@ class AccountSecurityTests(TestCase):
         profile.is_phone_verified = False
         profile.save(update_fields=["full_name", "phone", "is_phone_verified", "updated_at"])
 
-        response = self.client.post(reverse("accounts:email_login"), {"email": "pending@example.com", "password": "StrongPass123"})
+        response = self.client.get(reverse("accounts:verify_contacts"))
 
-        self.assertRedirects(
-            response,
-            reverse("accounts:verify_contacts"),
-            fetch_redirect_response=False,
-        )
-        self.assertFalse(response.wsgi_request.user.is_authenticated)
-        verification_page = self.client.get(response.url)
-        self.assertTemplateUsed(verification_page, "accounts/verify_contacts.html")
-        self.assertContains(verification_page, "Verify your email")
-        self.assertNotContains(verification_page, "Step 2: Phone")
+        self.assertRedirects(response, reverse("accounts:email_login"))
+        self.assertEqual(len(mail.outbox), 0)
 
     def test_verified_user_can_log_in_with_email_and_password(self):
         user = CustomUser.objects.create_user(
@@ -1487,6 +1530,45 @@ class SignupFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Create Account")
 
+    def test_generic_user_create_requires_email_verification(self):
+        email = "generic-user-create@example.com"
+        response = self.client.post(
+            reverse("accounts:users-list"),
+            {
+                "email": email,
+                "username": "generic-user-create",
+                "password": "StrongSignupPass123!",
+                "phone": "9876543218",
+                "full_name": "Generic User",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["email_verification_required"])
+        self.assertFalse(CustomUser.objects.filter(email=email).exists())
+        PendingSignup.objects.get(email=email)
+
+        login_response = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": email, "password": "StrongSignupPass123!"},
+        )
+        self.assertEqual(login_response.status_code, 200)
+        self.assertContains(login_response, "Invalid email or password.")
+        self.assertFalse(login_response.wsgi_request.user.is_authenticated)
+
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        verify_response = self.client.post(
+            reverse("accounts:signup_email_otp_verify"),
+            {"email": email, "code": code},
+            content_type="application/json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        user = CustomUser.objects.get(email=email)
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.is_email_verified)
+        self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
+
     def test_login_page_has_one_registration_option_and_no_otp_login_link(self):
         response = self.client.get(reverse("accounts:login_page"))
 
@@ -1507,18 +1589,14 @@ class SignupFlowTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.signup_data["email"], mail.outbox[0].to)
         self.assertIn("verify your email address", mail.outbox[0].body)
-        user = CustomUser.objects.get(email=self.signup_data["email"])
-        self.assertFalse(user.is_active)
-        self.assertFalse(user.is_email_verified)
-        self.assertEqual(
-            user.account_status,
-            CustomUser.AccountStatus.PENDING_VERIFICATION,
+        self.assertFalse(
+            CustomUser.objects.filter(email=self.signup_data["email"]).exists()
         )
-        self.assertTrue(user.check_password(self.signup_data["password"]))
-        self.assertNotEqual(user.password, self.signup_data["password"])
-        profile = UserProfile.objects.get(user=user)
-        self.assertFalse(profile.is_phone_verified)
-        self.assertEqual(profile.phone, "+919876543210")
+        pending = PendingSignup.objects.get(email=self.signup_data["email"])
+        self.assertTrue(
+            check_password(self.signup_data["password"], pending.password_hash)
+        )
+        self.assertNotEqual(pending.password_hash, self.signup_data["password"])
         send_otp.assert_not_called()
 
         code = re.search(r"\b(\d{6})\b", mail.outbox[0].body).group(1)
@@ -1532,6 +1610,7 @@ class SignupFlowTests(TestCase):
             reverse("accounts:dashboard_page"),
             fetch_redirect_response=False,
         )
+        user = CustomUser.objects.get(email=self.signup_data["email"])
         user.refresh_from_db()
         self.assertTrue(user.is_active)
         self.assertTrue(user.is_email_verified)
@@ -1544,6 +1623,7 @@ class SignupFlowTests(TestCase):
         )
 
         self.client.get(reverse("accounts:logout_page"))
+        mail.outbox.clear()
         response = self.client.post(
             reverse("accounts:email_login"),
             {
@@ -1552,6 +1632,7 @@ class SignupFlowTests(TestCase):
             },
         )
         self.assertRedirects(response, reverse("accounts:dashboard_page"))
+        self.assertEqual(len(mail.outbox), 0)
 
     @override_settings(
         DEBUG=False,
@@ -1584,11 +1665,12 @@ class SignupFlowTests(TestCase):
         self.assertEqual(payload["to"], [{"email": self.signup_data["email"]}])
         self.assertEqual(payload["sender"]["email"], "sender@example.com")
         self.assertRegex(payload["textContent"], r"verify your email address is \d{6}")
-        user = CustomUser.objects.get(email=self.signup_data["email"])
-        self.assertFalse(user.is_active)
+        self.assertFalse(
+            CustomUser.objects.filter(email=self.signup_data["email"]).exists()
+        )
         challenge = EmailOTPChallenge.objects.get(
-            user=user,
             purpose=EmailOTPChallenge.Purpose.SIGNUP,
+            user__isnull=True,
         )
         self.assertIsNone(challenge.consumed_at)
 
@@ -1650,11 +1732,15 @@ class SignupFlowTests(TestCase):
         page = self.client.get(reverse("accounts:signup_email_verify"))
         self.assertContains(page, "Unable to send the verification email right now")
         self.assertNotContains(page, "A verification code has been sent")
-        user = CustomUser.objects.get(email=self.signup_data["email"])
-        self.assertFalse(user.is_active)
+        self.assertFalse(
+            CustomUser.objects.filter(email=self.signup_data["email"]).exists()
+        )
+        self.assertTrue(
+            PendingSignup.objects.filter(email=self.signup_data["email"]).exists()
+        )
         challenge = EmailOTPChallenge.objects.get(
-            user=user,
             purpose=EmailOTPChallenge.Purpose.SIGNUP,
+            user__isnull=True,
         )
         self.assertIsNotNone(challenge.consumed_at)
 
@@ -1687,9 +1773,12 @@ class SignupFlowTests(TestCase):
         page = self.client.get(reverse("accounts:signup_email_verify"))
         self.assertContains(page, "Unable to send the verification email right now")
         self.assertNotContains(page, "A verification code has been sent")
-        user = CustomUser.objects.get(email=self.signup_data["email"])
-        self.assertFalse(user.is_active)
-        self.assertFalse(user.is_email_verified)
+        self.assertFalse(
+            CustomUser.objects.filter(email=self.signup_data["email"]).exists()
+        )
+        self.assertTrue(
+            PendingSignup.objects.filter(email=self.signup_data["email"]).exists()
+        )
 
     def test_signup_can_resend_email_verification_code(self):
         self.client.post(reverse("accounts:signup_form"), self.signup_data)
@@ -1991,19 +2080,12 @@ class EmailOTPFlowTests(TestCase):
             is_phone_verified=True,
         )
 
-    def _request_code(self, url_name):
+    def _request_code(self):
         response = self.client.post(
-            reverse(url_name),
+            reverse("accounts:password_reset_otp"),
             {"email": self.user.email},
         )
-        self.assertRedirects(
-            response,
-            reverse(
-                "accounts:email_otp_login_verify"
-                if url_name == "accounts:email_otp_login"
-                else "accounts:password_reset_otp_verify"
-            ),
-        )
+        self.assertRedirects(response, reverse("accounts:password_reset_otp_verify"))
         self.assertEqual(len(mail.outbox), 1)
         code = re.search(r"\b\d{6}\b", mail.outbox[0].body).group(0)
         challenge = EmailOTPChallenge.objects.latest("created_at")
@@ -2011,186 +2093,87 @@ class EmailOTPFlowTests(TestCase):
         self.assertTrue(check_password(code, challenge.code_hash))
         return code
 
-    def test_email_otp_generation_and_successful_login_rotate_session(self):
-        session = self.client.session
-        session["existing"] = "session"
-        session.save()
-        previous_session_key = session.session_key
-        code = self._request_code("accounts:email_otp_login")
-
-        response = self.client.post(
-            reverse("accounts:email_otp_login_verify"),
-            {"email": self.user.email, "code": code},
-        )
-        self.assertRedirects(response, reverse("accounts:dashboard_page"))
-        self.assertTrue(response.wsgi_request.user.is_authenticated)
-        self.user.refresh_from_db()
-        self.assertTrue(self.user.is_email_verified)
-        self.assertNotEqual(self.client.session.session_key, previous_session_key)
-        self.assertIsNotNone(
-            EmailOTPChallenge.objects.latest("created_at").consumed_at
-        )
-        self.assertIsNone(
-            verify_email_otp(
-                self.user.email,
-                code,
-                EmailOTPChallenge.Purpose.LOGIN,
-            )
-        )
-
-    def test_unknown_and_inactive_accounts_receive_no_email_or_account_specific_response(self):
-        self.user.is_active = False
-        self.user.save(update_fields=["is_active"])
-        response = self.client.post(
-            reverse("accounts:email_otp_login"),
-            {"email": self.user.email},
-        )
-        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
-        self.assertEqual(len(mail.outbox), 0)
-        page = self.client.get(response.url)
-        self.assertContains(page, "If an eligible account exists")
-        self.assertNotContains(page, "inactive")
-
-        self.client.post(
-            reverse("accounts:email_otp_login"),
-            {"email": "unknown@example.com"},
-        )
-        self.assertEqual(len(mail.outbox), 0)
-
-    def test_email_otp_rejects_incorrect_expired_and_reused_codes(self):
-        code = self._request_code("accounts:email_otp_login")
-        challenge = EmailOTPChallenge.objects.latest("created_at")
-        challenge.expires_at = timezone.now() - timedelta(seconds=1)
-        challenge.save(update_fields=["expires_at"])
-        self.assertIsNone(
-            verify_email_otp(
-                self.user.email,
-                code,
-                EmailOTPChallenge.Purpose.LOGIN,
-            )
-        )
-
-        throttle = EmailOTPThrottle.objects.get(
-            purpose=EmailOTPThrottle.Purpose.LOGIN
-        )
-        throttle.last_requested_at = timezone.now() - timedelta(seconds=11)
-        throttle.save(update_fields=["last_requested_at"])
-        self.client.post(
-            reverse("accounts:email_otp_login"),
-            {"email": self.user.email},
-        )
-        new_code = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group(0)
-        self.assertIsNone(
-            verify_email_otp(
-                self.user.email,
-                "wrong!",
-                EmailOTPChallenge.Purpose.LOGIN,
-            )
-        )
-        self.assertEqual(
-            verify_email_otp(
-                self.user.email,
-                new_code,
-                EmailOTPChallenge.Purpose.LOGIN,
+    def test_email_delivery_error_classification_covers_supported_errors(self):
+        cases = (
+            (BrevoAPIError(403, "brevo_forbidden"), "brevo_forbidden", 403),
+            (Timeout(), "brevo_timeout", None),
+            (RequestConnectionError(), "brevo_connection", None),
+            (OperationalError(), "database_operational", None),
+            (smtplib.SMTPAuthenticationError(535, b"auth"), "smtp_authentication", 535),
+            (smtplib.SMTPConnectError(421, b"connect"), "smtp_connection", 421),
+            (smtplib.SMTPServerDisconnected("disconnected"), "smtp_disconnected", None),
+            (
+                smtplib.SMTPRecipientsRefused(
+                    {"recipient@example.com": (550, b"rejected")}
+                ),
+                "smtp_recipient_rejected",
+                None,
             ),
-            self.user,
-        )
-        self.assertIsNone(
-            verify_email_otp(
-                self.user.email,
-                new_code,
-                EmailOTPChallenge.Purpose.LOGIN,
-            )
+            (
+                smtplib.SMTPSenderRefused(550, b"rejected", "sender@example.com"),
+                "smtp_sender_rejected",
+                550,
+            ),
+            (smtplib.SMTPResponseException(451, b"response"), "smtp_response", 451),
+            (TimeoutError(), "network_or_timeout", None),
+            (OSError(), "network_or_timeout", None),
+            (EmailDeliveryConfigurationError(), "email_configuration", None),
+            (RuntimeError(), "email_backend", None),
         )
 
-    def test_email_otp_locks_after_five_incorrect_attempts(self):
-        code = self._request_code("accounts:email_otp_login")
-        for _ in range(5):
-            self.assertIsNone(
-                verify_email_otp(
-                    self.user.email,
-                    "incorrect",
-                    EmailOTPChallenge.Purpose.LOGIN,
+        for error, expected_class, expected_code in cases:
+            with self.subTest(error=type(error).__name__):
+                self.assertEqual(
+                    classify_email_delivery_error(error),
+                    (expected_class, expected_code),
                 )
-            )
-        challenge = EmailOTPChallenge.objects.latest("created_at")
-        self.assertEqual(challenge.attempts, 5)
-        self.assertIsNotNone(challenge.consumed_at)
-        self.assertIsNone(
-            verify_email_otp(
-                self.user.email,
-                code,
-                EmailOTPChallenge.Purpose.LOGIN,
-            )
-        )
 
-    def test_email_otp_enforces_resend_cooldown_and_hourly_limit(self):
-        self._request_code("accounts:email_otp_login")
-        throttle = EmailOTPThrottle.objects.get(
-            purpose=EmailOTPThrottle.Purpose.LOGIN
-        )
+    @override_settings(
+        DEBUG=False,
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+    )
+    def test_brevo_configuration_validation_accepts_complete_configuration(self):
+        validate_email_delivery_configuration()
 
-        throttle.last_requested_at = timezone.now() - timedelta(seconds=9)
-        throttle.save(update_fields=["last_requested_at"])
+    def test_brevo_configuration_validation_rejects_missing_credentials(self):
+        for configuration in (
+            {
+                "EMAIL_PROVIDER": "brevo",
+                "BREVO_API_KEY": "",
+                "BREVO_SENDER_EMAIL": "sender@example.com",
+            },
+            {
+                "EMAIL_PROVIDER": "brevo",
+                "BREVO_API_KEY": "brevo-test-key",
+                "BREVO_SENDER_EMAIL": "",
+            },
+            {
+                "EMAIL_PROVIDER": "unsupported",
+                "BREVO_API_KEY": "brevo-test-key",
+                "BREVO_SENDER_EMAIL": "sender@example.com",
+            },
+        ):
+            with self.subTest(provider=configuration["EMAIL_PROVIDER"]):
+                with override_settings(**configuration):
+                    with self.assertRaises(EmailDeliveryConfigurationError):
+                        validate_email_delivery_configuration()
+
+    def test_email_otp_login_routes_are_disabled(self):
         response = self.client.post(
             reverse("accounts:email_otp_login"),
             {"email": self.user.email},
         )
-        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
-        self.assertEqual(len(mail.outbox), 1)
-        throttle.refresh_from_db()
-        self.assertEqual(throttle.request_count, 1)
-
-        throttle.last_requested_at = timezone.now() - timedelta(seconds=11)
-        throttle.save(update_fields=["last_requested_at"])
-        self.client.post(
-            reverse("accounts:email_otp_login"),
-            {"email": self.user.email},
-        )
-        self.assertEqual(len(mail.outbox), 2)
-        throttle.refresh_from_db()
-        self.assertEqual(throttle.request_count, 2)
-
-        for _ in range(13):
-            throttle.last_requested_at = timezone.now() - timedelta(seconds=11)
-            throttle.save(update_fields=["last_requested_at"])
-            self.client.post(
-                reverse("accounts:email_otp_login"),
-                {"email": self.user.email},
-            )
-            throttle.refresh_from_db()
-        self.assertEqual(throttle.request_count, 15)
-        self.assertEqual(len(mail.outbox), 15)
-
-        self.client.post(
-            reverse("accounts:email_otp_login"),
-            {"email": self.user.email},
-        )
-        self.assertEqual(len(mail.outbox), 15)
-        throttle.refresh_from_db()
-        self.assertEqual(throttle.request_count, 15)
-
-    def test_email_otp_delivery_error_is_generic_and_logged_without_secrets(self):
-        with self.assertLogs("accounts.views", level="ERROR") as captured:
-            with patch(
-                "accounts.email_delivery.send_mail",
-                side_effect=RuntimeError("otp-secret-token-secret"),
-            ):
-                response = self.client.post(
-                    reverse("accounts:email_otp_login"),
-                    {"email": self.user.email},
-                )
-        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
+        self.assertRedirects(response, reverse("accounts:email_login"))
         self.assertEqual(len(mail.outbox), 0)
-        throttle = EmailOTPThrottle.objects.get(
-            purpose=EmailOTPThrottle.Purpose.LOGIN
-        )
-        self.assertEqual(throttle.request_count, 1)
-        self.assertIsNotNone(throttle.last_requested_at)
-        output = "\n".join(captured.output)
-        self.assertIn("error_type=RuntimeError", output)
-        self.assertNotIn(self.user.email, output)
-        self.assertNotIn("otp-secret-token-secret", output)
+
+        response = self.client.post(reverse("accounts:email_otp_login_verify"))
+        self.assertRedirects(response, reverse("accounts:email_login"))
+        self.assertEqual(len(mail.outbox), 0)
+
+        with self.assertRaises(ValueError):
+            request_email_otp(self.user.email, "login")
 
     @override_settings(
         DEBUG=False,
@@ -2217,6 +2200,10 @@ class EmailOTPFlowTests(TestCase):
 
         post.assert_called_once()
         self.assertEqual(
+            post.call_args.args[0],
+            "https://api.brevo.com/v3/smtp/email",
+        )
+        self.assertEqual(
             post.call_args.kwargs["json"]["sender"],
             {"email": "sender@example.com", "name": "NAGRI"},
         )
@@ -2224,7 +2211,7 @@ class EmailOTPFlowTests(TestCase):
             post.call_args.kwargs["headers"]["api-key"],
             "brevo-test-key",
         )
-        self.assertEqual(post.call_args.kwargs["timeout"], (3.05, 10))
+        self.assertEqual(post.call_args.kwargs["timeout"], (5, 30))
         self.assertFalse(post.call_args.kwargs["allow_redirects"])
         smtp_send.assert_not_called()
 
@@ -2232,7 +2219,39 @@ class EmailOTPFlowTests(TestCase):
         DEBUG=False,
         EMAIL_PROVIDER="brevo",
         EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
-        ANYMAIL={"BREVO_API_KEY": "brevo-test-key"},
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+        BREVO_SENDER_NAME="NAGRI",
+        ANYMAIL={"REQUESTS_TIMEOUT": (5, 30)},
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(
+            status_code=201,
+            json=lambda: {"messageId": "mock-message-id"},
+        ),
+    )
+    def test_brevo_html_email_includes_html_content(self, post):
+        send_account_email(
+            "subject",
+            "plain text",
+            "recipient@example.com",
+            html_body="<p>HTML message</p>",
+        )
+
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["textContent"], "plain text")
+        self.assertEqual(payload["htmlContent"], "<p>HTML message</p>")
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_PROVIDER="brevo",
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        ANYMAIL={
+            "BREVO_API_KEY": "brevo-test-key",
+            "REQUESTS_TIMEOUT": (5, 30),
+            "DEBUG_API_REQUESTS": False,
+        },
         DEFAULT_FROM_EMAIL="NAGRI <sender@example.com>",
     )
     @patch("requests.Session.request")
@@ -2252,8 +2271,12 @@ class EmailOTPFlowTests(TestCase):
         self.assertEqual(message.send(), 1)
         request_args = request.call_args.kwargs
         self.assertEqual(request_args["method"], "POST")
-        self.assertTrue(request_args["url"].startswith("https://api.brevo.com/"))
+        self.assertEqual(
+            request_args["url"],
+            "https://api.brevo.com/v3/smtp/email",
+        )
         self.assertEqual(request_args["headers"]["api-key"], "brevo-test-key")
+        self.assertEqual(request_args["timeout"], (5, 30))
         self.assertEqual(
             json.loads(request_args["data"])["sender"]["email"],
             "sender@example.com",
@@ -2303,11 +2326,11 @@ class EmailOTPFlowTests(TestCase):
     )
     def test_email_otp_uses_brevo_api(self, post):
         response = self.client.post(
-            reverse("accounts:email_otp_login"),
+            reverse("accounts:password_reset_otp"),
             {"email": self.user.email},
         )
 
-        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
+        self.assertRedirects(response, reverse("accounts:password_reset_otp_verify"))
         post.assert_called_once()
         payload = post.call_args.kwargs["json"]
         self.assertEqual(payload["sender"], {
@@ -2317,7 +2340,45 @@ class EmailOTPFlowTests(TestCase):
         self.assertEqual(payload["to"], [{"email": self.user.email}])
         self.assertRegex(
             payload["textContent"],
-            r"code to verify your email address is \d{6}",
+            r"code to reset your password is \d{6}",
+        )
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+        BREVO_SENDER_NAME="NAGRI",
+        ANYMAIL={
+            "BREVO_API_KEY": "brevo-test-key",
+            "REQUESTS_TIMEOUT": (5, 30),
+            "DEBUG_API_REQUESTS": False,
+        },
+    )
+    @patch("accounts.email_delivery.requests.post", side_effect=Timeout())
+    def test_brevo_timeout_is_not_retried_and_keeps_otp_usable(self, post):
+        with self.assertRaises(Timeout):
+            request_email_otp(
+                self.user.email,
+                EmailOTPChallenge.Purpose.PASSWORD_RESET,
+            )
+
+        post.assert_called_once()
+        self.assertEqual(post.call_args.kwargs["timeout"], (5, 30))
+        payload = post.call_args.kwargs["json"]
+        code = re.search(r"\b(\d{6})\b", payload["textContent"]).group(1)
+        challenge = EmailOTPChallenge.objects.get(
+            user=self.user,
+            purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
+        )
+        self.assertIsNone(challenge.consumed_at)
+        self.assertIsNotNone(
+            verify_email_otp(
+                self.user.email,
+                code,
+                EmailOTPChallenge.Purpose.PASSWORD_RESET,
+            )
         )
 
     @override_settings(
@@ -2329,7 +2390,7 @@ class EmailOTPFlowTests(TestCase):
     )
     @patch("accounts.email_delivery.send_mail")
     @patch("accounts.email_delivery.requests.post")
-    def test_brevo_authentication_failures_do_not_fallback_to_smtp(
+    def test_brevo_authorization_failures_do_not_fallback_to_smtp(
         self,
         post,
         smtp_send,
@@ -2357,6 +2418,26 @@ class EmailOTPFlowTests(TestCase):
                 self.assertEqual(raised.exception.status_code, status_code)
                 post.assert_called_once()
         smtp_send.assert_not_called()
+
+    @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="anymail.backends.brevo.EmailBackend",
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(status_code=400, json=lambda: {"message": "unsafe detail"}),
+    )
+    def test_brevo_api_rejection_uses_safe_failure_class(self, post):
+        with self.assertRaises(BrevoAPIError) as raised:
+            send_account_email("subject", "body", "recipient@example.com")
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(raised.exception.failure_class, "brevo_api_rejected")
+        self.assertEqual(str(raised.exception), "brevo_api_rejected")
+        post.assert_called_once()
 
     @override_settings(
         DEBUG=False,
@@ -2467,11 +2548,11 @@ class EmailOTPFlowTests(TestCase):
                 side_effect=failure,
             ):
                 response = self.client.post(
-                    reverse("accounts:email_otp_login"),
+                    reverse("accounts:password_reset_otp"),
                     {"email": self.user.email},
                 )
 
-        self.assertRedirects(response, reverse("accounts:email_otp_login_verify"))
+        self.assertRedirects(response, reverse("accounts:password_reset_otp_verify"))
         output = "\n".join(captured.output)
         self.assertIn("failure_class=smtp_authentication", output)
         self.assertIn("status_code=535", output)
@@ -2489,7 +2570,7 @@ class EmailOTPFlowTests(TestCase):
             send_account_email("Test", "Test", "recipient@example.com")
 
     def test_email_otp_password_recovery_resets_password_after_verification(self):
-        code = self._request_code("accounts:password_reset_otp")
+        code = self._request_code()
         response = self.client.post(
             reverse("accounts:password_reset_otp_verify"),
             {"email": self.user.email, "code": code},

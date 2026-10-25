@@ -3,12 +3,19 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
+from requests import RequestException
 
 from .email_delivery import send_account_email
-from .models import CustomUser, EmailOTPChallenge, EmailOTPThrottle
+from .models import (
+    CustomUser,
+    EmailOTPChallenge,
+    EmailOTPThrottle,
+    PendingSignup,
+    UserProfile,
+)
 
 OTP_LIFETIME = timedelta(minutes=5)
 OTP_RESEND_COOLDOWN = timedelta(seconds=10)
@@ -26,39 +33,57 @@ def _email_digest(email):
 
 
 def _eligible_user(email, purpose):
+    if purpose == EmailOTPChallenge.Purpose.SIGNUP:
+        pending_signup = PendingSignup.objects.filter(email__iexact=email).first()
+        if pending_signup:
+            return pending_signup
+
+        # Keep OTP verification working for pending accounts created before staged signup.
+        user = CustomUser.objects.filter(email__iexact=email).first()
+        if (
+            user
+            and user.account_status == CustomUser.AccountStatus.PENDING_VERIFICATION
+            and not user.is_active
+            and not user.is_email_verified
+            and user.has_usable_password()
+        ):
+            return user
+        return None
+
     user = CustomUser.objects.filter(email__iexact=email).first()
     if not user:
         return None
 
-    if purpose == EmailOTPChallenge.Purpose.SIGNUP:
-        if (
-            user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
-            or user.is_active
-            or user.is_email_verified
-            or not user.has_usable_password()
-        ):
-            return None
-    elif (
-        user.account_status != CustomUser.AccountStatus.ACTIVE
-        or not user.is_active
+    if purpose == EmailOTPChallenge.Purpose.PASSWORD_RESET and (
+        user.account_status != CustomUser.AccountStatus.ACTIVE or not user.is_active
     ):
         return None
 
-    if purpose == EmailOTPChallenge.Purpose.LOGIN:
-        return user
-    elif not user.has_usable_password():
+    if not user.has_usable_password():
         return None
 
     return user
 
 
 def request_email_otp(email, purpose):
+    if purpose not in (
+        EmailOTPChallenge.Purpose.SIGNUP,
+        EmailOTPChallenge.Purpose.PASSWORD_RESET,
+    ):
+        raise ValueError("Unsupported email OTP purpose.")
+
     normalized_email = email.strip()
     digest = _email_digest(normalized_email)
-    user = _eligible_user(normalized_email, purpose)
-    if not user:
+    eligible = _eligible_user(normalized_email, purpose)
+    if not eligible:
         return "accepted"
 
+    recipient_email = eligible.email
+    challenge_user = (
+        eligible
+        if isinstance(eligible, CustomUser)
+        else None
+    )
     now = timezone.now()
     with transaction.atomic():
         throttle, _ = EmailOTPThrottle.objects.get_or_create(
@@ -97,7 +122,7 @@ def request_email_otp(email, purpose):
             email_digest=digest,
             purpose=purpose,
             defaults={
-                "user": user,
+                "user": challenge_user,
                 "code_hash": make_password(code),
                 "created_at": now,
                 "expires_at": now + OTP_LIFETIME,
@@ -109,12 +134,6 @@ def request_email_otp(email, purpose):
     purpose_text = (
         "verify your email address"
         if purpose == EmailOTPChallenge.Purpose.SIGNUP
-        or (
-            purpose == EmailOTPChallenge.Purpose.LOGIN
-            and not user.is_email_verified
-        )
-        else "sign in"
-        if purpose == EmailOTPChallenge.Purpose.LOGIN
         else "reset your password"
     )
     message = (
@@ -123,7 +142,10 @@ def request_email_otp(email, purpose):
         "If you did not request it, you can ignore this email."
     )
     try:
-        send_account_email("Your NAGRI email verification code", message, user.email)
+        send_account_email("Your NAGRI verification code", message, recipient_email)
+    except RequestException:
+        # A timeout can happen after Brevo accepted the message, so keep its OTP usable.
+        raise
     except Exception:
         EmailOTPChallenge.objects.filter(pk=challenge.pk).update(consumed_at=timezone.now())
         raise
@@ -132,6 +154,12 @@ def request_email_otp(email, purpose):
 
 
 def verify_email_otp(email, code, purpose):
+    if purpose not in (
+        EmailOTPChallenge.Purpose.SIGNUP,
+        EmailOTPChallenge.Purpose.PASSWORD_RESET,
+    ):
+        raise ValueError("Unsupported email OTP purpose.")
+
     digest = _email_digest(email.strip())
     now = timezone.now()
 
@@ -151,7 +179,20 @@ def verify_email_otp(email, code, purpose):
             return None
 
         user = challenge.user
-        if not user or user.email.strip().casefold() != email.strip().casefold():
+        pending_signup = None
+        if purpose == EmailOTPChallenge.Purpose.SIGNUP and not user:
+            pending_signup = (
+                PendingSignup.objects.select_for_update()
+                .filter(email__iexact=email)
+                .first()
+            )
+            if (
+                not pending_signup
+                or pending_signup.email.strip().casefold()
+                != email.strip().casefold()
+            ):
+                return None
+        elif not user or user.email.strip().casefold() != email.strip().casefold():
             return None
 
         if challenge.expires_at <= now or challenge.attempts >= OTP_MAX_ATTEMPTS:
@@ -166,33 +207,61 @@ def verify_email_otp(email, code, purpose):
             challenge.save(update_fields=["attempts", "consumed_at"])
             return None
 
-        challenge.consumed_at = now
-        challenge.save(update_fields=["consumed_at"])
-
         if purpose == EmailOTPChallenge.Purpose.SIGNUP:
+            if pending_signup:
+                if CustomUser.objects.filter(email__iexact=email).exists():
+                    return None
+                user = CustomUser(
+                    email=pending_signup.email,
+                    username=pending_signup.username,
+                    password=pending_signup.password_hash,
+                    phone=pending_signup.phone,
+                    first_name=pending_signup.first_name,
+                    last_name=pending_signup.last_name,
+                    is_email_verified=True,
+                    is_active=True,
+                    account_status=CustomUser.AccountStatus.ACTIVE,
+                )
+                try:
+                    with transaction.atomic():
+                        user.save(force_insert=True)
+                        UserProfile.objects.create(
+                            user=user,
+                            full_name=pending_signup.full_name,
+                            phone=pending_signup.phone,
+                            is_phone_verified=False,
+                        )
+                except IntegrityError:
+                    return None
+                pending_signup.delete()
+                challenge.user = user
+                challenge.consumed_at = now
+                challenge.save(update_fields=["user", "consumed_at"])
+                return user
+
             if (
                 user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
                 or user.is_active
                 or user.is_email_verified
             ):
                 return None
+            challenge.consumed_at = now
+            challenge.save(update_fields=["consumed_at"])
             user.is_email_verified = True
             user.is_active = True
             user.account_status = CustomUser.AccountStatus.ACTIVE
             user.save(update_fields=["is_email_verified", "is_active", "account_status", "updated_at"])
             return user
 
+        challenge.consumed_at = now
+        challenge.save(update_fields=["consumed_at"])
         if (
             user.account_status != CustomUser.AccountStatus.ACTIVE
             or not user.is_active
         ):
             return None
 
-        if purpose == EmailOTPChallenge.Purpose.LOGIN:
-            if not user.is_email_verified:
-                user.is_email_verified = True
-                user.save(update_fields=["is_email_verified", "updated_at"])
-        elif not user.has_usable_password():
+        if not user.has_usable_password():
             return None
 
         return user

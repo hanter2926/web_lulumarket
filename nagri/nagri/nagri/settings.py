@@ -27,7 +27,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 if DATABASE_URL:
     if dj_database_url is None:
         raise RuntimeError(
-            "Install dj-database-url to use PostgreSQL"
+            "Install dj-database-url to use DATABASE_URL"
         )
 
     db_config = dj_database_url.parse(
@@ -35,7 +35,7 @@ if DATABASE_URL:
         conn_max_age=600,
     )
 
-    if not DEBUG:
+    if not DEBUG and db_config["ENGINE"] == "django.db.backends.postgresql":
         db_config.setdefault("OPTIONS", {})
         db_config["OPTIONS"].setdefault(
             "sslmode", "require"

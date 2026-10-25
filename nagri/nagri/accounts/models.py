@@ -111,13 +111,14 @@ class UserProfile(models.Model):
 class EmailOTPChallenge(models.Model):
     class Purpose(models.TextChoices):
         SIGNUP = "signup", "Signup verification"
-        LOGIN = "login", "Login"
         PASSWORD_RESET = "password_reset", "Password reset"
 
     user = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
         related_name="email_otp_challenges",
+        null=True,
+        blank=True,
     )
     purpose = models.CharField(max_length=20, choices=Purpose.choices)
     email_digest = models.CharField(max_length=64)
@@ -142,10 +143,24 @@ class EmailOTPChallenge(models.Model):
         ]
 
 
+class PendingSignup(models.Model):
+    email = models.EmailField(unique=True)
+    username = models.CharField(max_length=150)
+    password_hash = models.CharField(max_length=256)
+    phone = models.CharField(max_length=20)
+    first_name = models.CharField(max_length=150, blank=True)
+    last_name = models.CharField(max_length=150, blank=True)
+    full_name = models.CharField(max_length=150, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.email
+
+
 class EmailOTPThrottle(models.Model):
     class Purpose(models.TextChoices):
         SIGNUP = "signup", "Signup verification"
-        LOGIN = "login", "Login"
         PASSWORD_RESET = "password_reset", "Password reset"
 
     email_digest = models.CharField(max_length=64)

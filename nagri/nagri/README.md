@@ -42,7 +42,9 @@ https://web-lulumarket.onrender.com
 
 ## Email and Phone Verification
 
-New accounts must verify both their email address and phone number before finishing signup. The email code expires after five minutes; email and phone code requests are rate-limited. Existing accounts that have not verified both contacts are directed to the same verification page when they sign in.
+New accounts must verify their email address before finishing signup. The email code expires after five minutes, and email and phone code requests are rate-limited. Phone verification remains available separately.
+
+Email verification codes are sent during new-account registration, not during password login. Users sign in with their email address and password; email OTP remains available for password recovery.
 
 Production email uses the existing Brevo HTTPS API integration, not SMTP. Set these Render environment variables:
 
@@ -53,6 +55,11 @@ BREVO_SENDER_NAME=NAGRI
 ```
 
 The sender address must match the active, verified sender in Brevo. Account OTP and password-reset email use the existing direct Brevo API helper; other Django mail uses Anymail's Brevo API backend. Local development uses Django's console backend when `DEBUG=True`. Resend is not selected for production because this project does not control a verified sending domain there.
+
+For local development, set `DEBUG=True` to enable Django's development-only routes for files under `MEDIA_ROOT`. Keep `DEBUG=False` in production and use the configured production media storage for uploaded product images.
+
+Brevo API requests use a 5-second connect timeout and 30-second response timeout through Anymail's `ANYMAIL["REQUESTS_TIMEOUT"]` setting. The direct account-OTP helper uses the same timeout. Automatic retries are intentionally disabled because a response timeout can happen after Brevo has accepted the email; the generated OTP remains valid in that case.
+
 Remove any `EMAIL_PROVIDER=resend` or `EMAIL_BACKEND` override from Render so production uses the Brevo HTTPS API configured by Django.
 
 Phone verification uses the configured SMS provider. To enable production delivery with Fast2SMS, set:

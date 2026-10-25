@@ -242,6 +242,7 @@ def build_common_settings(
         brevo_api_key = os.getenv("BREVO_API_KEY", "").strip()
         brevo_sender_email = os.getenv("BREVO_SENDER_EMAIL", "").strip()
         brevo_sender_name = os.getenv("BREVO_SENDER_NAME", "NAGRI").strip()
+        brevo_requests_timeout = (5, 30)
         default_reply_to_email = os.getenv(
             "DEFAULT_REPLY_TO_EMAIL",
             "vikrampal505@yahoo.com",
@@ -266,6 +267,8 @@ def build_common_settings(
                 "EMAIL_BACKEND": email_backend,
                 "ANYMAIL": {
                     "BREVO_API_KEY": brevo_api_key,
+                    "REQUESTS_TIMEOUT": brevo_requests_timeout,
+                    "DEBUG_API_REQUESTS": False,
                     "SEND_DEFAULTS": {
                         "reply_to": [default_reply_to_email]
                         if default_reply_to_email
@@ -354,7 +357,12 @@ def build_common_settings(
                 "DEFAULT_FROM_EMAIL": "",
                 "DEFAULT_REPLY_TO_EMAIL": "",
                 "EMAIL_BACKEND": "django.core.mail.backends.console.EmailBackend",
-                "ANYMAIL": {"BREVO_API_KEY": "", "SEND_DEFAULTS": {"reply_to": []}},
+                "ANYMAIL": {
+                    "BREVO_API_KEY": "",
+                    "REQUESTS_TIMEOUT": (5, 30),
+                    "DEBUG_API_REQUESTS": False,
+                    "SEND_DEFAULTS": {"reply_to": []},
+                },
                 "EMAIL_TIMEOUT": 15,
                 "TWILIO_ACCOUNT_SID": "",
                 "TWILIO_AUTH_TOKEN": "",

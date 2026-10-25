@@ -10,7 +10,6 @@ from django.db import OperationalError
 
 logger = logging.getLogger(__name__)
 BREVO_EMAIL_URL = "https://api.brevo.com/v3/smtp/email"
-
 BREVO_EMAIL_PATTERN = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 BREVO_OTP_PATTERN = re.compile(r"(?<!\d)\d{6}(?!\d)")
 BREVO_AUTH_HEADER_PATTERN = re.compile(
@@ -27,6 +26,7 @@ BREVO_CREDENTIAL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+
 class EmailDeliveryConfigurationError(RuntimeError):
     pass
 
@@ -41,12 +41,11 @@ class BrevoAPIError(RuntimeError):
     ):
         self.status_code = status_code
         self.failure_class = failure_class
-        super().__init__(failure_class)
         self.response_code = response_code
         self.response_message = response_message
+        super().__init__(failure_class)
 
 
-def classify_email_delivery_error(exc):
 def _redact_brevo_response_value(value, max_length=240):
     if not isinstance(value, str):
         return None
@@ -91,6 +90,7 @@ def _brevo_response_details(response):
     )
 
 
+def classify_email_delivery_error(exc):
     if isinstance(exc, BrevoAPIError):
         return exc.failure_class, exc.status_code
     if isinstance(exc, requests.Timeout):
@@ -193,7 +193,7 @@ def _send_via_brevo(subject, body, recipient, html_body):
             "content-type": "application/json",
         },
         json=payload,
-        timeout=(3.05, 10),
+        timeout=settings.ANYMAIL.get("REQUESTS_TIMEOUT", (5, 30)),
         allow_redirects=False,
     )
 

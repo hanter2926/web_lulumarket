@@ -2,11 +2,12 @@ from datetime import timedelta
 import secrets
 
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -19,7 +20,14 @@ from django.http import JsonResponse
 from nagri.email_config import send_message
 from orders.models import Order
 
-from .models import Address, CustomUser, EmailOTPChallenge, PaymentMethod, UserProfile
+from .models import (
+    Address,
+    CustomUser,
+    EmailOTPChallenge,
+    PaymentMethod,
+    PendingSignup,
+    UserProfile,
+)
 from .serializers import AddressSerializer, PaymentMethodSerializer, UserProfileSerializer, UserSerializer
 from .forms_account_settings import ProfileForm, NotificationForm, AppearanceForm, LanguageForm, AddressForm
 from .utils import (
@@ -370,6 +378,42 @@ def _validate_signup_password(password, email, username):
     return []
 
 
+def _stage_pending_signup(email, username, password, phone, full_name):
+    email = email.strip().lower()
+    username = username.strip()
+    phone = normalize_phone_number(phone)
+    phone_variants = get_phone_variants(phone)
+
+    if PendingSignup.objects.filter(email__iexact=email).exists():
+        return "pending_exists"
+    if CustomUser.objects.filter(email__iexact=email).exists():
+        return "email_taken"
+    if CustomUser.objects.filter(username__iexact=username).exists():
+        return "username_taken"
+    if find_user_by_phone(phone):
+        return "phone_taken"
+    if PendingSignup.objects.filter(phone__in=phone_variants).exists():
+        return "phone_taken"
+    if PendingSignup.objects.filter(username__iexact=username).exists():
+        return "username_taken"
+
+    name_parts = full_name.split()
+    try:
+        with transaction.atomic():
+            PendingSignup.objects.create(
+                email=email,
+                username=username,
+                password_hash=make_password(password),
+                phone=phone,
+                first_name=name_parts[0] if name_parts else "",
+                last_name=" ".join(name_parts[1:]) if name_parts else "",
+                full_name=full_name,
+            )
+    except IntegrityError:
+        return "pending_exists"
+    return None
+
+
 def _request_signup_email_otp(email):
     try:
         return request_email_otp(
@@ -405,6 +449,14 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = CustomUser.objects.all().order_by("id")
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.AllowAny()]
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        return self.register(request)
 
     def get_queryset(self):
         if self.request.user.is_staff:
@@ -510,52 +562,49 @@ class UserViewSet(viewsets.ModelViewSet):
                 {"password": password_errors},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if CustomUser.objects.filter(
-            email__iexact=serializer.validated_data["email"]
-        ).exists():
-            return Response(
-                {"detail": "An account with this email already exists."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if find_user_by_phone(phone):
-            return Response(
-                {"detail": "An account with this phone number already exists."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        user = serializer.save(
-            phone=phone,
-            is_email_verified=False,
-            is_active=False,
-            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
+        email = serializer.validated_data["email"]
+        username = serializer.validated_data["username"]
+        full_name = (request.data.get("full_name") or "").strip()
+        stage_error = _stage_pending_signup(
+            email,
+            username,
+            password,
+            phone,
+            full_name,
         )
-
-        profile, _ = UserProfile.objects.get_or_create(user=user)
-        if phone:
-            profile.full_name = request.data.get("full_name") or user.get_full_name() or user.email
-            profile.phone = phone
-            profile.is_phone_verified = False
-
-            profile.save(
-                update_fields=["full_name", "phone", "is_phone_verified", "updated_at"]
+        if stage_error:
+            detail = {
+                "email_taken": "An account with this email already exists.",
+                "phone_taken": "An account with this phone number already exists.",
+                "username_taken": "An account with this username already exists.",
+                "pending_exists": "A signup is already awaiting email verification. Request a new code or verify the existing code.",
+            }.get(stage_error, "Unable to start signup. Please try again.")
+            return Response(
+                {
+                    "detail": detail,
+                    "resend_endpoint": reverse("accounts:signup_email_otp_resend"),
+                },
+                status=(
+                    status.HTTP_409_CONFLICT
+                    if stage_error == "pending_exists"
+                    else status.HTTP_400_BAD_REQUEST
+                ),
             )
-            user.phone = phone
-            user.save(update_fields=["phone", "updated_at"])
 
-        email_otp_result = _request_signup_email_otp(user.email)
+        email_otp_result = _request_signup_email_otp(email)
         email_otp_error = _signup_email_otp_error_response(email_otp_result)
         if email_otp_error:
             return email_otp_error
 
         return Response({
-            "detail": "Account created. Verify your email to complete registration.",
-            "user": self.get_serializer(user).data,
+            "detail": "Signup received. Verify your email to create your account.",
+            "email": email,
             "email_otp_sent": True,
             "email_verification_required": True,
             "verify_endpoint": reverse("accounts:signup_email_otp_verify"),
             "resend_endpoint": reverse("accounts:signup_email_otp_resend"),
             "phone": phone,
-        }, status=201)
+        }, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
     def login(self, request):
@@ -949,6 +998,24 @@ def signup_phone_otp_resend(request):
         "Request accepted. If these details match a pending signup, "
         "a verification code may be sent."
     )
+    pending_signup = PendingSignup.objects.filter(
+        email__iexact=email,
+        phone__in=get_phone_variants(phone),
+    ).first()
+    if pending_signup:
+        try:
+            result = _request_signup_email_otp(pending_signup.email)
+        except Exception as exc:
+            _log_email_delivery_failure(exc)
+            return Response(
+                {"detail": "Unable to send the verification email right now. Please try again later."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        error_response = _signup_email_otp_error_response(result)
+        if error_response:
+            return error_response
+        return Response({"detail": generic_detail}, status=status.HTTP_200_OK)
+
     user = CustomUser.objects.filter(email__iexact=email).first()
     if not user or (
         user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
@@ -1065,6 +1132,13 @@ def signup_submit(request):
 
     if not email or not password or not raw_phone:
         return Response({"detail": "Email, password, and phone number are required."}, status=status.HTTP_400_BAD_REQUEST)
+    email_form = EmailOTPRequestForm(data={"email": email})
+    if not email_form.is_valid():
+        return Response(
+            {"detail": "Enter a valid email address."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    email = email_form.cleaned_data["email"]
     if not phone:
         return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
     password_errors = _validate_signup_password(password, email, email)
@@ -1074,45 +1148,39 @@ def signup_submit(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if CustomUser.objects.filter(email__iexact=email).exists():
-        return Response({"detail": "An account with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
-    if find_user_by_phone(phone):
-        return Response({"detail": "An account with this phone number already exists."}, status=status.HTTP_400_BAD_REQUEST)
+    stage_error = _stage_pending_signup(email, email, password, phone, full_name)
+    if stage_error:
+        detail = {
+            "email_taken": "An account with this email already exists.",
+            "phone_taken": "An account with this phone number already exists.",
+            "pending_exists": "A signup is already awaiting email verification. Request a new code or verify the existing code.",
+        }.get(stage_error, "Unable to start signup. Please try again.")
+        return Response(
+            {
+                "detail": detail,
+                "resend_endpoint": reverse("accounts:signup_email_otp_resend"),
+            },
+            status=(
+                status.HTTP_409_CONFLICT
+                if stage_error == "pending_exists"
+                else status.HTTP_400_BAD_REQUEST
+            ),
+        )
 
-    user = CustomUser.objects.create_user(
-        email=email,
-        username=email,
-        password=password,
-        phone=phone,
-        first_name=(full_name.split()[0] if full_name else ""),
-        last_name=" ".join(full_name.split()[1:]) if full_name else "",
-        is_email_verified=False,
-        is_active=False,
-        account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
-    )
-
-    profile, _ = UserProfile.objects.get_or_create(user=user)
-    profile.full_name = full_name or user.get_full_name() or email
-    profile.phone = phone
-    profile.is_phone_verified = False
-
-    profile.save(
-        update_fields=["full_name", "phone", "is_phone_verified", "updated_at"]
-    )
-    email_otp_result = _request_signup_email_otp(user.email)
+    email_otp_result = _request_signup_email_otp(email)
     email_otp_error = _signup_email_otp_error_response(email_otp_result)
     if email_otp_error:
         return email_otp_error
 
     return Response({
-        "detail": "Account created. Verify your email to complete registration.",
-        "user": UserSerializer(user).data,
+        "detail": "Signup received. Verify your email to create your account.",
+        "email": email,
         "email_otp_sent": True,
         "email_verification_required": True,
         "verify_endpoint": reverse("accounts:signup_email_otp_verify"),
         "resend_endpoint": reverse("accounts:signup_email_otp_resend"),
         "phone": phone,
-    }, status=201)
+    }, status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])
@@ -1197,16 +1265,8 @@ def verify_otp(request):
 
     if browser_request:
         request.session.pop("otp_phone", None)
-        if not user.is_email_verified:
-            request.session["contact_verification_user_id"] = user.pk
-            return redirect("accounts:verify_contacts")
         auth_login(request, user)
         return redirect("accounts:dashboard_page")
-    if not user.is_email_verified:
-        return Response(
-            {"detail": "Phone verified. Verify your email before logging in."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
     auth_login(request, user)
     refresh = RefreshToken.for_user(user)
     return Response({
@@ -1247,6 +1307,17 @@ def email_login_view(request):
         ):
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": next_url})
 
+        if not user.is_email_verified:
+            return render(
+                request,
+                "accounts/auth.html",
+                {
+                    "active_tab": "login",
+                    "error": "Verify your email before logging in.",
+                    "next": next_url,
+                },
+            )
+
         authenticated_user = authenticate(request, username=user.email, password=password)
         if authenticated_user is None:
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
@@ -1256,14 +1327,6 @@ def email_login_view(request):
             or not user.is_active
         ):
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": next_url})
-
-        if not user.is_email_verified:
-            request.session["contact_verification_user_id"] = user.pk
-            request.session["contact_verification_next"] = next_url
-            request.session["contact_verification_remember"] = bool(
-                request.POST.get("remember")
-            )
-            return redirect("accounts:verify_contacts")
 
         auth_login(request, authenticated_user)
         if request.POST.get("remember"):
@@ -1323,64 +1386,7 @@ def _finish_contact_verification(request, user):
 
 @require_http_methods(["GET", "POST"])
 def verify_contacts(request):
-    user_id = request.session.get("contact_verification_user_id")
-    user = CustomUser.objects.filter(
-        pk=user_id,
-        account_status=CustomUser.AccountStatus.ACTIVE,
-        is_active=True,
-    ).first()
-    if not user:
-        request.session.pop("contact_verification_user_id", None)
-        request.session.pop("contact_verification_next", None)
-        request.session.pop("contact_verification_remember", None)
-        return redirect("accounts:email_login")
-
-    error = ""
-    notice = ""
-
-    if request.method == "POST":
-        action_name = request.POST.get("action")
-        if action_name == "send_email" and not user.is_email_verified:
-            try:
-                result = request_email_otp(
-                    user.email,
-                    EmailOTPChallenge.Purpose.LOGIN,
-                )
-                notice = (
-                    "Please wait before requesting another email code."
-                    if result == "throttled"
-                    else "If this account is eligible, a code has been sent to its email address."
-                )
-            except Exception as exc:
-                _log_email_delivery_failure(exc)
-                error = "Unable to send the email code right now. Please try again later."
-        elif action_name == "verify_email" and not user.is_email_verified:
-            code = (request.POST.get("email_code") or "").strip()
-            if verify_email_otp(
-                user.email,
-                code,
-                EmailOTPChallenge.Purpose.LOGIN,
-            ):
-                user.refresh_from_db(fields=["is_email_verified"])
-                notice = "Email verified successfully."
-            else:
-                error = "That email code is invalid or expired. Request a new code and try again."
-        else:
-            error = "Choose an available verification step."
-
-        response = _finish_contact_verification(request, user)
-        if response:
-            return response
-
-    return render(
-        request,
-        "accounts/verify_contacts.html",
-        {
-            "user": user,
-            "error": error,
-            "notice": notice,
-        },
-    )
+    return redirect("accounts:email_login")
 
 
 def logout_view(request):
@@ -1396,40 +1402,47 @@ def signup_form_view(request):
         phone = form.cleaned_data["phone"]
         full_name = form.cleaned_data["full_name"].strip()
 
-        user = CustomUser.objects.create_user(
-            email=email,
-            username=email,
-            password=password,
-            phone=phone,
-            first_name=(full_name.split()[0] if full_name else ""),
-            last_name=" ".join(full_name.split()[1:]) if full_name else "",
-            is_active=False,
-            is_email_verified=False,
-            account_status=CustomUser.AccountStatus.PENDING_VERIFICATION,
-        )
+        if PendingSignup.objects.filter(email__iexact=email).exists():
+            request.session["signup_email_verification_email"] = email
+            request.session["signup_email_verification_notice"] = (
+                "A signup is already awaiting verification. Enter the code or request another one."
+            )
+            return redirect("accounts:signup_email_verify")
 
-        profile, _ = UserProfile.objects.get_or_create(user=user)
-        profile.full_name = full_name or user.get_full_name() or email
-        profile.phone = phone
-        profile.is_phone_verified = False
-        profile.save(update_fields=["full_name", "phone", "is_phone_verified", "updated_at"])
+        stage_error = _stage_pending_signup(
+            email,
+            email,
+            password,
+            phone,
+            full_name,
+        )
+        if stage_error:
+            form.add_error(
+                None,
+                "An account with this email or phone number already exists. Please log in or check your details.",
+            )
+            return render(
+                request,
+                "accounts/auth.html",
+                {"active_tab": "signup", "form": form},
+                status=400,
+            )
+
         request.session["signup_email_verification_email"] = email
-        try:
-            result = request_email_otp(email, EmailOTPChallenge.Purpose.SIGNUP)
-            if result == "throttled":
-                request.session["signup_email_verification_notice"] = (
-                    "Please wait before requesting another verification code."
-                )
-            else:
-                request.session["signup_email_verification_notice"] = (
-                    "A verification code has been sent to your email. "
-                    "It expires in 5 minutes."
-                )
-        except Exception as exc:
-            _log_email_delivery_failure(exc)
+        result = _request_signup_email_otp(email)
+        if result == "throttled":
+            request.session["signup_email_verification_notice"] = (
+                "Please wait before requesting another verification code."
+            )
+        elif result == "delivery_failed":
             request.session["signup_email_verification_notice"] = (
                 "Unable to send the verification email right now. "
                 "Please wait a minute and try again."
+            )
+        else:
+            request.session["signup_email_verification_notice"] = (
+                "A verification code has been sent to your email. "
+                "It expires in 5 minutes."
             )
         return redirect("accounts:signup_email_verify")
 
@@ -1592,6 +1605,8 @@ def _log_email_delivery_failure(exc):
         safe_detail,
         smtp_code,
         type(exc).__name__,
+        getattr(exc, "response_code", None),
+        getattr(exc, "response_message", None),
     )
 
 
@@ -1605,8 +1620,6 @@ def _email_otp_request(request, purpose, verify_url_name, template_name):
             _log_email_delivery_failure(exc)
 
         request.session["email_otp_email"] = email
-        getattr(exc, "response_code", None),
-        getattr(exc, "response_message", None),
         next_url = request.POST.get("next", "")
         if next_url and url_has_allowed_host_and_scheme(
             next_url,
@@ -1635,67 +1648,12 @@ def _email_otp_request(request, purpose, verify_url_name, template_name):
 
 @require_http_methods(["GET", "POST"])
 def email_otp_login_page(request):
-    return _email_otp_request(
-        request,
-        EmailOTPChallenge.Purpose.LOGIN,
-        "accounts:email_otp_login_verify",
-        "accounts/email_otp_login.html",
-    )
+    return redirect("accounts:email_login")
 
 
 @require_http_methods(["GET", "POST"])
 def email_otp_login_verify(request):
-    email = request.session.get("email_otp_email", "")
-    if not email:
-        return redirect("accounts:email_otp_login")
-
-    form = EmailOTPVerifyForm(
-        request.POST or None,
-        initial={"email": email},
-    )
-    error = ""
-    if request.method == "POST":
-        if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
-            user = verify_email_otp(
-                email,
-                form.cleaned_data["code"],
-                EmailOTPChallenge.Purpose.LOGIN,
-            )
-            if user:
-                request.session.pop("email_otp_email", None)
-                request.session.pop("email_otp_notice", None)
-                next_url = request.session.pop("email_otp_next", "")
-                profile = UserProfile.objects.filter(user=user).first()
-                if not profile or not profile.is_phone_verified:
-                    request.session["contact_verification_user_id"] = user.pk
-                    request.session["contact_verification_next"] = next_url
-                    return redirect("accounts:verify_contacts")
-                backend = settings.AUTHENTICATION_BACKENDS[0]
-                auth_login(request, user, backend=backend)
-                if next_url and url_has_allowed_host_and_scheme(
-                    next_url,
-                    allowed_hosts={request.get_host()},
-                    require_https=request.is_secure(),
-                ):
-                    return redirect(next_url)
-                if user.is_owner:
-                    return redirect("sellers:owner_dashboard")
-                if user.is_vendor:
-                    return redirect("sellers:dashboard")
-                return redirect("accounts:dashboard_page")
-        error = "That code is invalid or expired. Request a new code and try again."
-
-    return render(
-        request,
-        "accounts/email_otp_login.html",
-        {
-            "phase": "verify",
-            "email": email,
-            "form": form,
-            "error": error,
-            "notice": request.session.get("email_otp_notice", ""),
-        },
-    )
+    return redirect("accounts:email_login")
 
 
 @require_http_methods(["GET", "POST"])
