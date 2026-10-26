@@ -204,126 +204,144 @@ def verify_email_otp(email, code, purpose):
 
     digest = _email_digest(email.strip())
     now = timezone.now()
+    stage = "challenge_lookup"
 
-    with transaction.atomic():
-        challenge = (
-            EmailOTPChallenge.objects.select_for_update()
-            .select_related("user")
-            .filter(email_digest=digest, purpose=purpose)
-            .order_by("-created_at", "-pk")
-            .first()
-        )
-        if (
-            not challenge
-            or not challenge.code_hash
-        ):
-            return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
-        if challenge.consumed_at is not None:
-            status = (
-                EmailOTPStatus.LOCKED
-                if challenge.attempts >= OTP_MAX_ATTEMPTS
-                else EmailOTPStatus.UNAVAILABLE
-            )
-            return EmailOTPVerification(status)
-
-        user = challenge.user
-        pending_signup = None
-        if purpose == EmailOTPChallenge.Purpose.SIGNUP and not user:
-            pending_signup = (
-                PendingSignup.objects.select_for_update()
-                .filter(email__iexact=email)
+    try:
+        with transaction.atomic():
+            challenge = (
+                EmailOTPChallenge.objects.select_for_update()
+                .select_related("user")
+                .filter(email_digest=digest, purpose=purpose)
+                .order_by("-created_at", "-pk")
                 .first()
             )
             if (
-                not pending_signup
-                or pending_signup.email.strip().casefold()
-                != email.strip().casefold()
+                not challenge
+                or not challenge.code_hash
             ):
                 return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
-        elif not user or user.email.strip().casefold() != email.strip().casefold():
-            return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
-
-        if challenge.expires_at <= now:
-            challenge.consumed_at = now
-            challenge.save(update_fields=["consumed_at"])
-            return EmailOTPVerification(EmailOTPStatus.EXPIRED)
-
-        if challenge.attempts >= OTP_MAX_ATTEMPTS:
-            challenge.consumed_at = now
-            challenge.save(update_fields=["consumed_at"])
-            return EmailOTPVerification(EmailOTPStatus.LOCKED)
-
-        if not check_password(code, challenge.code_hash):
-            challenge.attempts += 1
-            if challenge.attempts >= OTP_MAX_ATTEMPTS:
-                challenge.consumed_at = now
-            challenge.save(update_fields=["attempts", "consumed_at"])
-            if challenge.attempts >= OTP_MAX_ATTEMPTS:
-                return EmailOTPVerification(EmailOTPStatus.LOCKED)
-            return EmailOTPVerification(EmailOTPStatus.INCORRECT)
-
-        if purpose == EmailOTPChallenge.Purpose.SIGNUP:
-            if pending_signup:
-                if CustomUser.objects.filter(email__iexact=email).exists():
-                    return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
-                user = CustomUser(
-                    email=pending_signup.email,
-                    username=pending_signup.username,
-                    password=pending_signup.password_hash,
-                    phone=pending_signup.phone,
-                    first_name=pending_signup.first_name,
-                    last_name=pending_signup.last_name,
-                    is_email_verified=True,
-                    is_active=True,
-                    account_status=CustomUser.AccountStatus.ACTIVE,
+            if challenge.consumed_at is not None:
+                status = (
+                    EmailOTPStatus.LOCKED
+                    if challenge.attempts >= OTP_MAX_ATTEMPTS
+                    else EmailOTPStatus.UNAVAILABLE
                 )
-                try:
-                    with transaction.atomic():
-                        user.save(force_insert=True)
-                        UserProfile.objects.create(
-                            user=user,
-                            full_name=pending_signup.full_name,
-                            phone=pending_signup.phone,
-                            is_phone_verified=False,
-                        )
-                except IntegrityError as exc:
-                    logger.error(
-                        "Signup account creation failed during email OTP verification "
-                        "(exception_type=%s)",
-                        type(exc).__name__,
-                    )
-                    return EmailOTPVerification(
-                        EmailOTPStatus.ACCOUNT_CREATION_FAILED
-                    )
-                pending_signup.delete()
-                challenge.user = user
+                return EmailOTPVerification(status)
+
+            user = challenge.user
+            pending_signup = None
+            if purpose == EmailOTPChallenge.Purpose.SIGNUP and not user:
+                stage = "pending_signup_lookup"
+                pending_signup = (
+                    PendingSignup.objects.select_for_update()
+                    .filter(email__iexact=email)
+                    .first()
+                )
+                if (
+                    not pending_signup
+                    or pending_signup.email.strip().casefold()
+                    != email.strip().casefold()
+                ):
+                    return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+            elif not user or user.email.strip().casefold() != email.strip().casefold():
+                return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+
+            stage = "challenge_validation"
+            if challenge.expires_at <= now:
                 challenge.consumed_at = now
-                challenge.save(update_fields=["user", "consumed_at"])
+                challenge.save(update_fields=["consumed_at"])
+                return EmailOTPVerification(EmailOTPStatus.EXPIRED)
+
+            if challenge.attempts >= OTP_MAX_ATTEMPTS:
+                challenge.consumed_at = now
+                challenge.save(update_fields=["consumed_at"])
+                return EmailOTPVerification(EmailOTPStatus.LOCKED)
+
+            if not check_password(code, challenge.code_hash):
+                challenge.attempts += 1
+                if challenge.attempts >= OTP_MAX_ATTEMPTS:
+                    challenge.consumed_at = now
+                challenge.save(update_fields=["attempts", "consumed_at"])
+                if challenge.attempts >= OTP_MAX_ATTEMPTS:
+                    return EmailOTPVerification(EmailOTPStatus.LOCKED)
+                return EmailOTPVerification(EmailOTPStatus.INCORRECT)
+
+            if purpose == EmailOTPChallenge.Purpose.SIGNUP:
+                if pending_signup:
+                    stage = "duplicate_user_check"
+                    if CustomUser.objects.filter(email__iexact=email).exists():
+                        return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+                    user = CustomUser(
+                        email=pending_signup.email,
+                        username=pending_signup.username,
+                        password=pending_signup.password_hash,
+                        phone=pending_signup.phone,
+                        first_name=pending_signup.first_name,
+                        last_name=pending_signup.last_name,
+                        is_email_verified=True,
+                        is_active=True,
+                        account_status=CustomUser.AccountStatus.ACTIVE,
+                    )
+                    stage = "account_creation"
+                    try:
+                        with transaction.atomic():
+                            user.save(force_insert=True)
+                            UserProfile.objects.create(
+                                user=user,
+                                full_name=pending_signup.full_name,
+                                phone=pending_signup.phone,
+                                is_phone_verified=False,
+                            )
+                    except IntegrityError as exc:
+                        logger.error(
+                            "Signup account creation failed during email OTP verification "
+                            "(stage=%s, exception_type=%s)",
+                            stage,
+                            type(exc).__name__,
+                        )
+                        return EmailOTPVerification(
+                            EmailOTPStatus.ACCOUNT_CREATION_FAILED
+                        )
+                    stage = "verification_finalize"
+                    pending_signup.delete()
+                    challenge.user = user
+                    challenge.consumed_at = now
+                    challenge.save(update_fields=["user", "consumed_at"])
+                    return EmailOTPVerification(EmailOTPStatus.SUCCESS, user)
+
+                if (
+                    user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
+                    or user.is_active
+                    or user.is_email_verified
+                ):
+                    return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+                stage = "verification_finalize"
+                challenge.consumed_at = now
+                challenge.save(update_fields=["consumed_at"])
+                user.is_email_verified = True
+                user.is_active = True
+                user.account_status = CustomUser.AccountStatus.ACTIVE
+                user.save(update_fields=["is_email_verified", "is_active", "account_status", "updated_at"])
                 return EmailOTPVerification(EmailOTPStatus.SUCCESS, user)
 
-            if (
-                user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
-                or user.is_active
-                or user.is_email_verified
-            ):
-                return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+            stage = "verification_finalize"
             challenge.consumed_at = now
             challenge.save(update_fields=["consumed_at"])
-            user.is_email_verified = True
-            user.is_active = True
-            user.account_status = CustomUser.AccountStatus.ACTIVE
-            user.save(update_fields=["is_email_verified", "is_active", "account_status", "updated_at"])
+            if (
+                user.account_status != CustomUser.AccountStatus.ACTIVE
+                or not user.is_active
+            ):
+                return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+
+            if not user.has_usable_password():
+                return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+
             return EmailOTPVerification(EmailOTPStatus.SUCCESS, user)
-
-        challenge.consumed_at = now
-        challenge.save(update_fields=["consumed_at"])
-        if (
-            user.account_status != CustomUser.AccountStatus.ACTIVE
-            or not user.is_active
-        ):
-            return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
-
-        if not user.has_usable_password():
-            return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
-
-        return EmailOTPVerification(EmailOTPStatus.SUCCESS, user)
+    except Exception as exc:
+        if purpose == EmailOTPChallenge.Purpose.SIGNUP:
+            logger.error(
+                "Signup OTP verification failed (stage=%s, exception_type=%s)",
+                stage,
+                type(exc).__name__,
+            )
+        raise

@@ -1560,6 +1560,7 @@ def signup_email_verify(request):
     error = ""
     if request.method == "POST":
         if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
+            stage = "otp_verification"
             try:
                 verification = verify_email_otp(
                     email,
@@ -1568,6 +1569,7 @@ def signup_email_verify(request):
                 )
                 if verification.status == EmailOTPStatus.SUCCESS:
                     user = verification.user
+                    stage = "session_completion"
                     request.session.pop("signup_email_verification_email", None)
                     request.session.pop("signup_email_verification_notice", None)
                     request.session["contact_verification_user_id"] = user.pk
@@ -1578,7 +1580,9 @@ def signup_email_verify(request):
                 error = _email_otp_verification_error(verification.status)
             except Exception as exc:
                 logger.error(
-                    "Signup email verification request failed (exception_type=%s)",
+                    "Signup email verification request failed "
+                    "(stage=%s, exception_type=%s)",
+                    stage,
                     type(exc).__name__,
                 )
                 return site_views.server_error(request)
