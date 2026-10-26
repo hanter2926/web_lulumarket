@@ -1316,14 +1316,14 @@ def email_login_view(request):
         if not user:
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": safe_next_url})
 
-        if not user.check_password(password):
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": safe_next_url})
-
         if (
             user.account_status == CustomUser.AccountStatus.PENDING_VERIFICATION
             and not user.is_active
             and not user.is_email_verified
         ):
+            if not user.check_password(password):
+                return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": safe_next_url})
+
             request.session["signup_email_verification_email"] = user.email
             request.session["contact_verification_next"] = safe_next_url
             request.session["contact_verification_remember"] = bool(
@@ -1335,9 +1335,13 @@ def email_login_view(request):
             user.account_status != CustomUser.AccountStatus.ACTIVE
             or not getattr(user, "is_active", True)
         ):
+            if not user.check_password(password):
+                return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": safe_next_url})
             return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": safe_next_url})
 
         if not user.is_email_verified:
+            if not user.check_password(password):
+                return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": safe_next_url})
             return render(
                 request,
                 "accounts/auth.html",

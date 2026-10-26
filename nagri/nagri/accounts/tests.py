@@ -1373,6 +1373,24 @@ class AccountSecurityTests(TestCase):
         self.assertIn(reverse("accounts:dashboard_page"), response.url)
         self.assertTrue(response.wsgi_request.user.is_authenticated)
 
+    def test_login_preserves_leading_and_trailing_password_spaces(self):
+        password = "  ValidPassword123!  "
+        user = CustomUser.objects.create_user(
+            email="spaced-password@example.com",
+            username="spaced-password",
+            password=password,
+            is_active=True,
+            is_email_verified=True,
+        )
+
+        response = self.client.post(
+            reverse("accounts:email_login"),
+            {"email": f"  {user.email}  ", "password": password},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+
     @override_settings(
         EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
         EMAIL_PROVIDER="smtp",
@@ -1615,6 +1633,21 @@ class SignupFlowTests(TestCase):
 
         self.assertContains(response, "Create an account")
         self.assertContains(response, 'id="login_remember" name="remember" type="checkbox"')
+        self.assertEqual(response.content.count(b'class="password-toggle"'), 3)
+        self.assertEqual(response.content.count(b'class="password-field"'), 3)
+        for password_id in (
+            "login_password",
+            "signup_password",
+            "signup_confirm_password",
+        ):
+            self.assertContains(
+                response,
+                f'aria-controls="{password_id}"',
+            )
+            self.assertContains(
+                response,
+                f'type="button" aria-label="Show password" aria-controls="{password_id}"',
+            )
         self.assertNotContains(response, "Login with Email OTP")
         self.assertNotContains(response, 'data-auth-panel="register"')
         self.assertNotContains(response, "data-auth-switch=\"register\"")

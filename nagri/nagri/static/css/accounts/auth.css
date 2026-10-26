@@ -3,6 +3,47 @@
     display: none;
 }
 
+.password-field {
+    display: block;
+    position: relative;
+    width: 100%;
+    margin-top: 6px;
+}
+
+.password-field > input {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding-right: 42px;
+}
+
+.password-field > .password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    z-index: 1;
+    display: grid;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #4b5563;
+    font: inherit;
+    line-height: 1;
+    appearance: none;
+    cursor: pointer;
+    transform: translateY(-50%);
+}
+
+.password-field > .password-toggle:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 1px;
+}
+
 @media (max-width: 768px) {
     .auth-layout {
         display: block !important;
