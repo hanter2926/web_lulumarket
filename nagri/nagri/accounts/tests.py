@@ -24,9 +24,11 @@ from .email_otp import (
     EmailOTPStatus,
     OTP_LIFETIME,
     OTP_MAX_ATTEMPTS,
-    OTP_MAX_REQUESTS_PER_WINDOW,
-    OTP_REQUEST_WINDOW,
+    OTP_IP_MAX_REQUESTS_PER_WINDOW,
+    OTP_IP_REQUEST_WINDOW,
     OTP_RESEND_COOLDOWN,
+    consume_otp_ip_request,
+    _email_digest,
     request_email_otp,
     verify_email_otp,
 )
@@ -639,9 +641,10 @@ class PhoneOTPAPISecurityTests(TestCase):
         self.assertTrue(PendingSignup.objects.filter(email=email).exists())
 
         throttle = EmailOTPThrottle.objects.get(
+            email_digest=_email_digest(email),
             purpose=EmailOTPThrottle.Purpose.SIGNUP,
         )
-        throttle.last_requested_at = timezone.now() - timedelta(seconds=11)
+        throttle.last_requested_at = timezone.now() - OTP_RESEND_COOLDOWN
         throttle.save(update_fields=["last_requested_at"])
         retry_response = self.client.post(
             reverse("accounts:signup_email_otp_resend"),
@@ -919,14 +922,14 @@ class PhoneOTPAPISecurityTests(TestCase):
         send_otp.assert_called_once()
 
     @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
-    def test_phone_otp_hourly_request_limit_and_cooldown(self, send_otp):
+    def test_phone_otp_has_no_per_profile_hourly_request_limit(self, send_otp):
         start = timezone.now()
         with patch(
             "accounts.views.timezone.now",
             side_effect=lambda: start
             + timedelta(seconds=61 * send_otp.call_count),
         ):
-            for _ in range(5):
+            for _ in range(6):
                 response = self.client.post(
                     reverse("accounts:request_otp"),
                     {"phone": self.user.phone},
@@ -934,17 +937,9 @@ class PhoneOTPAPISecurityTests(TestCase):
                 )
                 self.assertEqual(response.status_code, 200)
 
-            limited_response = self.client.post(
-                reverse("accounts:request_otp"),
-                {"phone": self.user.phone},
-                content_type="application/json",
-            )
-
-        self.assertEqual(limited_response.status_code, 429)
-        self.assertIn("hourly", limited_response.json()["detail"].lower())
         self.profile.refresh_from_db()
-        self.assertEqual(self.profile.otp_request_count, 5)
-        self.assertEqual(send_otp.call_count, 5)
+        self.assertEqual(self.profile.otp_request_count, 0)
+        self.assertEqual(send_otp.call_count, 6)
 
     @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
     def test_new_phone_otp_resets_failed_attempts(self, send_otp):
@@ -2424,21 +2419,13 @@ class EmailOTPFlowTests(TestCase):
             )
         self.assertEqual(len(mail.outbox), 2)
 
-    def test_email_otp_request_limit_is_thirty_per_hour(self):
-        self.assertEqual(OTP_MAX_REQUESTS_PER_WINDOW, 30)
-        self.assertEqual(OTP_REQUEST_WINDOW, timedelta(hours=1))
+    def test_email_otp_has_no_per_email_request_quota(self):
         now = timezone.now()
-        clock = [now]
-        with patch("accounts.email_otp.timezone.now", side_effect=lambda: clock[0]):
-            for _ in range(OTP_MAX_REQUESTS_PER_WINDOW):
-                throttle = EmailOTPThrottle.objects.filter(
-                    purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
-                ).first()
-                if throttle:
-                    throttle.last_requested_at = (
-                        clock[0] - OTP_RESEND_COOLDOWN
-                    )
-                    throttle.save(update_fields=["last_requested_at"])
+        for request_number in range(35):
+            with patch(
+                "accounts.email_otp.timezone.now",
+                return_value=now + request_number * OTP_RESEND_COOLDOWN,
+            ):
                 self.assertEqual(
                     request_email_otp(
                         self.user.email,
@@ -2447,22 +2434,33 @@ class EmailOTPFlowTests(TestCase):
                     "accepted",
                 )
 
-            throttle = EmailOTPThrottle.objects.get(
-                purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
-            )
-            self.assertEqual(throttle.request_count, OTP_MAX_REQUESTS_PER_WINDOW)
-            throttle.last_requested_at = clock[0] - OTP_RESEND_COOLDOWN
-            throttle.save(update_fields=["last_requested_at"])
-            self.assertEqual(
-                request_email_otp(
-                    self.user.email,
-                    EmailOTPChallenge.Purpose.PASSWORD_RESET,
-                ),
-                "throttled",
-            )
-            self.assertEqual(len(mail.outbox), OTP_MAX_REQUESTS_PER_WINDOW)
+        self.assertEqual(len(mail.outbox), 35)
+        throttle = EmailOTPThrottle.objects.get(
+            purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
+        )
+        self.assertEqual(throttle.request_count, 0)
 
-            clock[0] += OTP_REQUEST_WINDOW + timedelta(seconds=1)
+    def test_otp_ip_rate_limit_is_temporary_and_shared(self):
+        now = timezone.now()
+        with patch("accounts.email_otp.timezone.now", return_value=now):
+            for _ in range(OTP_IP_MAX_REQUESTS_PER_WINDOW):
+                self.assertTrue(consume_otp_ip_request("203.0.113.9"))
+            self.assertFalse(consume_otp_ip_request("203.0.113.9"))
+
+        with patch(
+            "accounts.email_otp.timezone.now",
+            return_value=now + OTP_IP_REQUEST_WINDOW,
+        ):
+            self.assertTrue(consume_otp_ip_request("203.0.113.9"))
+
+    def test_resend_replaces_previous_email_otp(self):
+        old_code = self._request_code()
+        challenge = EmailOTPChallenge.objects.get(
+            user=self.user,
+            purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
+        )
+        new_time = challenge.created_at + OTP_RESEND_COOLDOWN
+        with patch("accounts.email_otp.timezone.now", return_value=new_time):
             self.assertEqual(
                 request_email_otp(
                     self.user.email,
@@ -2471,8 +2469,46 @@ class EmailOTPFlowTests(TestCase):
                 "accepted",
             )
 
-        throttle.refresh_from_db()
-        self.assertEqual(throttle.request_count, 1)
+        new_code = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group(0)
+        self.assertEqual(
+            verify_email_otp(
+                self.user.email,
+                old_code,
+                EmailOTPChallenge.Purpose.PASSWORD_RESET,
+            ).status,
+            EmailOTPStatus.INCORRECT,
+        )
+        self.assertEqual(
+            verify_email_otp(
+                self.user.email,
+                new_code,
+                EmailOTPChallenge.Purpose.PASSWORD_RESET,
+            ).status,
+            EmailOTPStatus.SUCCESS,
+        )
+
+    def test_password_reset_otp_delivery_failure_is_reported(self):
+        with self.assertLogs("accounts.views", level="ERROR"):
+            with patch(
+                "accounts.email_otp.send_account_email",
+                side_effect=RuntimeError("provider failure"),
+            ):
+                response = self.client.post(
+                    reverse("accounts:password_reset_otp"),
+                    {"email": self.user.email},
+                )
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:password_reset_otp_verify"),
+        )
+        verify_page = self.client.get(reverse("accounts:password_reset_otp_verify"))
+        self.assertContains(
+            verify_page,
+            "Unable to send a verification code right now",
+        )
+        self.assertNotContains(verify_page, "will be sent")
+        self.assertEqual(len(mail.outbox), 0)
 
     def test_email_otp_locks_after_five_wrong_codes(self):
         code = self._request_code()

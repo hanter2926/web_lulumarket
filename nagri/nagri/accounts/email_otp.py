@@ -22,9 +22,9 @@ from .models import (
 
 OTP_LIFETIME = timedelta(minutes=10)
 OTP_RESEND_COOLDOWN = timedelta(seconds=30)
-OTP_REQUEST_WINDOW = timedelta(hours=1)
-OTP_MAX_REQUESTS_PER_WINDOW = 30
-OTP_MAX_ATTEMPTS = 5
+OTP_IP_REQUEST_WINDOW = timedelta(minutes=10)
+OTP_IP_MAX_REQUESTS_PER_WINDOW = 30
+OTP_MAX_ATTEMPTS = 10
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,43 @@ def _email_digest(email):
         email.strip().casefold(),
         secret=settings.SECRET_KEY,
     ).hexdigest()
+
+
+def consume_otp_ip_request(requester_ip):
+    if not requester_ip:
+        return True
+
+    ip_digest = salted_hmac(
+        "accounts.email_otp.ip_request",
+        str(requester_ip).strip(),
+        secret=settings.SECRET_KEY,
+    ).hexdigest()
+    now = timezone.now()
+    purpose = EmailOTPChallenge.Purpose.SIGNUP
+    with transaction.atomic():
+        throttle, _ = EmailOTPThrottle.objects.get_or_create(
+            email_digest=ip_digest,
+            purpose=purpose,
+            defaults={"window_started_at": now},
+        )
+        throttle = EmailOTPThrottle.objects.select_for_update().get(pk=throttle.pk)
+        if now - throttle.window_started_at >= OTP_IP_REQUEST_WINDOW:
+            throttle.window_started_at = now
+            throttle.request_count = 0
+
+        if throttle.request_count >= OTP_IP_MAX_REQUESTS_PER_WINDOW:
+            return False
+
+        throttle.request_count += 1
+        throttle.last_requested_at = now
+        throttle.save(
+            update_fields=[
+                "window_started_at",
+                "request_count",
+                "last_requested_at",
+            ]
+        )
+    return True
 
 
 def _eligible_user(email, purpose):
@@ -85,7 +122,7 @@ def _eligible_user(email, purpose):
     return user
 
 
-def request_email_otp(email, purpose):
+def request_email_otp(email, purpose, requester_ip=None):
     if purpose not in (
         EmailOTPChallenge.Purpose.SIGNUP,
         EmailOTPChallenge.Purpose.PASSWORD_RESET,
@@ -97,6 +134,9 @@ def request_email_otp(email, purpose):
     eligible = _eligible_user(normalized_email, purpose)
     if not eligible:
         return "accepted"
+
+    if not consume_otp_ip_request(requester_ip):
+        return "throttled"
 
     recipient_email = eligible.email
     challenge_user = (
@@ -113,29 +153,11 @@ def request_email_otp(email, purpose):
         )
         throttle = EmailOTPThrottle.objects.select_for_update().get(pk=throttle.pk)
 
-        if now - throttle.window_started_at >= OTP_REQUEST_WINDOW:
-            throttle.window_started_at = now
-            throttle.request_count = 0
-            throttle.last_requested_at = None
-
-        if (
-            throttle.request_count >= OTP_MAX_REQUESTS_PER_WINDOW
-            or (
-                throttle.last_requested_at
-                and now - throttle.last_requested_at < OTP_RESEND_COOLDOWN
-            )
-        ):
+        if throttle.last_requested_at and now - throttle.last_requested_at < OTP_RESEND_COOLDOWN:
             return "throttled"
 
-        throttle.request_count += 1
         throttle.last_requested_at = now
-        throttle.save(
-            update_fields=[
-                "window_started_at",
-                "request_count",
-                "last_requested_at",
-            ]
-        )
+        throttle.save(update_fields=["last_requested_at"])
 
         code = f"{secrets.randbelow(1_000_000):06d}"
         challenge, _ = EmailOTPChallenge.objects.update_or_create(

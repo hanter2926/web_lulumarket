@@ -60,14 +60,15 @@ from .forms import (
 from .email_delivery import classify_email_delivery_error
 from .email_otp import (
     EmailOTPStatus,
+    consume_otp_ip_request,
     request_email_otp,
     verify_email_otp,
 )
 from urllib.parse import urlparse
 
-PHONE_CHANGE_OTP_MAX_ATTEMPTS = 5
-PHONE_OTP_MAX_ATTEMPTS = 5
-PHONE_OTP_MAX_REQUESTS_PER_HOUR = 5
+PHONE_CHANGE_OTP_MAX_ATTEMPTS = 10
+PHONE_OTP_MAX_ATTEMPTS = 10
+
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -177,7 +178,13 @@ def _consume_phone_otp(user_id, otp, allow_pending_signup=True):
     return user, profile, None
 
 
-def _issue_phone_otp(profile_id, phone):
+def _issue_phone_otp(profile_id, phone, requester_ip=None):
+    if not consume_otp_ip_request(requester_ip):
+        return (
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many OTP requests from this network. Please try again later.",
+        )
+
     now = timezone.now()
     with transaction.atomic():
         profile = UserProfile.objects.select_for_update().get(pk=profile_id)
@@ -190,22 +197,11 @@ def _issue_phone_otp(profile_id, phone):
                     f"Please wait {remaining} seconds before requesting another OTP.",
                 )
 
-        window_start = profile.otp_request_window_started_at
-        if not window_start or now - window_start >= timedelta(hours=1):
-            profile.otp_request_window_started_at = now
-            profile.otp_request_count = 0
-        if profile.otp_request_count >= PHONE_OTP_MAX_REQUESTS_PER_HOUR:
-            return (
-                status.HTTP_429_TOO_MANY_REQUESTS,
-                "Hourly OTP request limit reached. Try again later.",
-            )
-
         otp_code = generate_otp()
         profile.phone = phone
         profile.otp = otp_code
         profile.otp_expires_at = now + timedelta(minutes=OTP_TTL_MINUTES)
         profile.otp_attempts = 0
-        profile.otp_request_count += 1
         profile.last_otp_sent_at = now
         profile.save(
             update_fields=[
@@ -213,8 +209,6 @@ def _issue_phone_otp(profile_id, phone):
                 "otp",
                 "otp_expires_at",
                 "otp_attempts",
-                "otp_request_count",
-                "otp_request_window_started_at",
                 "last_otp_sent_at",
                 "updated_at",
             ]
@@ -238,7 +232,7 @@ def _issue_phone_otp(profile_id, phone):
     return status.HTTP_200_OK, "OTP sent to your phone."
 
 
-def _start_phone_change(user, raw_phone):
+def _start_phone_change(user, raw_phone, requester_ip=None):
     if (
         user.account_status != CustomUser.AccountStatus.ACTIVE
         or not user.is_active
@@ -263,6 +257,12 @@ def _start_phone_change(user, raw_phone):
     now = timezone.now()
     if profile.last_otp_sent_at and now - profile.last_otp_sent_at < timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS):
         return status.HTTP_429_TOO_MANY_REQUESTS, "Please wait before requesting another OTP."
+
+    if not consume_otp_ip_request(requester_ip):
+        return (
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many OTP requests from this network. Please try again later.",
+        )
 
     otp_code = generate_otp()
     profile.pending_phone = phone
@@ -419,11 +419,12 @@ def _stage_pending_signup(email, username, password, phone, full_name):
     return None
 
 
-def _request_signup_email_otp(email):
+def _request_signup_email_otp(email, requester_ip=None):
     try:
         return request_email_otp(
             email,
             EmailOTPChallenge.Purpose.SIGNUP,
+            requester_ip=requester_ip,
         )
     except Exception as exc:
         _log_email_delivery_failure(exc)
@@ -476,7 +477,9 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
     def phone_change_request(self, request):
         response_status, detail = _start_phone_change(
-            request.user, request.data.get("phone", "")
+            request.user,
+            request.data.get("phone", ""),
+            request.META.get("REMOTE_ADDR"),
         )
         return Response({"detail": detail}, status=response_status)
 
@@ -535,7 +538,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         response_status, detail = _start_phone_change(
-            request.user, profile.pending_phone
+            request.user,
+            profile.pending_phone,
+            request.META.get("REMOTE_ADDR"),
         )
         return Response({"detail": detail}, status=response_status)
 
@@ -596,7 +601,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 ),
             )
 
-        email_otp_result = _request_signup_email_otp(email)
+        email_otp_result = _request_signup_email_otp(
+            email,
+            request.META.get("REMOTE_ADDR"),
+        )
         email_otp_error = _signup_email_otp_error_response(email_otp_result)
         if email_otp_error:
             return email_otp_error
@@ -968,7 +976,11 @@ def request_otp(request):
             status=status.HTTP_409_CONFLICT,
         )
 
-    response_status, detail = _issue_phone_otp(profile.pk, phone)
+    response_status, detail = _issue_phone_otp(
+        profile.pk,
+        phone,
+        request.META.get("REMOTE_ADDR"),
+    )
     if response_status != status.HTTP_200_OK:
         if browser_request:
             return render(
@@ -1009,7 +1021,10 @@ def signup_phone_otp_resend(request):
     ).first()
     if pending_signup:
         try:
-            result = _request_signup_email_otp(pending_signup.email)
+            result = _request_signup_email_otp(
+                pending_signup.email,
+                request.META.get("REMOTE_ADDR"),
+            )
         except Exception as exc:
             _log_email_delivery_failure(exc)
             return Response(
@@ -1033,7 +1048,10 @@ def signup_phone_otp_resend(request):
         return Response({"detail": generic_detail}, status=status.HTTP_200_OK)
 
     try:
-        result = _request_signup_email_otp(user.email)
+        result = _request_signup_email_otp(
+            user.email,
+            request.META.get("REMOTE_ADDR"),
+        )
     except Exception as exc:
         _log_email_delivery_failure(exc)
         return Response(
@@ -1056,7 +1074,10 @@ def signup_email_otp_resend(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    result = _request_signup_email_otp(email)
+    result = _request_signup_email_otp(
+        email,
+        request.META.get("REMOTE_ADDR"),
+    )
     error_response = _signup_email_otp_error_response(result)
     if error_response:
         return error_response
@@ -1072,7 +1093,9 @@ def signup_email_otp_resend(request):
 @require_http_methods(["POST"])
 def phone_change_request(request):
     response_status, detail = _start_phone_change(
-        request.user, request.POST.get("phone", "")
+        request.user,
+        request.POST.get("phone", ""),
+        request.META.get("REMOTE_ADDR"),
     )
     if response_status == status.HTTP_200_OK:
         messages.success(request, detail)
@@ -1116,7 +1139,9 @@ def phone_change_resend(request):
         return redirect("accounts:account_settings")
 
     response_status, detail = _start_phone_change(
-        request.user, profile.pending_phone
+        request.user,
+        profile.pending_phone,
+        request.META.get("REMOTE_ADDR"),
     )
     if response_status == status.HTTP_200_OK:
         messages.success(request, detail)
@@ -1172,7 +1197,10 @@ def signup_submit(request):
             ),
         )
 
-    email_otp_result = _request_signup_email_otp(email)
+    email_otp_result = _request_signup_email_otp(
+        email,
+        request.META.get("REMOTE_ADDR"),
+    )
     email_otp_error = _signup_email_otp_error_response(email_otp_result)
     if email_otp_error:
         return email_otp_error
@@ -1495,7 +1523,10 @@ def signup_form_view(request):
         request.session["signup_email_verification_email"] = email
         request.session["contact_verification_next"] = next_url
         request.session["contact_verification_remember"] = False
-        result = _request_signup_email_otp(email)
+        result = _request_signup_email_otp(
+            email,
+            request.META.get("REMOTE_ADDR"),
+        )
         if result == "throttled":
             request.session["signup_email_verification_notice"] = (
                 "Please wait before requesting another verification code."
@@ -1573,7 +1604,11 @@ def signup_email_verify_resend(request):
         return redirect("accounts:signup_form")
 
     try:
-        result = request_email_otp(email, EmailOTPChallenge.Purpose.SIGNUP)
+        result = request_email_otp(
+            email,
+            EmailOTPChallenge.Purpose.SIGNUP,
+            requester_ip=request.META.get("REMOTE_ADDR"),
+        )
         if result == "throttled":
             request.session["signup_email_verification_notice"] = (
                 "Please wait before requesting another verification code."
@@ -1709,9 +1744,22 @@ def _email_otp_request(request, purpose, verify_url_name, template_name):
     if request.method == "POST" and form.is_valid():
         email = form.cleaned_data["email"]
         try:
-            request_email_otp(email, purpose)
+            result = request_email_otp(
+                email,
+                purpose,
+                requester_ip=request.META.get("REMOTE_ADDR"),
+            )
         except Exception as exc:
             _log_email_delivery_failure(exc)
+            request.session["email_otp_notice"] = (
+                "Unable to send a verification code right now. Please try again later."
+            )
+        else:
+            request.session["email_otp_notice"] = (
+                "Please wait before requesting another code."
+                if result == "throttled"
+                else "If an eligible account exists, a verification code will be sent."
+            )
 
         request.session["email_otp_email"] = email
         next_url = request.POST.get("next", "")
@@ -1723,10 +1771,6 @@ def _email_otp_request(request, purpose, verify_url_name, template_name):
             request.session["email_otp_next"] = next_url
         else:
             request.session.pop("email_otp_next", None)
-        request.session["email_otp_notice"] = (
-            "If an eligible account exists, a code will be sent. "
-            "If you requested one recently, wait before trying again."
-        )
         return redirect(verify_url_name)
 
     return render(
