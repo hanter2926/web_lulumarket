@@ -6,7 +6,7 @@
 <main class="container py-5" style="max-width: 34rem;">
   <section class="card p-4 shadow-sm">
     <h1 class="h3">Verify your email</h1>
-    <p>Enter the 6-digit code sent to {{ email }}. The code expires in 5 minutes.</p>
+    <p>Enter the 6-digit code sent to {{ email }}. The code expires in 10 minutes.</p>
     {% if notice %}<p role="status">{{ notice }}</p>{% endif %}
     {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
     <form method="post" action="{% url 'accounts:signup_email_verify' %}">

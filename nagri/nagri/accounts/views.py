@@ -58,7 +58,11 @@ from .forms import (
     SignupForm,
 )
 from .email_delivery import classify_email_delivery_error
-from .email_otp import request_email_otp, verify_email_otp
+from .email_otp import (
+    EmailOTPStatus,
+    request_email_otp,
+    verify_email_otp,
+)
 from urllib.parse import urlparse
 
 PHONE_CHANGE_OTP_MAX_ATTEMPTS = 5
@@ -1194,14 +1198,34 @@ def signup_email_otp_verify(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    user = verify_email_otp(
-        form.cleaned_data["email"],
-        form.cleaned_data["code"],
-        EmailOTPChallenge.Purpose.SIGNUP,
-    )
-    if not user:
+    try:
+        verification = verify_email_otp(
+            form.cleaned_data["email"],
+            form.cleaned_data["code"],
+            EmailOTPChallenge.Purpose.SIGNUP,
+        )
+    except Exception as exc:
+        logger.error(
+            "Signup email OTP API verification failed (exception_type=%s)",
+            type(exc).__name__,
+        )
         return Response(
-            {"detail": "The code is invalid or expired."},
+            {"detail": "We couldn't complete verification right now. Please try again."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    if (
+        verification.status == EmailOTPStatus.SUCCESS
+        and verification.user is not None
+    ):
+        user = verification.user
+    else:
+        if verification.status == EmailOTPStatus.ACCOUNT_CREATION_FAILED:
+            return Response(
+                {"detail": "We couldn't complete account creation. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(
+            {"detail": _email_otp_verification_error(verification.status)},
             status=status.HTTP_400_BAD_REQUEST,
         )
     return Response(
@@ -1283,16 +1307,17 @@ def email_login_view(request):
         email = (request.POST.get("email") or "").strip()
         password = request.POST.get("password") or ""
         next_url = request.POST.get("next") or request.GET.get("next") or ""
+        safe_next_url = _safe_next_url(request, next_url)
 
         if not email or not password:
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Email and password are required.", "next": next_url})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Email and password are required.", "next": safe_next_url})
 
         user = CustomUser.objects.filter(email__iexact=email).first()
         if not user:
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": safe_next_url})
 
         if not user.check_password(password):
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": safe_next_url})
 
         if (
             user.account_status == CustomUser.AccountStatus.PENDING_VERIFICATION
@@ -1300,13 +1325,17 @@ def email_login_view(request):
             and not user.is_email_verified
         ):
             request.session["signup_email_verification_email"] = user.email
+            request.session["contact_verification_next"] = safe_next_url
+            request.session["contact_verification_remember"] = bool(
+                request.POST.get("remember")
+            )
             return redirect("accounts:signup_email_verify")
 
         if (
             user.account_status != CustomUser.AccountStatus.ACTIVE
             or not getattr(user, "is_active", True)
         ):
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": next_url})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": safe_next_url})
 
         if not user.is_email_verified:
             return render(
@@ -1315,19 +1344,19 @@ def email_login_view(request):
                 {
                     "active_tab": "login",
                     "error": "Verify your email before logging in.",
-                    "next": next_url,
+                    "next": safe_next_url,
                 },
             )
 
         authenticated_user = authenticate(request, username=user.email, password=password)
         if authenticated_user is None:
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": next_url})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Invalid email or password.", "next": safe_next_url})
 
         if (
             user.account_status != CustomUser.AccountStatus.ACTIVE
             or not user.is_active
         ):
-            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": next_url})
+            return render(request, "accounts/auth.html", {"active_tab": "login", "error": "Your account is inactive. Please contact support.", "next": safe_next_url})
 
         auth_login(request, authenticated_user)
         if request.POST.get("remember"):
@@ -1335,12 +1364,8 @@ def email_login_view(request):
         else:
             request.session.set_expiry(0)
 
-        if next_url and url_has_allowed_host_and_scheme(
-            next_url,
-            allowed_hosts={request.get_host()},
-            require_https=request.is_secure(),
-        ):
-            return redirect(next_url)
+        if safe_next_url:
+            return redirect(safe_next_url)
 
         # Redirect users by role: owner -> owner dashboard, vendor -> seller dashboard, else customer dashboard
         if getattr(authenticated_user, "is_owner", False):
@@ -1349,11 +1374,17 @@ def email_login_view(request):
             return redirect("sellers:dashboard")
         return redirect("accounts:dashboard_page")
 
-    return render(request, "accounts/auth.html", {"active_tab": "login", "next": request.GET.get("next", "")})
+    return render(
+        request,
+        "accounts/auth.html",
+        {
+            "active_tab": "login",
+            "next": _safe_next_url(request, request.GET.get("next", "")),
+        },
+    )
 
 
-def _safe_contact_verification_next(request):
-    next_url = request.session.get("contact_verification_next", "")
+def _safe_next_url(request, next_url):
     if next_url and url_has_allowed_host_and_scheme(
         next_url,
         allowed_hosts={request.get_host()},
@@ -1361,6 +1392,28 @@ def _safe_contact_verification_next(request):
     ):
         return next_url
     return ""
+
+
+def _email_otp_verification_error(verification_status):
+    if verification_status == EmailOTPStatus.INCORRECT:
+        return (
+            "Incorrect OTP. Please enter the correct OTP. "
+            "If you requested a replacement, use the latest code."
+        )
+    if verification_status == EmailOTPStatus.EXPIRED:
+        return "This verification code has expired. Request a new code."
+    if verification_status == EmailOTPStatus.LOCKED:
+        return "Too many incorrect codes. Request a new verification code."
+    if verification_status == EmailOTPStatus.ACCOUNT_CREATION_FAILED:
+        return "We couldn't complete account creation. Please try again."
+    return "This verification code is no longer available. Request a new code."
+
+
+def _safe_contact_verification_next(request):
+    return _safe_next_url(
+        request,
+        request.session.get("contact_verification_next", ""),
+    )
 
 
 def _finish_contact_verification(request, user):
@@ -1397,6 +1450,10 @@ def logout_view(request):
 
 def signup_form_view(request):
     form = SignupForm(request.POST or None)
+    next_url = _safe_next_url(
+        request,
+        request.POST.get("next") or request.GET.get("next", ""),
+    )
     if request.method == "POST" and form.is_valid():
         email = form.cleaned_data["email"]
         password = form.cleaned_data["password"]
@@ -1405,6 +1462,8 @@ def signup_form_view(request):
 
         if PendingSignup.objects.filter(email__iexact=email).exists():
             request.session["signup_email_verification_email"] = email
+            request.session["contact_verification_next"] = next_url
+            request.session["contact_verification_remember"] = False
             request.session["signup_email_verification_notice"] = (
                 "A signup is already awaiting verification. Enter the code or request another one."
             )
@@ -1425,11 +1484,13 @@ def signup_form_view(request):
             return render(
                 request,
                 "accounts/auth.html",
-                {"active_tab": "signup", "form": form},
+                {"active_tab": "signup", "form": form, "next": next_url},
                 status=400,
             )
 
         request.session["signup_email_verification_email"] = email
+        request.session["contact_verification_next"] = next_url
+        request.session["contact_verification_remember"] = False
         result = _request_signup_email_otp(email)
         if result == "throttled":
             request.session["signup_email_verification_notice"] = (
@@ -1443,11 +1504,15 @@ def signup_form_view(request):
         else:
             request.session["signup_email_verification_notice"] = (
                 "A verification code has been sent to your email. "
-                "It expires in 5 minutes."
+                "It expires in 10 minutes."
             )
         return redirect("accounts:signup_email_verify")
 
-    return render(request, "accounts/auth.html", {"active_tab": "signup", "form": form})
+    return render(
+        request,
+        "accounts/auth.html",
+        {"active_tab": "signup", "form": form, "next": next_url},
+    )
 
 
 @require_http_methods(["GET", "POST"])
@@ -1461,12 +1526,13 @@ def signup_email_verify(request):
     if request.method == "POST":
         if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
             try:
-                user = verify_email_otp(
+                verification = verify_email_otp(
                     email,
                     form.cleaned_data["code"],
                     EmailOTPChallenge.Purpose.SIGNUP,
                 )
-                if user:
+                if verification.status == EmailOTPStatus.SUCCESS:
+                    user = verification.user
                     request.session.pop("signup_email_verification_email", None)
                     request.session.pop("signup_email_verification_notice", None)
                     request.session["contact_verification_user_id"] = user.pk
@@ -1474,18 +1540,15 @@ def signup_email_verify(request):
                     if response:
                         return response
                     return redirect("accounts:email_login")
+                error = _email_otp_verification_error(verification.status)
             except Exception as exc:
-                logger.exception(
+                logger.error(
                     "Signup email verification request failed (exception_type=%s)",
                     type(exc).__name__,
-                    exc_info=(
-                        Exception,
-                        Exception(type(exc).__name__),
-                        exc.__traceback__,
-                    ),
                 )
                 return site_views.server_error(request)
-        error = "That code is invalid or expired. Request a new code and try again."
+        elif form.is_valid():
+            error = "Use the email address associated with this verification request."
 
     return render(
         request,
@@ -1546,11 +1609,25 @@ def dashboard(request):
 
 
 def login_page(request):
-    return render(request, "accounts/auth.html", {"active_tab": "login"})
+    return render(
+        request,
+        "accounts/auth.html",
+        {
+            "active_tab": "login",
+            "next": _safe_next_url(request, request.GET.get("next", "")),
+        },
+    )
 
 
 def signup_page(request):
-    return render(request, "accounts/auth.html", {"active_tab": "signup"})
+    return render(
+        request,
+        "accounts/auth.html",
+        {
+            "active_tab": "signup",
+            "next": _safe_next_url(request, request.GET.get("next", "")),
+        },
+    )
 
 
 def otp_login_page(request):
@@ -1692,12 +1769,16 @@ def password_reset_otp_verify(request):
     error = ""
     if request.method == "POST":
         if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
-            user = verify_email_otp(
+            verification = verify_email_otp(
                 email,
                 form.cleaned_data["code"],
                 EmailOTPChallenge.Purpose.PASSWORD_RESET,
             )
-            if user:
+            if (
+                verification.status == EmailOTPStatus.SUCCESS
+                and verification.user is not None
+            ):
+                user = verification.user
                 request.session.cycle_key()
                 request.session["password_reset_otp_user_id"] = user.pk
                 request.session["password_reset_otp_expires"] = (

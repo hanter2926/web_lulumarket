@@ -9,7 +9,7 @@ from django.core import mail
 from django.core.mail import EmailMessage
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import OperationalError
+from django.db import IntegrityError, OperationalError
 from django.test import TestCase, Client, RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -20,7 +20,16 @@ import re
 from requests import ConnectionError as RequestConnectionError
 from requests import Response, Timeout
 
-from .email_otp import request_email_otp, verify_email_otp
+from .email_otp import (
+    EmailOTPStatus,
+    OTP_LIFETIME,
+    OTP_MAX_ATTEMPTS,
+    OTP_MAX_REQUESTS_PER_WINDOW,
+    OTP_REQUEST_WINDOW,
+    OTP_RESEND_COOLDOWN,
+    request_email_otp,
+    verify_email_otp,
+)
 from .email_delivery import (
     BrevoAPIError,
     EmailDeliveryConfigurationError,
@@ -152,7 +161,11 @@ class AccountTests(TestCase):
         page = self.client.get(reverse("accounts:otp_login_page"))
         self.assertContains(page, "OTP Sent Successfully!")
         self.assertContains(page, "+91 987*****210")
-        self.assertNotContains(page, "+919876543210")
+        self.assertContains(
+            page,
+            '<input type="hidden" name="phone" value="+919876543210">',
+            html=True,
+        )
         send_otp.assert_called_once()
 
     @patch("accounts.views.send_otp_to_phone", side_effect=RuntimeError("Twilio unavailable"))
@@ -1360,7 +1373,13 @@ class AccountSecurityTests(TestCase):
         self.assertIn(reverse("accounts:dashboard_page"), response.url)
         self.assertTrue(response.wsgi_request.user.is_authenticated)
 
-    def test_pending_signup_with_correct_password_is_sent_to_email_verification(self):
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        EMAIL_PROVIDER="smtp",
+        DEFAULT_FROM_EMAIL="noreply@example.com",
+        DEBUG=True,
+    )
+    def test_pending_signup_preserves_safe_next_and_remember_through_verification(self):
         user = CustomUser.objects.create_user(
             email="pending-signup@example.com",
             username="pending-signup",
@@ -1372,7 +1391,12 @@ class AccountSecurityTests(TestCase):
 
         response = self.client.post(
             reverse("accounts:email_login"),
-            {"email": user.email, "password": "StrongPass123"},
+            {
+                "email": user.email,
+                "password": "StrongPass123",
+                "next": "/cart/",
+                "remember": "on",
+            },
         )
 
         self.assertRedirects(
@@ -1385,6 +1409,23 @@ class AccountSecurityTests(TestCase):
             self.client.session["signup_email_verification_email"],
             user.email,
         )
+        self.assertEqual(
+            self.client.session["contact_verification_next"],
+            "/cart/",
+        )
+        self.assertTrue(self.client.session["contact_verification_remember"])
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+
+        request_email_otp(user.email, EmailOTPChallenge.Purpose.SIGNUP)
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        response = self.client.post(
+            reverse("accounts:signup_email_verify"),
+            {"email": user.email, "code": code},
+        )
+
+        self.assertRedirects(response, "/cart/", target_status_code=200)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertFalse(self.client.session.get_expire_at_browser_close())
 
     def test_verified_user_can_log_in_with_case_variant_email(self):
         user = CustomUser.objects.create_user(
@@ -1573,6 +1614,7 @@ class SignupFlowTests(TestCase):
         response = self.client.get(reverse("accounts:login_page"))
 
         self.assertContains(response, "Create an account")
+        self.assertContains(response, 'id="login_remember" name="remember" type="checkbox"')
         self.assertNotContains(response, "Login with Email OTP")
         self.assertNotContains(response, 'data-auth-panel="register"')
         self.assertNotContains(response, "data-auth-switch=\"register\"")
@@ -1589,6 +1631,7 @@ class SignupFlowTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.signup_data["email"], mail.outbox[0].to)
         self.assertIn("verify your email address", mail.outbox[0].body)
+        self.assertIn("This code expires in 10 minutes", mail.outbox[0].body)
         self.assertFalse(
             CustomUser.objects.filter(email=self.signup_data["email"]).exists()
         )
@@ -1600,9 +1643,11 @@ class SignupFlowTests(TestCase):
         send_otp.assert_not_called()
 
         code = re.search(r"\b(\d{6})\b", mail.outbox[0].body).group(1)
+        verification_page = self.client.get(reverse("accounts:signup_email_verify"))
+        self.assertContains(verification_page, "The code expires in 10 minutes.")
         response = self.client.post(
             reverse("accounts:signup_email_verify"),
-            {"email": self.signup_data["email"], "code": code},
+            {"email": self.signup_data["email"].upper(), "code": code},
         )
 
         self.assertRedirects(
@@ -1617,10 +1662,33 @@ class SignupFlowTests(TestCase):
         self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
         self.assertFalse(UserProfile.objects.get(user=user).is_phone_verified)
         self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertFalse(
+            PendingSignup.objects.filter(email=self.signup_data["email"]).exists()
+        )
+        challenge = EmailOTPChallenge.objects.get(
+            purpose=EmailOTPChallenge.Purpose.SIGNUP,
+            user=user,
+        )
+        self.assertIsNotNone(challenge.consumed_at)
         self.assertEqual(
             self.client.session.get("_auth_user_id"),
             str(user.pk),
         )
+
+        repeated_verification = self.client.post(
+            reverse("accounts:signup_email_otp_verify"),
+            {
+                "email": self.signup_data["email"],
+                "code": code,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(repeated_verification.status_code, 400)
+        self.assertEqual(
+            CustomUser.objects.filter(email=self.signup_data["email"]).count(),
+            1,
+        )
+        self.assertEqual(UserProfile.objects.filter(user=user).count(), 1)
 
         self.client.get(reverse("accounts:logout_page"))
         mail.outbox.clear()
@@ -1629,10 +1697,140 @@ class SignupFlowTests(TestCase):
             {
                 "email": self.signup_data["email"],
                 "password": self.signup_data["password"],
+                "remember": "on",
             },
         )
         self.assertRedirects(response, reverse("accounts:dashboard_page"))
         self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(self.client.session.get_expire_at_browser_close())
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+
+    @patch("accounts.views.send_otp_to_phone")
+    def test_incorrect_signup_otp_stays_on_verification_page(self, send_otp):
+        self.client.post(reverse("accounts:signup_form"), self.signup_data)
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        wrong_code = "000000" if code != "000000" else "000001"
+
+        response = self.client.post(
+            reverse("accounts:signup_email_verify"),
+            {"email": self.signup_data["email"], "code": wrong_code},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Incorrect OTP. Please enter the correct OTP.",
+            status_code=200,
+        )
+        self.assertContains(response, 'role="alert"')
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        self.assertFalse(
+            CustomUser.objects.filter(email=self.signup_data["email"]).exists()
+        )
+        self.assertTrue(
+            PendingSignup.objects.filter(email=self.signup_data["email"]).exists()
+        )
+
+    @patch("accounts.views.send_otp_to_phone")
+    @patch(
+        "accounts.email_otp.UserProfile.objects.create",
+        side_effect=IntegrityError("sensitive database detail"),
+    )
+    def test_signup_account_creation_failure_is_distinct_and_retryable(
+        self,
+        create_profile,
+        send_otp,
+    ):
+        self.client.post(reverse("accounts:signup_form"), self.signup_data)
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+
+        with self.assertLogs("accounts.email_otp", level="ERROR") as captured:
+            response = self.client.post(
+                reverse("accounts:signup_email_verify"),
+                {"email": self.signup_data["email"], "code": code},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "We couldn&#x27;t complete account creation. Please try again.",
+            status_code=200,
+        )
+        self.assertNotContains(response, "Incorrect OTP")
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        self.assertFalse(
+            CustomUser.objects.filter(email=self.signup_data["email"]).exists()
+        )
+        self.assertTrue(
+            PendingSignup.objects.filter(email=self.signup_data["email"]).exists()
+        )
+        challenge = EmailOTPChallenge.objects.get(
+            purpose=EmailOTPChallenge.Purpose.SIGNUP,
+            user__isnull=True,
+        )
+        self.assertIsNone(challenge.consumed_at)
+        log_output = "\n".join(captured.output)
+        self.assertIn("exception_type=IntegrityError", log_output)
+        self.assertNotIn(self.signup_data["email"], log_output)
+        self.assertNotIn(code, log_output)
+        self.assertNotIn("sensitive database detail", log_output)
+        create_profile.assert_called_once()
+        send_otp.assert_not_called()
+
+    @patch("accounts.views.send_otp_to_phone")
+    @patch("accounts.email_otp.secrets.randbelow", side_effect=[1, 2])
+    def test_replaced_signup_code_prompts_for_latest_code(
+        self,
+        generate_code,
+        send_otp,
+    ):
+        self.client.post(reverse("accounts:signup_form"), self.signup_data)
+        old_code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        first_challenge = EmailOTPChallenge.objects.get(
+            purpose=EmailOTPChallenge.Purpose.SIGNUP,
+        )
+
+        with patch(
+            "accounts.email_otp.timezone.now",
+            return_value=first_challenge.created_at + OTP_RESEND_COOLDOWN,
+        ):
+            request_email_otp(
+                self.signup_data["email"],
+                EmailOTPChallenge.Purpose.SIGNUP,
+            )
+
+        response = self.client.post(
+            reverse("accounts:signup_email_verify"),
+            {"email": self.signup_data["email"], "code": old_code},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Incorrect OTP.")
+        self.assertContains(response, "use the latest code.")
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        self.assertEqual(generate_code.call_count, 2)
+        send_otp.assert_not_called()
+
+    @patch("accounts.views.send_otp_to_phone")
+    def test_signup_preserves_safe_next_redirect_until_verification(self, send_otp):
+        response = self.client.post(
+            reverse("accounts:signup_form"),
+            {**self.signup_data, "next": "/cart/"},
+        )
+        self.assertRedirects(
+            response,
+            reverse("accounts:signup_email_verify"),
+            fetch_redirect_response=False,
+        )
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+
+        response = self.client.post(
+            reverse("accounts:signup_email_verify"),
+            {"email": self.signup_data["email"], "code": code},
+        )
+
+        self.assertRedirects(response, "/cart/", target_status_code=200)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
 
     @override_settings(
         DEBUG=False,
@@ -1881,7 +2079,7 @@ class SignupFlowTests(TestCase):
             EmailOTPChallenge.Purpose.SIGNUP,
         )
 
-        self.assertIsNone(result)
+        self.assertEqual(result.status, EmailOTPStatus.UNAVAILABLE)
         user.refresh_from_db()
         self.assertFalse(user.is_active)
         self.assertEqual(
@@ -2128,6 +2326,152 @@ class EmailOTPFlowTests(TestCase):
         self.assertNotEqual(challenge.code_hash, code)
         self.assertTrue(check_password(code, challenge.code_hash))
         return code
+
+    def test_email_otp_lifetime_is_ten_minutes(self):
+        code = self._request_code()
+        challenge = EmailOTPChallenge.objects.get(
+            user=self.user,
+            purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
+        )
+
+        self.assertEqual(OTP_LIFETIME, timedelta(minutes=10))
+        self.assertEqual(
+            challenge.expires_at - challenge.created_at,
+            timedelta(minutes=10),
+        )
+        with patch(
+            "accounts.email_otp.timezone.now",
+            return_value=challenge.expires_at,
+        ):
+            self.assertEqual(
+                verify_email_otp(
+                    self.user.email,
+                    code,
+                    EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                ).status,
+                EmailOTPStatus.EXPIRED,
+            )
+
+    def test_email_otp_resend_cooldown_is_thirty_seconds(self):
+        now = timezone.now()
+        with patch("accounts.email_otp.timezone.now", return_value=now):
+            self.assertEqual(
+                request_email_otp(
+                    self.user.email,
+                    EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                ),
+                "accepted",
+            )
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(OTP_RESEND_COOLDOWN, timedelta(seconds=30))
+        with patch(
+            "accounts.email_otp.timezone.now",
+            return_value=now + timedelta(seconds=29),
+        ):
+            self.assertEqual(
+                request_email_otp(
+                    self.user.email,
+                    EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                ),
+                "throttled",
+            )
+        self.assertEqual(len(mail.outbox), 1)
+
+        with patch(
+            "accounts.email_otp.timezone.now",
+            return_value=now + OTP_RESEND_COOLDOWN,
+        ):
+            self.assertEqual(
+                request_email_otp(
+                    self.user.email,
+                    EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                ),
+                "accepted",
+            )
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_email_otp_request_limit_is_thirty_per_hour(self):
+        self.assertEqual(OTP_MAX_REQUESTS_PER_WINDOW, 30)
+        self.assertEqual(OTP_REQUEST_WINDOW, timedelta(hours=1))
+        now = timezone.now()
+        clock = [now]
+        with patch("accounts.email_otp.timezone.now", side_effect=lambda: clock[0]):
+            for _ in range(OTP_MAX_REQUESTS_PER_WINDOW):
+                throttle = EmailOTPThrottle.objects.filter(
+                    purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                ).first()
+                if throttle:
+                    throttle.last_requested_at = (
+                        clock[0] - OTP_RESEND_COOLDOWN
+                    )
+                    throttle.save(update_fields=["last_requested_at"])
+                self.assertEqual(
+                    request_email_otp(
+                        self.user.email,
+                        EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                    ),
+                    "accepted",
+                )
+
+            throttle = EmailOTPThrottle.objects.get(
+                purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
+            )
+            self.assertEqual(throttle.request_count, OTP_MAX_REQUESTS_PER_WINDOW)
+            throttle.last_requested_at = clock[0] - OTP_RESEND_COOLDOWN
+            throttle.save(update_fields=["last_requested_at"])
+            self.assertEqual(
+                request_email_otp(
+                    self.user.email,
+                    EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                ),
+                "throttled",
+            )
+            self.assertEqual(len(mail.outbox), OTP_MAX_REQUESTS_PER_WINDOW)
+
+            clock[0] += OTP_REQUEST_WINDOW + timedelta(seconds=1)
+            self.assertEqual(
+                request_email_otp(
+                    self.user.email,
+                    EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                ),
+                "accepted",
+            )
+
+        throttle.refresh_from_db()
+        self.assertEqual(throttle.request_count, 1)
+
+    def test_email_otp_locks_after_five_wrong_codes(self):
+        code = self._request_code()
+        wrong_code = "000000" if code != "000000" else "000001"
+
+        self.assertEqual(OTP_MAX_ATTEMPTS, 5)
+        for attempt in range(1, OTP_MAX_ATTEMPTS + 1):
+            self.assertEqual(
+                verify_email_otp(
+                    self.user.email,
+                    wrong_code,
+                    EmailOTPChallenge.Purpose.PASSWORD_RESET,
+                ).status,
+                EmailOTPStatus.INCORRECT
+                if attempt < OTP_MAX_ATTEMPTS
+                else EmailOTPStatus.LOCKED,
+            )
+            challenge = EmailOTPChallenge.objects.get(
+                user=self.user,
+                purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
+            )
+            self.assertEqual(challenge.attempts, attempt)
+
+        self.assertIsNotNone(challenge.consumed_at)
+        self.assertEqual(
+            verify_email_otp(
+                self.user.email,
+                code,
+                EmailOTPChallenge.Purpose.PASSWORD_RESET,
+            ).status,
+            EmailOTPStatus.LOCKED,
+        )
 
     def test_email_delivery_error_classification_covers_supported_errors(self):
         cases = (
@@ -2409,12 +2753,13 @@ class EmailOTPFlowTests(TestCase):
             purpose=EmailOTPChallenge.Purpose.PASSWORD_RESET,
         )
         self.assertIsNone(challenge.consumed_at)
-        self.assertIsNotNone(
+        self.assertEqual(
             verify_email_otp(
                 self.user.email,
                 code,
                 EmailOTPChallenge.Purpose.PASSWORD_RESET,
-            )
+            ).status,
+            EmailOTPStatus.SUCCESS,
         )
 
     @override_settings(

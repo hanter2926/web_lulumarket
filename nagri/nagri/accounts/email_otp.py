@@ -1,5 +1,8 @@
 import secrets
+import logging
+from dataclasses import dataclass
 from datetime import timedelta
+from enum import Enum
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
@@ -17,11 +20,28 @@ from .models import (
     UserProfile,
 )
 
-OTP_LIFETIME = timedelta(minutes=5)
-OTP_RESEND_COOLDOWN = timedelta(seconds=10)
+OTP_LIFETIME = timedelta(minutes=10)
+OTP_RESEND_COOLDOWN = timedelta(seconds=30)
 OTP_REQUEST_WINDOW = timedelta(hours=1)
-OTP_MAX_REQUESTS_PER_WINDOW = 15
+OTP_MAX_REQUESTS_PER_WINDOW = 30
 OTP_MAX_ATTEMPTS = 5
+
+logger = logging.getLogger(__name__)
+
+
+class EmailOTPStatus(str, Enum):
+    SUCCESS = "success"
+    INCORRECT = "incorrect"
+    EXPIRED = "expired"
+    LOCKED = "locked"
+    UNAVAILABLE = "unavailable"
+    ACCOUNT_CREATION_FAILED = "account_creation_failed"
+
+
+@dataclass(frozen=True)
+class EmailOTPVerification:
+    status: EmailOTPStatus
+    user: CustomUser | None = None
 
 
 def _email_digest(email):
@@ -138,7 +158,7 @@ def request_email_otp(email, purpose):
     )
     message = (
         f"Your NAGRI code to {purpose_text} is {code}.\n\n"
-        "This code expires in 5 minutes and can only be used once. "
+        "This code expires in 10 minutes and can only be used once. "
         "If you did not request it, you can ignore this email."
     )
     try:
@@ -173,10 +193,16 @@ def verify_email_otp(email, code, purpose):
         )
         if (
             not challenge
-            or challenge.consumed_at is not None
             or not challenge.code_hash
         ):
-            return None
+            return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+        if challenge.consumed_at is not None:
+            status = (
+                EmailOTPStatus.LOCKED
+                if challenge.attempts >= OTP_MAX_ATTEMPTS
+                else EmailOTPStatus.UNAVAILABLE
+            )
+            return EmailOTPVerification(status)
 
         user = challenge.user
         pending_signup = None
@@ -191,26 +217,33 @@ def verify_email_otp(email, code, purpose):
                 or pending_signup.email.strip().casefold()
                 != email.strip().casefold()
             ):
-                return None
+                return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
         elif not user or user.email.strip().casefold() != email.strip().casefold():
-            return None
+            return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
 
-        if challenge.expires_at <= now or challenge.attempts >= OTP_MAX_ATTEMPTS:
+        if challenge.expires_at <= now:
             challenge.consumed_at = now
             challenge.save(update_fields=["consumed_at"])
-            return None
+            return EmailOTPVerification(EmailOTPStatus.EXPIRED)
+
+        if challenge.attempts >= OTP_MAX_ATTEMPTS:
+            challenge.consumed_at = now
+            challenge.save(update_fields=["consumed_at"])
+            return EmailOTPVerification(EmailOTPStatus.LOCKED)
 
         if not check_password(code, challenge.code_hash):
             challenge.attempts += 1
             if challenge.attempts >= OTP_MAX_ATTEMPTS:
                 challenge.consumed_at = now
             challenge.save(update_fields=["attempts", "consumed_at"])
-            return None
+            if challenge.attempts >= OTP_MAX_ATTEMPTS:
+                return EmailOTPVerification(EmailOTPStatus.LOCKED)
+            return EmailOTPVerification(EmailOTPStatus.INCORRECT)
 
         if purpose == EmailOTPChallenge.Purpose.SIGNUP:
             if pending_signup:
                 if CustomUser.objects.filter(email__iexact=email).exists():
-                    return None
+                    return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
                 user = CustomUser(
                     email=pending_signup.email,
                     username=pending_signup.username,
@@ -231,27 +264,34 @@ def verify_email_otp(email, code, purpose):
                             phone=pending_signup.phone,
                             is_phone_verified=False,
                         )
-                except IntegrityError:
-                    return None
+                except IntegrityError as exc:
+                    logger.error(
+                        "Signup account creation failed during email OTP verification "
+                        "(exception_type=%s)",
+                        type(exc).__name__,
+                    )
+                    return EmailOTPVerification(
+                        EmailOTPStatus.ACCOUNT_CREATION_FAILED
+                    )
                 pending_signup.delete()
                 challenge.user = user
                 challenge.consumed_at = now
                 challenge.save(update_fields=["user", "consumed_at"])
-                return user
+                return EmailOTPVerification(EmailOTPStatus.SUCCESS, user)
 
             if (
                 user.account_status != CustomUser.AccountStatus.PENDING_VERIFICATION
                 or user.is_active
                 or user.is_email_verified
             ):
-                return None
+                return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
             challenge.consumed_at = now
             challenge.save(update_fields=["consumed_at"])
             user.is_email_verified = True
             user.is_active = True
             user.account_status = CustomUser.AccountStatus.ACTIVE
             user.save(update_fields=["is_email_verified", "is_active", "account_status", "updated_at"])
-            return user
+            return EmailOTPVerification(EmailOTPStatus.SUCCESS, user)
 
         challenge.consumed_at = now
         challenge.save(update_fields=["consumed_at"])
@@ -259,9 +299,9 @@ def verify_email_otp(email, code, purpose):
             user.account_status != CustomUser.AccountStatus.ACTIVE
             or not user.is_active
         ):
-            return None
+            return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
 
         if not user.has_usable_password():
-            return None
+            return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
 
-        return user
+        return EmailOTPVerification(EmailOTPStatus.SUCCESS, user)

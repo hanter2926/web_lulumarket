@@ -45,6 +45,7 @@
 
             <form method="post" action="{% url 'accounts:request_otp' %}">
                 {% csrf_token %}
+                <input type="hidden" name="phone" value="{{ phone }}">
                 <button class="otp-resend" id="resend-otp" type="submit" data-seconds="{{ resend_available_in|default:0 }}">Resend OTP<span id="resend-countdown"></span></button>
             </form>
         {% else %}

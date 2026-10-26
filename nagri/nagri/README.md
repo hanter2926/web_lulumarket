@@ -42,7 +42,7 @@ https://web-lulumarket.onrender.com
 
 ## Email and Phone Verification
 
-New accounts must verify their email address before finishing signup. The email code expires after five minutes, and email and phone code requests are rate-limited. Phone verification remains available separately.
+New accounts must verify their email address before finishing signup. Email OTPs expire after 10 minutes, can be resent every 30 seconds, and are limited to 30 requests per email and purpose per hour. Verification is locked after five incorrect attempts. Phone verification remains available separately.
 
 Email verification codes are sent during new-account registration, not during password login. Users sign in with their email address and password; email OTP remains available for password recovery.
 

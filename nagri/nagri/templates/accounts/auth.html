@@ -30,6 +30,12 @@
                     <a href="{% url 'accounts:password_reset_otp' %}" style="font-size:0.95rem; color:#2563eb;">Reset with Email OTP</a>
                 </div>
             </div>
+            <div style="margin-bottom: 14px;">
+                <label for="login_remember">
+                    <input id="login_remember" name="remember" type="checkbox">
+                    Remember me
+                </label>
+            </div>
             <button type="submit" style="width: 100%; padding: 11px; background: #111827; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Login</button>
         </form>
         <div class="auth-mobile-switcher" aria-label="Account options">
@@ -48,6 +54,7 @@
         {% endif %}
         <form method="post" action="{% url 'accounts:signup_form' %}">
             {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
             <div style="margin-bottom: 14px;">
                 <label for="full_name">Full Name</label><br>
                 <input id="full_name" name="full_name" type="text" value="{{ form.full_name.value|default:'' }}" required style="width: 100%; padding: 10px; margin-top: 6px;">
