@@ -11,6 +11,7 @@ from django.db import IntegrityError, transaction
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+from nagri import views as site_views
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, renderer_classes
 from rest_framework.response import Response
@@ -1459,19 +1460,31 @@ def signup_email_verify(request):
     error = ""
     if request.method == "POST":
         if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
-            user = verify_email_otp(
-                email,
-                form.cleaned_data["code"],
-                EmailOTPChallenge.Purpose.SIGNUP,
-            )
-            if user:
-                request.session.pop("signup_email_verification_email", None)
-                request.session.pop("signup_email_verification_notice", None)
-                request.session["contact_verification_user_id"] = user.pk
-                response = _finish_contact_verification(request, user)
-                if response:
-                    return response
-                return redirect("accounts:email_login")
+            try:
+                user = verify_email_otp(
+                    email,
+                    form.cleaned_data["code"],
+                    EmailOTPChallenge.Purpose.SIGNUP,
+                )
+                if user:
+                    request.session.pop("signup_email_verification_email", None)
+                    request.session.pop("signup_email_verification_notice", None)
+                    request.session["contact_verification_user_id"] = user.pk
+                    response = _finish_contact_verification(request, user)
+                    if response:
+                        return response
+                    return redirect("accounts:email_login")
+            except Exception as exc:
+                logger.exception(
+                    "Signup email verification request failed (exception_type=%s)",
+                    type(exc).__name__,
+                    exc_info=(
+                        Exception,
+                        Exception(type(exc).__name__),
+                        exc.__traceback__,
+                    ),
+                )
+                return site_views.server_error(request)
         error = "That code is invalid or expired. Request a new code and try again."
 
     return render(

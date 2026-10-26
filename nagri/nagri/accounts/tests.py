@@ -1780,6 +1780,42 @@ class SignupFlowTests(TestCase):
             PendingSignup.objects.filter(email=self.signup_data["email"]).exists()
         )
 
+    @patch(
+        "accounts.email_otp.EmailOTPChallenge.objects.select_for_update",
+        side_effect=OperationalError(
+            "Database detail: private@example.com OTP 123456 password secret"
+        ),
+    )
+    def test_signup_verification_database_failure_is_logged_without_sensitive_data(
+        self,
+        select_for_update,
+    ):
+        email = "private@example.com"
+        code = "123456"
+        self.client.raise_request_exception = False
+        session = self.client.session
+        session["signup_email_verification_email"] = email
+        session.save()
+
+        with self.assertLogs("accounts.views", level="ERROR") as captured:
+            response = self.client.post(
+                reverse("accounts:signup_email_verify"),
+                {"email": email, "code": code},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        select_for_update.assert_called_once()
+        output = "\n".join(captured.output)
+        self.assertIn("Signup email verification request failed", output)
+        self.assertIn("OperationalError", output)
+        self.assertNotIn(email, output)
+        self.assertNotIn(code, output)
+        self.assertNotIn("password secret", output)
+        self.assertTrue(
+            self.client.session.get("signup_email_verification_email")
+        )
+        self.assertFalse(CustomUser.objects.filter(email=email).exists())
+
     def test_signup_can_resend_email_verification_code(self):
         self.client.post(reverse("accounts:signup_form"), self.signup_data)
         self.assertEqual(len(mail.outbox), 1)
