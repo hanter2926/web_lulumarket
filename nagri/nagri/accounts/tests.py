@@ -1806,6 +1806,47 @@ class SignupFlowTests(TestCase):
         create_profile.assert_called_once()
         send_otp.assert_not_called()
 
+    @patch(
+        "accounts.views.auth_login",
+        side_effect=RuntimeError("sensitive session detail"),
+    )
+    def test_signup_session_failure_is_logged_after_account_creation(
+        self,
+        auth_login,
+    ):
+        self.client.raise_request_exception = False
+        self.client.post(reverse("accounts:signup_form"), self.signup_data)
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+
+        with self.assertLogs("accounts.views", level="ERROR") as captured:
+            response = self.client.post(
+                reverse("accounts:signup_email_verify"),
+                {"email": self.signup_data["email"], "code": code},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertTrue(
+            CustomUser.objects.filter(email=self.signup_data["email"]).exists()
+        )
+        user = CustomUser.objects.get(email=self.signup_data["email"])
+        self.assertTrue(UserProfile.objects.filter(user=user).exists())
+        self.assertFalse(
+            PendingSignup.objects.filter(email=self.signup_data["email"]).exists()
+        )
+        challenge = EmailOTPChallenge.objects.get(
+            purpose=EmailOTPChallenge.Purpose.SIGNUP,
+            user=user,
+        )
+        self.assertIsNotNone(challenge.consumed_at)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        log_output = "\n".join(captured.output)
+        self.assertIn("stage=auth_login", log_output)
+        self.assertIn("exception_type=RuntimeError", log_output)
+        self.assertNotIn(self.signup_data["email"], log_output)
+        self.assertNotIn(code, log_output)
+        self.assertNotIn("sensitive session detail", log_output)
+        auth_login.assert_called_once()
+
     @patch("accounts.views.send_otp_to_phone")
     @patch("accounts.email_otp.secrets.randbelow", side_effect=[1, 2])
     def test_replaced_signup_code_prompts_for_latest_code(

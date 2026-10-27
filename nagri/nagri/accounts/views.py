@@ -1452,22 +1452,37 @@ def _finish_contact_verification(request, user):
     if not user.is_email_verified:
         return None
 
-    next_url = _safe_contact_verification_next(request)
-    remember = request.session.pop("contact_verification_remember", False)
-    request.session.pop("contact_verification_user_id", None)
-    request.session.pop("contact_verification_next", None)
-    auth_login(request, user, backend=settings.AUTHENTICATION_BACKENDS[0])
-    request.session.set_expiry(
-        settings.SESSION_COOKIE_AGE if remember else 0
-    )
+    stage = "session_preparation"
+    try:
+        next_url = _safe_contact_verification_next(request)
+        remember = request.session.pop("contact_verification_remember", False)
+        request.session.pop("contact_verification_user_id", None)
+        request.session.pop("contact_verification_next", None)
 
-    if next_url:
-        return redirect(next_url)
-    if user.is_owner:
-        return redirect("sellers:owner_dashboard")
-    if user.is_vendor:
-        return redirect("sellers:dashboard")
-    return redirect("accounts:dashboard_page")
+        stage = "auth_login"
+        auth_login(request, user, backend=settings.AUTHENTICATION_BACKENDS[0])
+
+        stage = "session_expiry"
+        request.session.set_expiry(
+            settings.SESSION_COOKIE_AGE if remember else 0
+        )
+
+        stage = "redirect"
+        if next_url:
+            return redirect(next_url)
+        if user.is_owner:
+            return redirect("sellers:owner_dashboard")
+        if user.is_vendor:
+            return redirect("sellers:dashboard")
+        return redirect("accounts:dashboard_page")
+    except Exception as exc:
+        logger.error(
+            "Contact verification completion failed "
+            "(stage=%s, exception_type=%s)",
+            stage,
+            type(exc).__name__,
+        )
+        raise
 
 
 @require_http_methods(["GET", "POST"])
