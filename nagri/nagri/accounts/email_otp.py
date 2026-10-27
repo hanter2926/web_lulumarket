@@ -223,7 +223,6 @@ def verify_email_otp(email, code, purpose):
         with transaction.atomic():
             challenge = (
                 EmailOTPChallenge.objects.select_for_update()
-                .select_related("user")
                 .filter(email_digest=digest, purpose=purpose)
                 .order_by("-created_at", "-pk")
                 .first()
@@ -241,9 +240,9 @@ def verify_email_otp(email, code, purpose):
                 )
                 return EmailOTPVerification(status)
 
-            user = challenge.user
+            user = None
             pending_signup = None
-            if purpose == EmailOTPChallenge.Purpose.SIGNUP and not user:
+            if purpose == EmailOTPChallenge.Purpose.SIGNUP and not challenge.user_id:
                 stage = "pending_signup_lookup"
                 pending_signup = (
                     PendingSignup.objects.select_for_update()
@@ -256,8 +255,17 @@ def verify_email_otp(email, code, purpose):
                     != email.strip().casefold()
                 ):
                     return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
-            elif not user or user.email.strip().casefold() != email.strip().casefold():
-                return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+            else:
+                user = (
+                    CustomUser.objects.select_for_update()
+                    .filter(pk=challenge.user_id)
+                    .first()
+                )
+                if (
+                    not user
+                    or user.email.strip().casefold() != email.strip().casefold()
+                ):
+                    return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
 
             stage = "challenge_validation"
             if challenge.expires_at <= now:
