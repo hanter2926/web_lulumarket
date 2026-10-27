@@ -47,7 +47,13 @@ from .models import (
     PendingSignup,
     UserProfile,
 )
-from .utils import generate_otp, normalize_phone_number
+from .utils import (
+    generate_otp,
+    normalize_phone_number,
+    send_otp_to_phone,
+    send_otp_via_fast2sms,
+    send_otp_via_twilio,
+)
 from .utils import send_otp_via_console
 
 
@@ -97,6 +103,102 @@ class AccountTests(TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertNotIn(code, "\n".join(captured.output))
+
+    @override_settings(
+        TWILIO_ACCOUNT_SID="ACtest",
+        TWILIO_AUTH_TOKEN="test-auth-token",
+        TWILIO_PHONE_NUMBER="+15005550006",
+    )
+    @patch(
+        "accounts.utils.requests.post",
+        return_value=Mock(
+            status_code=201,
+            json=lambda: {"sid": "SMtest"},
+        ),
+    )
+    def test_twilio_sends_sms_using_configured_credentials(self, post):
+        result = send_otp_via_twilio("+919876543210", "123456")
+
+        self.assertEqual(result["provider"], "twilio")
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(result["sid"], "SMtest")
+        post.assert_called_once_with(
+            "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages.json",
+            auth=("ACtest", "test-auth-token"),
+            data={
+                "Body": (
+                    "Your NAGRI verification code is 123456. "
+                    "It expires in 5 minutes."
+                ),
+                "From": "+15005550006",
+                "To": "+919876543210",
+            },
+            timeout=(5, 20),
+        )
+
+    @override_settings(
+        SMS_PROVIDER="",
+        TWILIO_ACCOUNT_SID="ACtest",
+        TWILIO_AUTH_TOKEN="test-auth-token",
+        TWILIO_PHONE_NUMBER="+15005550006",
+    )
+    @patch.dict(
+        os.environ,
+        {
+            "SMS_PROVIDER": "",
+            "TWILIO_ACCOUNT_SID": "",
+            "TWILIO_AUTH_TOKEN": "",
+            "TWILIO_PHONE_NUMBER": "",
+            "FAST2SMS_API_KEY": "",
+        },
+    )
+    @patch(
+        "accounts.utils.requests.post",
+        return_value=Mock(status_code=201, json=lambda: {"sid": "SMtest"}),
+    )
+    def test_sms_provider_uses_twilio_when_credentials_are_configured(
+        self, post
+    ):
+        result = send_otp_to_phone("+919876543210", "123456")
+
+        self.assertEqual(result["provider"], "twilio")
+        post.assert_called_once()
+
+    @override_settings(
+        FAST2SMS_API_KEY="test-fast2sms-key",
+        FAST2SMS_SENDER_ID="NAGRI",
+    )
+    @patch(
+        "accounts.utils.requests.post",
+        return_value=Mock(
+            status_code=200,
+            json=lambda: {"return": True, "request_id": "test-request"},
+        ),
+    )
+    def test_fast2sms_sends_indian_phone_as_ten_digits(self, post):
+        result = send_otp_via_fast2sms("+919876543210", "123456")
+
+        self.assertEqual(result["provider"], "fast2sms")
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(result["request_id"], "test-request")
+        request_data = post.call_args.kwargs["data"]
+        self.assertEqual(request_data["numbers"], "9876543210")
+        self.assertEqual(request_data["sender_id"], "NAGRI")
+        self.assertNotIn("test-fast2sms-key", str(result))
+
+    @override_settings(FAST2SMS_API_KEY="test-fast2sms-key")
+    @patch(
+        "accounts.utils.requests.post",
+        return_value=Mock(
+            status_code=200,
+            json=lambda: {"return": False, "message": ["SMS rejected"]},
+        ),
+    )
+    def test_fast2sms_rejection_is_not_reported_as_delivery(self, post):
+        with self.assertRaisesRegex(RuntimeError, "did not confirm"):
+            send_otp_via_fast2sms("+919876543210", "123456")
+
+        post.assert_called_once()
 
     def test_profile_supports_phone_otp_verification(self):
         user = CustomUser.objects.create_user(
@@ -1367,6 +1469,113 @@ class AccountSecurityTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("accounts:dashboard_page"), response.url)
         self.assertTrue(response.wsgi_request.user.is_authenticated)
+
+    def test_login_page_exposes_phone_otp_and_preserves_safe_next(self):
+        response = self.client.get(
+            reverse("accounts:email_login"),
+            {"next": "/cart/"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f'href="{reverse("accounts:otp_login_page")}?next=/cart/"',
+            html=False,
+        )
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_phone_otp_login_preserves_safe_next_and_remember(self, send_otp):
+        user = CustomUser.objects.create_user(
+            email="phone-otp-login@example.com",
+            username="phone-otp-login",
+            password="StrongPass123",
+            phone="+919876543219",
+            is_active=True,
+            is_email_verified=True,
+        )
+        profile = UserProfile.objects.create(
+            user=user,
+            phone=user.phone,
+            is_phone_verified=True,
+        )
+
+        response = self.client.post(
+            reverse("accounts:request_otp"),
+            urlencode(
+                {
+                    "phone": user.phone,
+                    "next": "/cart/",
+                    "remember": "on",
+                }
+            ),
+            content_type="application/x-www-form-urlencoded",
+            HTTP_ACCEPT="text/html",
+        )
+
+        self.assertRedirects(response, reverse("accounts:otp_login_page"))
+        send_otp.assert_called_once()
+        self.assertEqual(self.client.session["otp_login_next"], "/cart/")
+        self.assertTrue(self.client.session["otp_login_remember"])
+        profile.refresh_from_db()
+        code = profile.otp
+        self.assertTrue(code)
+
+        response = self.client.post(
+            reverse("accounts:verify_otp"),
+            urlencode({"otp": code}),
+            content_type="application/x-www-form-urlencoded",
+            HTTP_ACCEPT="text/html",
+        )
+
+        self.assertRedirects(response, "/cart/", fetch_redirect_response=False)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertEqual(response.wsgi_request.user, user)
+        self.assertFalse(self.client.session.get_expire_at_browser_close())
+        self.assertNotIn("otp_login_next", self.client.session)
+        self.assertNotIn("otp_login_remember", self.client.session)
+
+    @patch("accounts.views.send_otp_to_phone", return_value={"status": "sent"})
+    def test_phone_otp_cooldown_keeps_existing_code_entry_screen(self, send_otp):
+        user = CustomUser.objects.create_user(
+            email="phone-otp-resend@example.com",
+            username="phone-otp-resend",
+            password="StrongPass123",
+            phone="+919876543218",
+            is_active=True,
+            is_email_verified=True,
+        )
+        UserProfile.objects.create(
+            user=user,
+            phone=user.phone,
+            is_phone_verified=True,
+        )
+        request_payload = urlencode(
+            {
+                "phone": user.phone,
+                "next": "/cart/",
+            }
+        )
+
+        first_response = self.client.post(
+            reverse("accounts:request_otp"),
+            request_payload,
+            content_type="application/x-www-form-urlencoded",
+            HTTP_ACCEPT="text/html",
+        )
+        self.assertRedirects(first_response, reverse("accounts:otp_login_page"))
+
+        second_response = self.client.post(
+            reverse("accounts:request_otp"),
+            request_payload,
+            content_type="application/x-www-form-urlencoded",
+            HTTP_ACCEPT="text/html",
+        )
+
+        self.assertEqual(second_response.status_code, 429)
+        self.assertContains(second_response, 'id="otp"', status_code=429)
+        self.assertNotContains(second_response, 'id="phone"', status_code=429)
+        self.assertContains(second_response, "Please wait", status_code=429)
+        send_otp.assert_called_once()
 
     def test_login_preserves_leading_and_trailing_password_spaces(self):
         password = "  ValidPassword123!  "

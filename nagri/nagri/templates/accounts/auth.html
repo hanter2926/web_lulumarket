@@ -43,6 +43,9 @@
             </div>
             <button type="submit" style="width: 100%; padding: 11px; background: #111827; color: #fff; border: none; border-radius: 8px; cursor: pointer;">Login</button>
         </form>
+        <p style="margin-top: 14px; text-align: center;">
+            <a href="{% url 'accounts:otp_login_page' %}?next={{ next|urlencode }}">Login with Phone OTP</a>
+        </p>
         <div class="auth-mobile-switcher" aria-label="Account options">
             <span>New to NAGRI?</span>
             <button type="button" data-auth-switch="signup">Create an account</button>

@@ -66,8 +66,8 @@ from .email_otp import (
 )
 from urllib.parse import urlparse
 
-PHONE_CHANGE_OTP_MAX_ATTEMPTS = 10
-PHONE_OTP_MAX_ATTEMPTS = 10
+PHONE_CHANGE_OTP_MAX_ATTEMPTS = 5
+PHONE_OTP_MAX_ATTEMPTS = 5
 
 
 
@@ -936,6 +936,26 @@ def _is_browser_form_request(request):
     )
 
 
+def _render_phone_otp_page(request, context, status_code=200):
+    context.setdefault(
+        "next",
+        _safe_next_url(
+            request,
+            request.session.get("otp_login_next")
+            or request.POST.get("next")
+            or request.GET.get("next", ""),
+        ),
+    )
+    context.setdefault(
+        "remember",
+        request.session.get(
+            "otp_login_remember",
+            bool(request.POST.get("remember")),
+        ),
+    )
+    return render(request, "accounts/otp_login.html", context, status=status_code)
+
+
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 @renderer_classes([JSONRenderer, BrowsableAPIRenderer])
@@ -943,21 +963,48 @@ def request_otp(request):
     browser_request = _is_browser_form_request(request)
     payload = getattr(request, "data", request.POST)
     raw_phone = (payload.get("phone") or "").strip()
+    safe_next_url = _safe_next_url(
+        request,
+        payload.get("next") or request.GET.get("next", ""),
+    )
+    remember = bool(payload.get("remember"))
     phone = normalize_phone_number(raw_phone)
 
     if not raw_phone:
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"error": "Phone number is required."}, status=400)
+            return _render_phone_otp_page(
+                request,
+                {"error": "Phone number is required.", "next": safe_next_url},
+                status_code=400,
+            )
         return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
     if not phone:
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": raw_phone, "error": "Enter a valid phone number."}, status=400)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": raw_phone,
+                    "error": "Enter a valid phone number.",
+                    "next": safe_next_url,
+                    "remember": remember,
+                },
+                status_code=400,
+            )
         return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
 
     user = find_user_by_phone(phone)
     if not user:
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "No account found with this phone number. Please register first."}, status=404)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "error": "No account found with this phone number. Please register first.",
+                    "next": safe_next_url,
+                    "remember": remember,
+                },
+                status_code=404,
+            )
         return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
@@ -966,11 +1013,29 @@ def request_otp(request):
         or not user.is_active
     ):
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "Your account is inactive. Please contact support."}, status=403)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "error": "Your account is inactive. Please contact support.",
+                    "next": safe_next_url,
+                    "remember": remember,
+                },
+                status_code=403,
+            )
         return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
     if profile.pending_phone:
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "Complete or cancel the pending phone change before requesting a login OTP."}, status=409)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "error": "Complete or cancel the pending phone change before requesting a login OTP.",
+                    "next": safe_next_url,
+                    "remember": remember,
+                },
+                status_code=409,
+            )
         return Response(
             {"detail": "Complete or cancel the pending phone change before requesting a login OTP."},
             status=status.HTTP_409_CONFLICT,
@@ -983,11 +1048,34 @@ def request_otp(request):
     )
     if response_status != status.HTTP_200_OK:
         if browser_request:
-            return render(
+            otp_sent = (
+                request.session.get("otp_phone") == phone
+                and bool(profile.otp)
+                and bool(
+                    profile.otp_expires_at
+                    and timezone.now() < profile.otp_expires_at
+                )
+            )
+            resend_available_in = 0
+            if otp_sent and profile.last_otp_sent_at:
+                elapsed = int(
+                    (timezone.now() - profile.last_otp_sent_at).total_seconds()
+                )
+                resend_available_in = max(
+                    0,
+                    OTP_RESEND_COOLDOWN_SECONDS - elapsed,
+                )
+            return _render_phone_otp_page(
                 request,
-                "accounts/otp_login.html",
-                {"phone": phone, "otp_sent": False, "error": detail},
-                status=response_status,
+                {
+                    "phone": phone,
+                    "otp_sent": otp_sent,
+                    "error": detail,
+                    "next": safe_next_url,
+                    "remember": remember,
+                    "resend_available_in": resend_available_in,
+                },
+                status_code=response_status,
             )
         return Response({"detail": detail}, status=response_status)
 
@@ -996,6 +1084,11 @@ def request_otp(request):
 
     if browser_request:
         request.session["otp_phone"] = phone
+        if safe_next_url:
+            request.session["otp_login_next"] = safe_next_url
+        else:
+            request.session.pop("otp_login_next", None)
+        request.session["otp_login_remember"] = remember
         return redirect("accounts:otp_login_page")
     return Response({"detail": "OTP sent successfully.", "phone": phone})
 
@@ -1279,21 +1372,44 @@ def verify_otp(request):
 
     if not raw_phone:
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"error": "Phone number is required."}, status=400)
+            return _render_phone_otp_page(
+                request,
+                {"error": "Phone number is required."},
+                status_code=400,
+            )
         return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
     if not phone:
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": raw_phone, "error": "Enter a valid phone number."}, status=400)
+            return _render_phone_otp_page(
+                request,
+                {"phone": raw_phone, "error": "Enter a valid phone number."},
+                status_code=400,
+            )
         return Response({"detail": "Enter a valid phone number."}, status=status.HTTP_400_BAD_REQUEST)
     if not otp:
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "Enter the 6-digit OTP sent to your phone."}, status=400)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "otp_sent": True,
+                    "error": "Enter the 6-digit OTP sent to your phone.",
+                },
+                status_code=400,
+            )
         return Response({"detail": "Phone number and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
 
     user = find_user_by_phone(phone)
     if not user:
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "error": "No account found with this phone number. Please register first."}, status=404)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "error": "No account found with this phone number. Please register first.",
+                },
+                status_code=404,
+            )
         return Response({"detail": "No account found with this phone number. Please register first."}, status=status.HTTP_404_NOT_FOUND)
 
     user, profile, otp_error = _consume_phone_otp(
@@ -1301,26 +1417,66 @@ def verify_otp(request):
     )
     if otp_error == "inactive":
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "Your account is inactive. Please contact support."}, status=403)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "otp_sent": True,
+                    "error": "Your account is inactive. Please contact support.",
+                },
+                status_code=403,
+            )
         return Response({"detail": "Your account is inactive. Please contact support."}, status=status.HTTP_403_FORBIDDEN)
     if otp_error == "locked":
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "Too many incorrect codes. Request a new OTP."}, status=429)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "otp_sent": True,
+                    "error": "Too many incorrect codes. Request a new OTP.",
+                },
+                status_code=429,
+            )
         return Response({"detail": "Too many incorrect codes. Request a new OTP."}, status=status.HTTP_429_TOO_MANY_REQUESTS)
     if otp_error == "invalid":
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "That OTP is incorrect. Please check the code and try again."}, status=400)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "otp_sent": True,
+                    "error": "That OTP is incorrect. Please check the code and try again.",
+                },
+                status_code=400,
+            )
         return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
     if otp_error == "expired":
         if browser_request:
-            return render(request, "accounts/otp_login.html", {"phone": phone, "otp_sent": True, "error": "This OTP has expired. Please request a new one."}, status=400)
+            return _render_phone_otp_page(
+                request,
+                {
+                    "phone": phone,
+                    "otp_sent": True,
+                    "error": "This OTP has expired. Please request a new one.",
+                },
+                status_code=400,
+            )
         return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
 
     if browser_request:
         request.session.pop("otp_phone", None)
-        auth_login(request, user)
-        return redirect("accounts:dashboard_page")
-    auth_login(request, user)
+        next_url = _safe_next_url(
+            request,
+            request.session.pop("otp_login_next", ""),
+        )
+        remember = request.session.pop("otp_login_remember", False)
+        auth_login(request, user, backend=settings.AUTHENTICATION_BACKENDS[0])
+        request.session.set_expiry(
+            settings.SESSION_COOKIE_AGE if remember else 0
+        )
+        return _post_login_redirect(user, next_url)
+    auth_login(request, user, backend=settings.AUTHENTICATION_BACKENDS[0])
     refresh = RefreshToken.for_user(user)
     return Response({
         "detail": "Phone number verified successfully.",
@@ -1396,15 +1552,7 @@ def email_login_view(request):
         else:
             request.session.set_expiry(0)
 
-        if safe_next_url:
-            return redirect(safe_next_url)
-
-        # Redirect users by role: owner -> owner dashboard, vendor -> seller dashboard, else customer dashboard
-        if getattr(authenticated_user, "is_owner", False):
-            return redirect("sellers:owner_dashboard")
-        if getattr(authenticated_user, "is_vendor", False):
-            return redirect("sellers:dashboard")
-        return redirect("accounts:dashboard_page")
+        return _post_login_redirect(authenticated_user, safe_next_url)
 
     return render(
         request,
@@ -1424,6 +1572,16 @@ def _safe_next_url(request, next_url):
     ):
         return next_url
     return ""
+
+
+def _post_login_redirect(user, safe_next_url=""):
+    if safe_next_url:
+        return redirect(safe_next_url)
+    if getattr(user, "is_owner", False):
+        return redirect("sellers:owner_dashboard")
+    if getattr(user, "is_vendor", False):
+        return redirect("sellers:dashboard")
+    return redirect("accounts:dashboard_page")
 
 
 def _email_otp_verification_error(verification_status):
@@ -1704,6 +1862,12 @@ def otp_login_page(request):
         "phone": phone,
         "otp_sent": bool(phone),
         "resend_available_in": resend_available_in,
+        "next": _safe_next_url(
+            request,
+            request.session.get("otp_login_next")
+            or request.GET.get("next", ""),
+        ),
+        "remember": request.session.get("otp_login_remember", False),
     })
 
 
@@ -1777,7 +1941,7 @@ def _email_otp_request(request, purpose, verify_url_name, template_name):
             request.session["email_otp_notice"] = (
                 "Please wait before requesting another code."
                 if result == "throttled"
-                else "If an eligible account exists, a verification code will be sent."
+                else "If an account matches the information provided, we’ll send a verification code."
             )
 
         request.session["email_otp_email"] = email

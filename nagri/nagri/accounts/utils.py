@@ -3,6 +3,9 @@ import re
 import secrets
 import logging
 
+import requests
+from django.conf import settings
+
 OTP_TTL_MINUTES = 5
 # Use 60 seconds cooldown for normal user OTP resend to match requirements
 OTP_RESEND_COOLDOWN_SECONDS = 60
@@ -72,63 +75,125 @@ def send_otp_via_console(phone_number, otp):
 
 
 def send_otp_via_twilio(phone_number, otp, account_sid=None, auth_token=None, from_number=None):
-    account_sid = account_sid or os.environ.get("TWILIO_ACCOUNT_SID")
-    auth_token = auth_token or os.environ.get("TWILIO_AUTH_TOKEN")
-    from_number = from_number or os.environ.get("TWILIO_PHONE_NUMBER")
+    account_sid = (
+        account_sid
+        or getattr(settings, "TWILIO_ACCOUNT_SID", "")
+        or os.environ.get("TWILIO_ACCOUNT_SID")
+    )
+    auth_token = (
+        auth_token
+        or getattr(settings, "TWILIO_AUTH_TOKEN", "")
+        or os.environ.get("TWILIO_AUTH_TOKEN")
+    )
+    from_number = (
+        from_number
+        or getattr(settings, "TWILIO_PHONE_NUMBER", "")
+        or os.environ.get("TWILIO_PHONE_NUMBER")
+    )
 
     if not account_sid or not auth_token or not from_number:
         raise ValueError("Twilio SMS configuration is incomplete. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER.")
 
     try:
-        from twilio.rest import Client
-    except ImportError:
-        raise RuntimeError("Twilio dependency is not installed. Install 'twilio' to use the Twilio provider.")
-
-    client = Client(account_sid, auth_token)
-    try:
-        message = client.messages.create(
-            body=f"Your Nagri OTP is {otp}",
-            from_=from_number,
-            to=phone_number,
+        response = requests.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json",
+            auth=(account_sid, auth_token),
+            data={
+                "Body": f"Your NAGRI verification code is {otp}. It expires in 5 minutes.",
+                "From": from_number,
+                "To": phone_number,
+            },
+            timeout=(5, 20),
         )
+        response.raise_for_status()
     except Exception as exc:
-        logger.error("Phone OTP delivery failed: error_type=%s", type(exc).__name__)
+        logger.error(
+            "Twilio SMS delivery failed: error_type=%s status_code=%s",
+            type(exc).__name__,
+            getattr(getattr(exc, "response", None), "status_code", None),
+        )
         raise
 
-    return {"provider": "twilio", "status": "sent", "sid": getattr(message, "sid", None), "phone_number": phone_number}
+    response_data = response.json()
+    return {
+        "provider": "twilio",
+        "status": "sent",
+        "sid": response_data.get("sid"),
+        "phone_number": phone_number,
+    }
 
 
 def send_otp_via_fast2sms(phone_number, otp, api_key=None):
-    api_key = api_key or os.environ.get("FAST2SMS_API_KEY")
+    api_key = (
+        api_key
+        or getattr(settings, "FAST2SMS_API_KEY", "")
+        or os.environ.get("FAST2SMS_API_KEY")
+    )
     if not api_key:
         raise ValueError("Fast2SMS API key is missing. Set FAST2SMS_API_KEY.")
 
-    try:
-        import requests
-    except ImportError:
-        raise RuntimeError("Requests dependency is not installed. Install 'requests' to use Fast2SMS.")
-
     payload = {
-        "sender_id": os.environ.get("FAST2SMS_SENDER_ID", "FSTSMS"),
-        "message": f"Your Nagri OTP is {otp}",
+        "sender_id": (
+            getattr(settings, "FAST2SMS_SENDER_ID", "")
+            or os.environ.get("FAST2SMS_SENDER_ID", "FSTSMS")
+        ),
+        "message": f"Your NAGRI verification code is {otp}. It expires in 5 minutes.",
         "language": "english",
         "route": "v3",
-        "numbers": phone_number,
+        "numbers": re.sub(r"\D", "", phone_number)[-10:],
         "flash": 0,
         "apikey": api_key,
     }
 
-    response = requests.post("https://www.fast2sms.com/dev/bulkV2", data=payload, timeout=20)
+    response = requests.post(
+        "https://www.fast2sms.com/dev/bulkV2",
+        data=payload,
+        timeout=(5, 20),
+    )
     response.raise_for_status()
-    return {"provider": "fast2sms", "status": "sent", "response": response.json(), "phone_number": phone_number}
+    response_data = response.json()
+    if response_data.get("return") is not True:
+        raise RuntimeError("Fast2SMS did not confirm SMS delivery.")
+    return {
+        "provider": "fast2sms",
+        "status": "sent",
+        "request_id": response_data.get("request_id"),
+        "phone_number": phone_number,
+    }
 
 
 def send_otp_to_phone(phone_number, otp, provider=None):
-    provider_name = (provider or os.environ.get("SMS_PROVIDER", "console")).lower()
+    provider_name = (
+        provider
+        or getattr(settings, "SMS_PROVIDER", "")
+        or os.environ.get("SMS_PROVIDER", "")
+    ).strip().lower()
+    if not provider_name:
+        twilio_is_configured = all(
+            (
+                getattr(settings, "TWILIO_ACCOUNT_SID", "")
+                or os.environ.get("TWILIO_ACCOUNT_SID"),
+                getattr(settings, "TWILIO_AUTH_TOKEN", "")
+                or os.environ.get("TWILIO_AUTH_TOKEN"),
+                getattr(settings, "TWILIO_PHONE_NUMBER", "")
+                or os.environ.get("TWILIO_PHONE_NUMBER"),
+            )
+        )
+        fast2sms_is_configured = (
+            getattr(settings, "FAST2SMS_API_KEY", "")
+            or os.environ.get("FAST2SMS_API_KEY")
+        )
+        provider_name = (
+            "twilio"
+            if twilio_is_configured
+            else "fast2sms" if fast2sms_is_configured else "console"
+        )
 
     if provider_name == "twilio":
         return send_otp_via_twilio(phone_number, otp)
     if provider_name == "fast2sms":
         return send_otp_via_fast2sms(phone_number, otp)
+    if provider_name == "console":
+        return send_otp_via_console(phone_number, otp)
 
-    return send_otp_via_console(phone_number, otp)
+    raise ValueError(f"Unsupported SMS provider: {provider_name}")

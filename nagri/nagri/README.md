@@ -62,7 +62,7 @@ Brevo API requests use a 5-second connect timeout and 30-second response timeout
 
 Remove any `EMAIL_PROVIDER=resend` or `EMAIL_BACKEND` override from Render so production uses the Brevo HTTPS API configured by Django.
 
-Phone verification uses the configured SMS provider. To enable production delivery with Fast2SMS, set:
+Phone verification uses the configured SMS provider. If `SMS_PROVIDER` is unset, the app selects Twilio when its three credentials are configured, otherwise Fast2SMS when its API key is configured; without either provider it uses the non-delivering `console` backend. For production, explicitly set one provider. To use Fast2SMS, set:
 
 ```text
 SMS_PROVIDER=fast2sms
@@ -70,7 +70,7 @@ FAST2SMS_API_KEY=<your Fast2SMS API key>
 FAST2SMS_SENDER_ID=FSTSMS
 ```
 
-The sender ID is optional if you want to use the provider default. Twilio is also supported by the OTP utility; configure `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER`, and install the `twilio` package in the deployment environment. The default `console` SMS provider intentionally does not deliver or log OTPs, so set up a real SMS provider before enabling phone verification for production users. Keep all provider credentials in environment variables; do not commit them.
+The sender ID is optional if you want to use the provider default. Twilio is supported through its HTTPS API and the existing `requests` dependency; configure `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER`. The default `console` SMS provider intentionally does not deliver or log OTPs, so set up a real SMS provider before enabling phone verification for production users. Keep all provider credentials in environment variables; do not commit them.
 
 To send a live test from an environment configured for Brevo:
 

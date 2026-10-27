@@ -38,6 +38,7 @@
 
             <form method="post" action="{% url 'accounts:verify_otp' %}">
                 {% csrf_token %}
+                <input type="hidden" name="next" value="{{ next }}">
                 <label class="otp-label" for="otp">Enter your 6-digit OTP</label>
                 <input class="otp-input" type="text" id="otp" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus>
                 <button class="otp-button" type="submit">Verify OTP</button>
@@ -46,18 +47,27 @@
             <form method="post" action="{% url 'accounts:request_otp' %}">
                 {% csrf_token %}
                 <input type="hidden" name="phone" value="{{ phone }}">
+                <input type="hidden" name="next" value="{{ next }}">
+                {% if remember %}<input type="hidden" name="remember" value="on">{% endif %}
                 <button class="otp-resend" id="resend-otp" type="submit" data-seconds="{{ resend_available_in|default:0 }}">Resend OTP<span id="resend-countdown"></span></button>
             </form>
+            <p><a href="{% url 'accounts:email_login' %}?next={{ next|urlencode }}">Use email and password</a></p>
         {% else %}
             <div class="otp-start">
                 <h1 id="otp-title">Login with Phone OTP</h1>
                 {% if error %}<div class="otp-alert" role="alert">{{ error }}</div>{% endif %}
                 <form method="post" action="{% url 'accounts:request_otp' %}">
                     {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next }}">
                     <label class="otp-label" for="phone">Phone Number</label>
                     <input class="otp-input" type="tel" id="phone" name="phone" placeholder="e.g. 9876543210" autocomplete="tel" required>
+                    <label class="otp-label" for="remember">
+                        <input type="checkbox" id="remember" name="remember" {% if remember %}checked{% endif %}>
+                        Remember me
+                    </label>
                     <button class="otp-button" type="submit">Send OTP</button>
                 </form>
+                <p><a href="{% url 'accounts:email_login' %}?next={{ next|urlencode }}">Use email and password</a></p>
             </div>
         {% endif %}
     </section>

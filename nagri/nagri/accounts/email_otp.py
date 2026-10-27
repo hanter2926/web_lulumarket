@@ -24,7 +24,7 @@ OTP_LIFETIME = timedelta(minutes=10)
 OTP_RESEND_COOLDOWN = timedelta(seconds=30)
 OTP_IP_REQUEST_WINDOW = timedelta(minutes=10)
 OTP_IP_MAX_REQUESTS_PER_WINDOW = 30
-OTP_MAX_ATTEMPTS = 10
+OTP_MAX_ATTEMPTS = 5
 
 logger = logging.getLogger(__name__)
 
