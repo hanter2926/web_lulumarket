@@ -1832,7 +1832,7 @@ class SignupFlowTests(TestCase):
         self.assertTrue(user.is_email_verified)
         self.assertEqual(user.account_status, CustomUser.AccountStatus.ACTIVE)
 
-    def test_login_page_has_one_registration_option_and_no_otp_login_link(self):
+    def test_login_page_has_registration_and_email_otp_login_options(self):
         response = self.client.get(reverse("accounts:login_page"))
 
         self.assertContains(response, "Create an account")
@@ -1852,7 +1852,8 @@ class SignupFlowTests(TestCase):
                 response,
                 f'type="button" aria-label="Show password" aria-controls="{password_id}"',
             )
-        self.assertNotContains(response, "Login with Email OTP")
+        self.assertContains(response, "Login with Email OTP")
+        self.assertContains(response, "Login with Phone OTP")
         self.assertNotContains(response, 'data-auth-panel="register"')
         self.assertNotContains(response, "data-auth-switch=\"register\"")
 
@@ -2861,20 +2862,93 @@ class EmailOTPFlowTests(TestCase):
                     with self.assertRaises(EmailDeliveryConfigurationError):
                         validate_email_delivery_configuration()
 
-    def test_email_otp_login_routes_are_disabled(self):
+    @override_settings(
+        DEBUG=False,
+        EMAIL_PROVIDER="brevo",
+        BREVO_API_KEY="brevo-test-key",
+        BREVO_SENDER_EMAIL="sender@example.com",
+        BREVO_SENDER_NAME="NAGRI",
+        ANYMAIL={"REQUESTS_TIMEOUT": (5, 30)},
+    )
+    @patch(
+        "accounts.email_delivery.requests.post",
+        return_value=Mock(
+            status_code=201,
+            json=lambda: {"messageId": "mock-message-id"},
+        ),
+    )
+    def test_email_login_otp_is_sent_through_brevo_and_logs_in(
+        self,
+        post,
+    ):
+        self.user.is_email_verified = True
+        self.user.save(update_fields=["is_email_verified", "updated_at"])
+
+        response = self.client.post(
+            reverse("accounts:email_otp_login"),
+            {
+                "email": self.user.email,
+                "next": "/cart/",
+                "remember": "on",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:email_otp_login_verify"),
+        )
+        post.assert_called_once()
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["to"], [{"email": self.user.email}])
+        self.assertIn("sign in to your account", payload["textContent"])
+        code = re.search(r"\b(\d{6})\b", payload["textContent"]).group(1)
+        challenge = EmailOTPChallenge.objects.get(
+            user=self.user,
+            purpose=EmailOTPChallenge.Purpose.LOGIN,
+        )
+        self.assertTrue(check_password(code, challenge.code_hash))
+
+        verify_response = self.client.post(
+            reverse("accounts:email_otp_login_verify"),
+            {"email": self.user.email, "code": code},
+        )
+
+        self.assertRedirects(
+            verify_response,
+            "/cart/",
+            fetch_redirect_response=False,
+        )
+        self.assertTrue(verify_response.wsgi_request.user.is_authenticated)
+        self.assertEqual(verify_response.wsgi_request.user, self.user)
+        self.assertFalse(self.client.session.get_expire_at_browser_close())
+        challenge.refresh_from_db()
+        self.assertIsNotNone(challenge.consumed_at)
+
+    @patch("accounts.email_delivery.send_mail")
+    def test_email_login_otp_does_not_send_for_unverified_account(self, send_mail):
         response = self.client.post(
             reverse("accounts:email_otp_login"),
             {"email": self.user.email},
         )
-        self.assertRedirects(response, reverse("accounts:email_login"))
-        self.assertEqual(len(mail.outbox), 0)
 
-        response = self.client.post(reverse("accounts:email_otp_login_verify"))
-        self.assertRedirects(response, reverse("accounts:email_login"))
-        self.assertEqual(len(mail.outbox), 0)
-
-        with self.assertRaises(ValueError):
-            request_email_otp(self.user.email, "login")
+        self.assertRedirects(
+            response,
+            reverse("accounts:email_otp_login_verify"),
+        )
+        send_mail.assert_not_called()
+        self.assertEqual(
+            EmailOTPChallenge.objects.filter(
+                purpose=EmailOTPChallenge.Purpose.LOGIN,
+            ).count(),
+            0,
+        )
+        verify_page = self.client.get(
+            reverse("accounts:email_otp_login_verify")
+        )
+        self.assertContains(
+            verify_page,
+            "If an account matches the information provided",
+        )
 
     @override_settings(
         DEBUG=False,

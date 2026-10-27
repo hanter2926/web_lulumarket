@@ -111,8 +111,17 @@ def _eligible_user(email, purpose):
     if not user:
         return None
 
-    if purpose == EmailOTPChallenge.Purpose.PASSWORD_RESET and (
+    if purpose in (
+        EmailOTPChallenge.Purpose.PASSWORD_RESET,
+        EmailOTPChallenge.Purpose.LOGIN,
+    ) and (
         user.account_status != CustomUser.AccountStatus.ACTIVE or not user.is_active
+    ):
+        return None
+
+    if (
+        purpose == EmailOTPChallenge.Purpose.LOGIN
+        and not user.is_email_verified
     ):
         return None
 
@@ -126,6 +135,7 @@ def request_email_otp(email, purpose, requester_ip=None):
     if purpose not in (
         EmailOTPChallenge.Purpose.SIGNUP,
         EmailOTPChallenge.Purpose.PASSWORD_RESET,
+        EmailOTPChallenge.Purpose.LOGIN,
     ):
         raise ValueError("Unsupported email OTP purpose.")
 
@@ -174,9 +184,11 @@ def request_email_otp(email, purpose, requester_ip=None):
         )
 
     purpose_text = (
-        "verify your email address"
-        if purpose == EmailOTPChallenge.Purpose.SIGNUP
-        else "reset your password"
+        {
+            EmailOTPChallenge.Purpose.SIGNUP: "verify your email address",
+            EmailOTPChallenge.Purpose.PASSWORD_RESET: "reset your password",
+            EmailOTPChallenge.Purpose.LOGIN: "sign in to your account",
+        }[purpose]
     )
     message = (
         f"Your NAGRI code to {purpose_text} is {code}.\n\n"
@@ -199,6 +211,7 @@ def verify_email_otp(email, code, purpose):
     if purpose not in (
         EmailOTPChallenge.Purpose.SIGNUP,
         EmailOTPChallenge.Purpose.PASSWORD_RESET,
+        EmailOTPChallenge.Purpose.LOGIN,
     ):
         raise ValueError("Unsupported email OTP purpose.")
 
@@ -334,6 +347,11 @@ def verify_email_otp(email, code, purpose):
                 return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
 
             if not user.has_usable_password():
+                return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
+            if (
+                purpose == EmailOTPChallenge.Purpose.LOGIN
+                and not user.is_email_verified
+            ):
                 return EmailOTPVerification(EmailOTPStatus.UNAVAILABLE)
 
             return EmailOTPVerification(EmailOTPStatus.SUCCESS, user)

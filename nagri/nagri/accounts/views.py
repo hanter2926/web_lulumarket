@@ -1922,7 +1922,18 @@ def _log_email_delivery_failure(exc):
     )
 
 
-def _email_otp_request(request, purpose, verify_url_name, template_name):
+def _email_otp_request(
+    request,
+    purpose,
+    verify_url_name,
+    template_name,
+    *,
+    mode="password_reset",
+    session_key_prefix="email_otp",
+):
+    email_key = f"{session_key_prefix}_email"
+    notice_key = f"{session_key_prefix}_notice"
+    next_key = f"{session_key_prefix}_next"
     form = EmailOTPRequestForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         email = form.cleaned_data["email"]
@@ -1934,26 +1945,30 @@ def _email_otp_request(request, purpose, verify_url_name, template_name):
             )
         except Exception as exc:
             _log_email_delivery_failure(exc)
-            request.session["email_otp_notice"] = (
+            request.session[notice_key] = (
                 "Unable to send a verification code right now. Please try again later."
             )
         else:
-            request.session["email_otp_notice"] = (
+            request.session[notice_key] = (
                 "Please wait before requesting another code."
                 if result == "throttled"
                 else "If an account matches the information provided, we’ll send a verification code."
             )
 
-        request.session["email_otp_email"] = email
+        request.session[email_key] = email
         next_url = request.POST.get("next", "")
         if next_url and url_has_allowed_host_and_scheme(
             next_url,
             allowed_hosts={request.get_host()},
             require_https=request.is_secure(),
         ):
-            request.session["email_otp_next"] = next_url
+            request.session[next_key] = next_url
         else:
-            request.session.pop("email_otp_next", None)
+            request.session.pop(next_key, None)
+        if mode == "login":
+            request.session["email_login_otp_remember"] = bool(
+                request.POST.get("remember")
+            )
         return redirect(verify_url_name)
 
     return render(
@@ -1963,18 +1978,87 @@ def _email_otp_request(request, purpose, verify_url_name, template_name):
             "form": form,
             "phase": "request",
             "next": request.POST.get("next") or request.GET.get("next", ""),
+            "mode": mode,
+            "remember": request.session.get("email_login_otp_remember", False),
         },
     )
 
 
 @require_http_methods(["GET", "POST"])
 def email_otp_login_page(request):
-    return redirect("accounts:email_login")
+    return _email_otp_request(
+        request,
+        EmailOTPChallenge.Purpose.LOGIN,
+        "accounts:email_otp_login_verify",
+        "accounts/password_reset_otp.html",
+        mode="login",
+        session_key_prefix="email_login_otp",
+    )
 
 
 @require_http_methods(["GET", "POST"])
 def email_otp_login_verify(request):
-    return redirect("accounts:email_login")
+    email = request.session.get("email_login_otp_email", "")
+    if not email:
+        return redirect("accounts:email_otp_login")
+
+    form = EmailOTPVerifyForm(
+        request.POST or None,
+        initial={"email": email},
+    )
+    error = ""
+    if request.method == "POST":
+        if form.is_valid() and form.cleaned_data["email"].casefold() == email.casefold():
+            verification = verify_email_otp(
+                email,
+                form.cleaned_data["code"],
+                EmailOTPChallenge.Purpose.LOGIN,
+            )
+            if (
+                verification.status == EmailOTPStatus.SUCCESS
+                and verification.user is not None
+            ):
+                user = verification.user
+                next_url = _safe_next_url(
+                    request,
+                    request.session.pop("email_login_otp_next", ""),
+                )
+                remember = request.session.pop(
+                    "email_login_otp_remember",
+                    False,
+                )
+                request.session.pop("email_login_otp_email", None)
+                request.session.pop("email_login_otp_notice", None)
+                auth_login(
+                    request,
+                    user,
+                    backend=settings.AUTHENTICATION_BACKENDS[0],
+                )
+                request.session.set_expiry(
+                    settings.SESSION_COOKIE_AGE if remember else 0
+                )
+                return _post_login_redirect(user, next_url)
+            error = _email_otp_verification_error(verification.status)
+        else:
+            error = "Enter the 6-digit code sent to your email address."
+
+    return render(
+        request,
+        "accounts/password_reset_otp.html",
+        {
+            "phase": "verify",
+            "email": email,
+            "form": form,
+            "error": error,
+            "notice": request.session.get("email_login_otp_notice", ""),
+            "mode": "login",
+            "next": _safe_next_url(
+                request,
+                request.session.get("email_login_otp_next", ""),
+            ),
+            "remember": request.session.get("email_login_otp_remember", False),
+        },
+    )
 
 
 @require_http_methods(["GET", "POST"])
@@ -1984,6 +2068,7 @@ def password_reset_otp_page(request):
         EmailOTPChallenge.Purpose.PASSWORD_RESET,
         "accounts:password_reset_otp_verify",
         "accounts/password_reset_otp.html",
+        mode="password_reset",
     )
 
 

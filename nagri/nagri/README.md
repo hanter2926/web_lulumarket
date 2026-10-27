@@ -44,7 +44,7 @@ https://web-lulumarket.onrender.com
 
 New accounts must verify their email address before finishing signup. Email OTPs expire after 10 minutes, can be resent every 30 seconds, and are limited to 30 requests per email and purpose per hour. Verification is locked after five incorrect attempts. Phone verification remains available separately.
 
-Email verification codes are sent during new-account registration, not during password login. Users sign in with their email address and password; email OTP remains available for password recovery.
+Email verification codes are sent during new-account registration. Users can sign in with either their email address and password or an email OTP. Email login OTPs are sent using the configured Brevo transactional email provider; password recovery also supports email OTP.
 
 Production email uses the existing Brevo HTTPS API integration, not SMTP. Set these Render environment variables:
 

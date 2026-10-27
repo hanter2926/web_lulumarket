@@ -112,6 +112,7 @@ class EmailOTPChallenge(models.Model):
     class Purpose(models.TextChoices):
         SIGNUP = "signup", "Signup verification"
         PASSWORD_RESET = "password_reset", "Password reset"
+        LOGIN = "login", "Login"
 
     user = models.ForeignKey(
         CustomUser,
@@ -162,6 +163,7 @@ class EmailOTPThrottle(models.Model):
     class Purpose(models.TextChoices):
         SIGNUP = "signup", "Signup verification"
         PASSWORD_RESET = "password_reset", "Password reset"
+        LOGIN = "login", "Login"
 
     email_digest = models.CharField(max_length=64)
     purpose = models.CharField(max_length=20, choices=Purpose.choices)

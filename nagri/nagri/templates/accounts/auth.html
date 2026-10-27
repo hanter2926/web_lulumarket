@@ -32,6 +32,8 @@
                 <div style="margin-top:8px; text-align: right;">
                     <a href="{% url 'accounts:password_reset' %}" style="font-size:0.95rem; color:#2563eb;">Forgot Password?</a>
                     <span aria-hidden="true"> · </span>
+                    <a href="{% url 'accounts:email_otp_login' %}?next={{ next|urlencode }}" style="font-size:0.95rem; color:#2563eb;">Login with Email OTP</a>
+                    <span aria-hidden="true"> · </span>
                     <a href="{% url 'accounts:password_reset_otp' %}" style="font-size:0.95rem; color:#2563eb;">Reset with Email OTP</a>
                 </div>
             </div>
