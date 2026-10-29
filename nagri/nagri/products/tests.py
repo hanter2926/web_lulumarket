@@ -83,6 +83,7 @@ class ProductTests(TestCase):
         )
 
         self.client.force_login(self.customer)
+        
         self.assertEqual(
             self.client.patch(
                 product_url,
