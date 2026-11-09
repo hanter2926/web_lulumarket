@@ -52,3 +52,16 @@ Suhana Team
         [email],
         fail_silently=False,
     )
+
+
+def send_password_reset_otp(email, otp):
+    return send_mail(
+        "Suhana - Password Reset OTP",
+        (
+            f"Your Suhana password reset OTP is: {otp}\n\n"
+            "This OTP is valid for 10 minutes. If you did not request it, ignore this email."
+        ),
+        settings.DEFAULT_FROM_EMAIL,
+        [email],
+        fail_silently=False,
+    )

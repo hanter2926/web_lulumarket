@@ -7,7 +7,7 @@ from smtplib import SMTPException
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.password_validation import validate_password
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.middleware.csrf import get_token
@@ -23,6 +23,7 @@ from .utils import (
     verify_otp,
     hash_user_password,
     send_signup_otp,
+    send_password_reset_otp,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ User = get_user_model()
 OTP_VALIDITY_MINUTES = 10
 OTP_RESEND_COOLDOWN_SECONDS = 60
 MAX_OTP_ATTEMPTS = 5
+PASSWORD_RESET_OTP_VALIDITY_MINUTES = 10
 
 
 def get_request_data(request):
@@ -265,6 +267,133 @@ def verify_signup_otp(request):
         },
         status=201,
     )
+
+
+@require_POST
+def login_view(request):
+    data = get_request_data(request)
+
+    if data is None:
+        return JsonResponse(
+            {"success": False, "message": "Invalid JSON data."},
+            status=400,
+        )
+
+    identifier = str(data.get("identifier", "")).strip()
+    password = data.get("password", "")
+
+    if not identifier or not isinstance(password, str) or not password:
+        return JsonResponse(
+            {"success": False, "message": "Username/email and password are required."},
+            status=400,
+        )
+
+    username = identifier
+    if "@" in identifier:
+        user = User.objects.filter(email__iexact=identifier).first()
+        if user is not None:
+            username = user.get_username()
+
+    user = authenticate(request, username=username, password=password)
+    if user is None:
+        return JsonResponse(
+            {"success": False, "message": "Invalid username/email or password."},
+            status=401,
+        )
+
+    login(request, user)
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Login successful.",
+            "username": user.get_username(),
+        },
+        status=200,
+    )
+
+
+@require_POST
+def logout_view(request):
+    logout(request)
+    return JsonResponse({"success": True, "message": "Logout successful."})
+
+
+@require_POST
+def password_reset_request(request):
+    data = get_request_data(request)
+    if data is None:
+        return JsonResponse({"success": False, "message": "Invalid JSON data."}, status=400)
+
+    email = str(data.get("email", "")).strip().lower()
+    if not email:
+        return JsonResponse({"success": False, "message": "Email is required."}, status=400)
+
+    user = User.objects.filter(email__iexact=email).first()
+    if user is not None:
+        otp = generate_otp()
+        from .models import PasswordResetChallenge
+
+        PasswordResetChallenge.objects.filter(email__iexact=email).delete()
+        challenge = PasswordResetChallenge.objects.create(
+            email=email,
+            otp_hash=hash_otp(otp),
+            otp_expiry=timezone.now() + timedelta(minutes=PASSWORD_RESET_OTP_VALIDITY_MINUTES),
+        )
+        try:
+            if send_password_reset_otp(email, otp) != 1:
+                challenge.delete()
+                logger.error("Password reset email was not accepted for %s", email)
+        except (OSError, SMTPException):
+            logger.exception("Password reset email failed.")
+            challenge.delete()
+
+    return JsonResponse(
+        {"success": True, "message": "If that email exists, a reset OTP has been sent."}
+    )
+
+
+@require_POST
+def password_reset_confirm(request):
+    data = get_request_data(request)
+    if data is None:
+        return JsonResponse({"success": False, "message": "Invalid JSON data."}, status=400)
+
+    email = str(data.get("email", "")).strip().lower()
+    otp = str(data.get("otp", "")).strip()
+    password = data.get("password", "")
+    if not email or not otp or not isinstance(password, str):
+        return JsonResponse({"success": False, "message": "Email, OTP, and password are required."}, status=400)
+    if len(otp) != 6 or not otp.isdigit():
+        return JsonResponse({"success": False, "message": "Enter a valid 6-digit OTP."}, status=400)
+
+    from .models import PasswordResetChallenge
+
+    try:
+        with transaction.atomic():
+            challenge = PasswordResetChallenge.objects.select_for_update().get(email__iexact=email)
+            if challenge.failed_attempts >= MAX_OTP_ATTEMPTS:
+                challenge.delete()
+                return JsonResponse({"success": False, "message": "Too many attempts. Request a new OTP."}, status=400)
+            if timezone.now() >= challenge.otp_expiry:
+                challenge.delete()
+                return JsonResponse({"success": False, "message": "OTP expired. Request a new OTP."}, status=400)
+            if not verify_otp(otp, challenge.otp_hash):
+                challenge.failed_attempts += 1
+                challenge.save(update_fields=["failed_attempts"])
+                return JsonResponse({"success": False, "message": "Incorrect OTP."}, status=400)
+            validate_password(password)
+            user = User.objects.get(email__iexact=email)
+            user.set_password(password)
+            user.save(update_fields=["password"])
+            challenge.delete()
+    except PasswordResetChallenge.DoesNotExist:
+        return JsonResponse({"success": False, "message": "Invalid or expired reset request."}, status=400)
+    except User.DoesNotExist:
+        return JsonResponse({"success": False, "message": "Invalid or expired reset request."}, status=400)
+    except ValidationError as error:
+        return JsonResponse({"success": False, "message": error.messages}, status=400)
+
+    return JsonResponse({"success": True, "message": "Password reset successful."})
 
 
 @require_POST

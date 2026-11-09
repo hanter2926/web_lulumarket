@@ -13,3 +13,15 @@ class PendingSignup(models.Model):
 
     def __str__(self):
         return self.email
+
+
+class PasswordResetChallenge(models.Model):
+    email = models.EmailField(db_index=True)
+    otp_hash = models.CharField(max_length=128)
+    otp_expiry = models.DateTimeField()
+    failed_attempts = models.PositiveIntegerField(default=0)
+    last_otp_sent_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.email

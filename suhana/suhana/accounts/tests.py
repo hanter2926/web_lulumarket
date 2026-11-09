@@ -6,7 +6,7 @@ from django.core import mail
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
-from .models import PendingSignup
+from .models import PasswordResetChallenge, PendingSignup
 from .utils import hash_otp, hash_user_password
 
 
@@ -113,3 +113,110 @@ class RegistrationApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+    def test_login_accepts_username_and_creates_session(self):
+        user = User.objects.create_user(
+            username="login-user",
+            email="login@example.com",
+            password="StrongPassword123!",
+        )
+
+        response = self.post_json(
+            "/api/accounts/login/",
+            {"identifier": user.username, "password": "StrongPassword123!"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["username"], user.username)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
+
+    def test_login_accepts_email_case_insensitively(self):
+        user = User.objects.create_user(
+            username="email-login-user",
+            email="login@example.com",
+            password="StrongPassword123!",
+        )
+
+        response = self.post_json(
+            "/api/accounts/login/",
+            {"identifier": "LOGIN@EXAMPLE.COM", "password": "StrongPassword123!"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["username"], user.username)
+
+    def test_login_rejects_invalid_password(self):
+        User.objects.create_user(
+            username="login-user",
+            email="login@example.com",
+            password="StrongPassword123!",
+        )
+
+        response = self.post_json(
+            "/api/accounts/login/",
+            {"identifier": "login-user", "password": "wrong-password"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_login_requires_csrf(self):
+        response = self.client.post(
+            "/api/accounts/login/",
+            {"identifier": "login-user", "password": "password"},
+            content_type="application/json",
+            HTTP_ORIGIN="http://localhost:5174",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_logout_clears_session(self):
+        user = User.objects.create_user(
+            username="logout-user",
+            password="StrongPassword123!",
+        )
+        self.client.force_login(user)
+
+        response = self.post_json("/api/accounts/logout/", {})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    @patch("accounts.views.send_password_reset_otp", return_value=1)
+    def test_password_reset_changes_password_after_valid_otp(self, send_otp):
+        user = User.objects.create_user(
+            username="reset-user",
+            email="reset@example.com",
+            password="OldPassword123!",
+        )
+
+        response = self.post_json(
+            "/api/accounts/password-reset/request/",
+            {"email": user.email},
+        )
+        self.assertEqual(response.status_code, 200)
+        challenge = PasswordResetChallenge.objects.get(email=user.email)
+        otp = send_otp.call_args.args[1]
+
+        response = self.post_json(
+            "/api/accounts/password-reset/confirm/",
+            {
+                "email": user.email,
+                "otp": otp,
+                "password": "NewPassword123!",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password("NewPassword123!"))
+        self.assertFalse(PasswordResetChallenge.objects.filter(pk=challenge.pk).exists())
+
+    def test_password_reset_does_not_reveal_unknown_email(self):
+        response = self.post_json(
+            "/api/accounts/password-reset/request/",
+            {"email": "unknown@example.com"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(PasswordResetChallenge.objects.exists())
