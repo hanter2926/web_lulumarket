@@ -1,9 +1,9 @@
 import hashlib
-import re
 import struct
 from pathlib import Path
 
-from .pdf_rendering import PdfiumRenderer
+from .pdf_rendering import IsolatedPdfRendererClient
+from .image_comparison import compare_images, image_metadata
 
 
 MAX_COMPARISON_FILE_SIZE = 25 * 1024 * 1024
@@ -80,12 +80,6 @@ def _validate_signature(uploaded_file, content_type):
         raise ValueError("The uploaded file content does not match its declared format.")
 
 
-def _pdf_page_count(uploaded_file):
-    data = uploaded_file.read()
-    uploaded_file.seek(0)
-    return len(re.findall(rb"/Type\s*/Page(?:\s|/|>)", data))
-
-
 def file_metadata(uploaded_file):
     content_type = uploaded_file.content_type or ""
     suffix = Path(uploaded_file.name).suffix.lower()
@@ -99,10 +93,12 @@ def file_metadata(uploaded_file):
 
     if content_type in SUPPORTED_IMAGE_TYPES:
         _validate_signature(uploaded_file, content_type)
-        metadata["dimensions"] = _image_dimensions(uploaded_file, content_type)
+        image_data = uploaded_file.read()
+        uploaded_file.seek(0)
+        metadata.update(image_metadata(image_data))
     elif content_type == SUPPORTED_PDF_TYPE:
         _validate_signature(uploaded_file, content_type)
-        metadata["page_count"] = PdfiumRenderer().inspect(uploaded_file.read())["page_count"]
+        metadata["page_count"] = IsolatedPdfRendererClient().inspect(uploaded_file.read())["page_count"]
         uploaded_file.seek(0)
 
     return metadata
@@ -130,14 +126,17 @@ def compare_uploads(first, second):
         result["page_count_difference"] = (
             first_metadata["page_count"] - second_metadata["page_count"]
         )
-        result["pdf_comparison"] = PdfiumRenderer().compare(
+        result["pdf_comparison"] = IsolatedPdfRendererClient().compare(
             first.read(), second.read()
         )
         first.seek(0)
         second.seek(0)
-    if first.content_type == second.content_type and first.content_type in SUPPORTED_IMAGE_TYPES:
+    if first.content_type in SUPPORTED_IMAGE_TYPES and second.content_type in SUPPORTED_IMAGE_TYPES:
         result["same_dimensions"] = first_metadata.get("dimensions") == second_metadata.get(
             "dimensions"
         )
+        result["image_comparison"] = compare_images(first.read(), second.read())
+        first.seek(0)
+        second.seek(0)
 
     return result

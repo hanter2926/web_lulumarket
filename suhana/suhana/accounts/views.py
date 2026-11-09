@@ -26,6 +26,13 @@ from .utils import (
     send_signup_otp,
     send_password_reset_otp,
 )
+from .rate_limit import (
+    RATE_LIMIT_WINDOW_SECONDS,
+    allow_login_attempt,
+    allow_password_reset_request,
+    clear_login_attempts,
+    record_login_failure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +303,14 @@ def login_view(request):
             status=400,
         )
 
+    if not allow_login_attempt(request, identifier):
+        response = JsonResponse(
+            {"success": False, "message": "Too many login attempts. Try again later."},
+            status=429,
+        )
+        response["Retry-After"] = str(RATE_LIMIT_WINDOW_SECONDS)
+        return response
+
     username = identifier
     if "@" in identifier:
         user = User.objects.filter(email__iexact=identifier).first()
@@ -304,11 +319,13 @@ def login_view(request):
 
     user = authenticate(request, username=username, password=password)
     if user is None:
+        record_login_failure(request, identifier)
         return JsonResponse(
             {"success": False, "message": "Invalid username/email or password."},
             status=401,
         )
 
+    clear_login_attempts(request, identifier)
     login(request, user)
     return JsonResponse(
         {
@@ -335,6 +352,17 @@ def password_reset_request(request):
     email = str(data.get("email", "")).strip().lower()
     if not email:
         return JsonResponse({"success": False, "message": "Email is required."}, status=400)
+
+    if not allow_password_reset_request(request, email):
+        response = JsonResponse(
+            {
+                "success": True,
+                "message": "If that email exists, a reset OTP has been sent.",
+            },
+            status=200,
+        )
+        response["Retry-After"] = str(RATE_LIMIT_WINDOW_SECONDS)
+        return response
 
     user = User.objects.filter(email__iexact=email).first()
     if user is not None:

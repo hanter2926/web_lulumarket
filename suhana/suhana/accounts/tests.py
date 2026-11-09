@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.core.cache import cache
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
@@ -17,6 +18,7 @@ User = get_user_model()
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class RegistrationApiTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.client = Client(enforce_csrf_checks=True)
         csrf_response = self.client.get("/api/accounts/csrf/")
         self.csrf_token = csrf_response.json()["csrfToken"]
@@ -162,6 +164,41 @@ class RegistrationApiTests(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertNotIn("_auth_user_id", self.client.session)
 
+    def test_login_rate_limit_allows_correct_credentials_after_failures(self):
+        user = User.objects.create_user(
+            username="throttled-user",
+            email="throttled@example.com",
+            password="StrongPassword123!",
+        )
+
+        for _ in range(4):
+            response = self.post_json(
+                "/api/accounts/login/",
+                {"identifier": user.username, "password": "wrong-password"},
+            )
+            self.assertEqual(response.status_code, 401)
+
+        response = self.post_json(
+            "/api/accounts/login/",
+            {"identifier": user.username, "password": "StrongPassword123!"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_login_rate_limit_blocks_repeated_failures(self):
+        for _ in range(5):
+            response = self.post_json(
+                "/api/accounts/login/",
+                {"identifier": "unknown-user", "password": "wrong-password"},
+            )
+            self.assertEqual(response.status_code, 401)
+
+        response = self.post_json(
+            "/api/accounts/login/",
+            {"identifier": "unknown-user", "password": "wrong-password"},
+        )
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response["Retry-After"], "900")
+
     def test_login_requires_csrf(self):
         response = self.client.post(
             "/api/accounts/login/",
@@ -222,3 +259,22 @@ class RegistrationApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(PasswordResetChallenge.objects.exists())
+
+    @patch("accounts.views.send_password_reset_otp", return_value=1)
+    def test_password_reset_request_is_throttled_without_enumeration(self, send_otp):
+        user = User.objects.create_user(
+            username="reset-throttled",
+            email="reset-throttled@example.com",
+            password="StrongPassword123!",
+        )
+        responses = [
+            self.post_json(
+                "/api/accounts/password-reset/request/",
+                {"email": user.email},
+            )
+            for _ in range(4)
+        ]
+
+        self.assertEqual([response.status_code for response in responses], [200, 200, 200, 200])
+        self.assertEqual(send_otp.call_count, 3)
+        self.assertEqual(responses[-1].json(), responses[0].json())

@@ -1,13 +1,15 @@
 import base64
+import json
+import os
 import re
 import struct
+import subprocess
+import sys
 import tempfile
+import threading
 import time
 import zlib
 from dataclasses import dataclass
-
-import pypdfium2 as pdfium
-
 
 PDF_MAX_PAGES = 100
 PDF_DEFAULT_DPI = 120
@@ -126,6 +128,9 @@ class PDFRenderer:
     def compare(self, first_bytes, second_bytes):
         raise NotImplementedError
 
+    def inspect(self, data):
+        raise NotImplementedError
+
 
 class PdfiumRenderer(PDFRenderer):
     def __init__(self, dpi=PDF_DEFAULT_DPI):
@@ -134,6 +139,8 @@ class PdfiumRenderer(PDFRenderer):
         self.dpi = dpi
 
     def _open(self, data):
+        import pypdfium2 as pdfium
+
         if not data.startswith(b"%PDF-"):
             raise PdfRenderingError("The uploaded file is not a valid PDF.")
         try:
@@ -241,3 +248,78 @@ class PdfiumRenderer(PDFRenderer):
             ),
             "overlays_are_temporary": True,
         }
+
+
+_PDF_PROCESS_LIMIT = 2
+_PDF_PROCESS_SLOTS = threading.BoundedSemaphore(_PDF_PROCESS_LIMIT)
+
+
+class IsolatedPdfRendererClient(PDFRenderer):
+    def __init__(self, timeout_seconds=PDF_SOFT_TIMEOUT_SECONDS):
+        self.timeout_seconds = timeout_seconds
+        self.last_worker_pid = None
+
+    def _run(self, operation, first_bytes, second_bytes=None):
+        if not _PDF_PROCESS_SLOTS.acquire(timeout=self.timeout_seconds):
+            raise PdfRenderingError("PDF processing capacity is currently exhausted.")
+        try:
+            with tempfile.TemporaryDirectory(prefix="suhana-pdf-client-") as directory:
+                from pathlib import Path
+
+                job = Path(directory)
+                first_path = job / "first.pdf"
+                output_path = job / "result.json"
+                first_path.write_bytes(first_bytes)
+                command = [
+                    sys.executable,
+                    "-m",
+                    "tools.pdf_worker",
+                    operation,
+                    str(first_path),
+                    str(output_path),
+                ]
+                if second_bytes is not None:
+                    second_path = job / "second.pdf"
+                    second_path.write_bytes(second_bytes)
+                    command.append(str(second_path))
+                process = subprocess.Popen(
+                    command,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=str(Path(__file__).resolve().parents[1]),
+                    text=True,
+                )
+                try:
+                    stdout, stderr = process.communicate(timeout=self.timeout_seconds)
+                except subprocess.TimeoutExpired as error:
+                    process.kill()
+                    process.communicate()
+                    raise PdfRenderingError(
+                        "PDF comparison exceeded the hard worker timeout."
+                    ) from error
+                if process.returncode != 0:
+                    try:
+                        payload = json.loads(output_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        payload = {}
+                    raise PdfRenderingError(
+                        payload.get("error")
+                        or "The isolated PDF renderer rejected the document."
+                    )
+                try:
+                    payload = json.loads(output_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as error:
+                    raise PdfRenderingError(
+                        "The isolated PDF renderer returned invalid output."
+                    ) from error
+                self.last_worker_pid = payload.pop("worker_pid", None)
+                return payload
+        finally:
+            _PDF_PROCESS_SLOTS.release()
+
+    def inspect(self, data):
+        return self._run("inspect", data)
+
+    def compare(self, first_bytes, second_bytes):
+        return self._run("compare", first_bytes, second_bytes)

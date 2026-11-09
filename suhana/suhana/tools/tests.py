@@ -1,10 +1,20 @@
 import io
 import json
 
+from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 
-from .pdf_rendering import PdfRenderingError, PdfiumRenderer
+from .pdf_rendering import IsolatedPdfRendererClient, PdfRenderingError, PdfiumRenderer
+from .image_comparison import compare_images
+
+
+def _image_bytes(fmt, color, size=(2, 2), **kwargs):
+    output = io.BytesIO()
+    mode = "RGB" if fmt == "JPEG" else "RGBA"
+    image = Image.new(mode, size, color[:3] if mode == "RGB" else color)
+    image.save(output, format=fmt, **kwargs)
+    return output.getvalue()
 
 
 @override_settings(ROOT_URLCONF="suhana.urls")
@@ -36,11 +46,7 @@ class ToolsApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_identical_png_files_compare_equal(self):
-        png = (
-            b"\x89PNG\r\n\x1a\n"
-            b"\x00\x00\x00\rIHDR"
-            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
-        )
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))
         first = SimpleUploadedFile("first.png", io.BytesIO(png).read(), content_type="image/png")
         second = SimpleUploadedFile("second.png", png, content_type="image/png")
 
@@ -54,6 +60,7 @@ class ToolsApiTests(TestCase):
         comparison = response.json()["comparison"]
         self.assertTrue(comparison["same_content"])
         self.assertEqual(comparison["first"]["dimensions"], [1, 1])
+        self.assertTrue(comparison["image_comparison"]["same_visual"])
 
     def test_compare_requires_both_supported_files(self):
         first = SimpleUploadedFile("first.txt", b"one", content_type="text/plain")
@@ -96,11 +103,7 @@ class ToolsApiTests(TestCase):
             username="report-owner", password="StrongPassword123!"
         )
         self.client.force_login(user)
-        png = (
-            b"\x89PNG\r\n\x1a\n"
-            b"\x00\x00\x00\rIHDR"
-            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
-        )
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))
         response = self.client.post(
             "/api/tools/compare/",
             {
@@ -155,3 +158,89 @@ class PdfRenderingTests(TestCase):
     def test_malformed_pdf_is_rejected(self):
         with self.assertRaises(PdfRenderingError):
             PdfiumRenderer().compare(b"not a pdf", b"not a pdf")
+
+    def test_isolated_renderer_uses_a_worker_process(self):
+        pdf = _pdf_with_text("worker")
+        renderer = IsolatedPdfRendererClient(timeout_seconds=20)
+
+        result = renderer.compare(pdf, pdf)
+
+        self.assertEqual(result["first"]["page_count"], 1)
+        self.assertNotEqual(renderer.last_worker_pid, __import__("os").getpid())
+
+    def test_isolated_renderer_terminates_after_hard_timeout(self):
+        pdf = _pdf_with_text("timeout")
+        renderer = IsolatedPdfRendererClient(timeout_seconds=0.001)
+
+        with self.assertRaisesRegex(PdfRenderingError, "hard worker timeout"):
+            renderer.compare(pdf, pdf)
+
+
+class ImageComparisonTests(TestCase):
+    def setUp(self):
+        self.client = Client(enforce_csrf_checks=True)
+        response = self.client.get("/api/accounts/csrf/")
+        self.csrf_token = response.json()["csrfToken"]
+
+    def test_modified_image_has_pixel_difference_and_preview(self):
+        first = _image_bytes("PNG", (255, 255, 255, 255))
+        second = _image_bytes("PNG", (255, 0, 0, 255))
+
+        result = compare_images(first, second)
+
+        self.assertFalse(result["same_visual"])
+        self.assertEqual(result["visual_differences"], 1)
+        self.assertGreater(result["frame_results"][0]["visual"]["difference_percentage"], 0)
+        self.assertIsNotNone(result["frame_results"][0]["visual"]["overlay_png"])
+
+    def test_resized_image_reports_dimension_difference(self):
+        first = _image_bytes("JPEG", (255, 255, 255, 255), size=(2, 2))
+        second = _image_bytes("JPEG", (255, 255, 255, 255), size=(3, 3))
+
+        result = compare_images(first, second)
+
+        self.assertFalse(result["same_visual"])
+        self.assertFalse(result["frame_results"][0]["visual"]["same_dimensions"])
+
+    def test_transparent_rgb_differences_are_not_visible_differences(self):
+        first = _image_bytes("PNG", (255, 0, 0, 0))
+        second = _image_bytes("PNG", (0, 255, 0, 0))
+
+        self.assertTrue(compare_images(first, second)["same_visual"])
+
+    def test_animated_gif_compares_each_frame(self):
+        output_first = io.BytesIO()
+        Image.new("RGB", (2, 2), "red").save(
+            output_first,
+            format="GIF",
+            save_all=True,
+            append_images=[Image.new("RGB", (2, 2), "blue")],
+            duration=[100, 100],
+            loop=0,
+        )
+        output_second = io.BytesIO()
+        Image.new("RGB", (2, 2), "red").save(
+            output_second,
+            format="GIF",
+            save_all=True,
+            append_images=[Image.new("RGB", (2, 2), "green")],
+            duration=[100, 100],
+            loop=0,
+        )
+
+        result = compare_images(output_first.getvalue(), output_second.getvalue())
+
+        self.assertTrue(result["animated"])
+        self.assertEqual(len(result["frame_results"]), 2)
+
+    def test_malformed_image_is_rejected_by_api(self):
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.webp", b"RIFFbadWEBP", content_type="image/webp"),
+                "second": SimpleUploadedFile("second.webp", b"RIFFbadWEBP", content_type="image/webp"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        self.assertEqual(response.status_code, 400)
