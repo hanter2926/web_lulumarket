@@ -1,0 +1,8 @@
+.env
+db.sqlite3
+django-error.log
+__pycache__/
+*.py[cod]
+venv/
+frontend/node_modules/
+frontend/dist/
