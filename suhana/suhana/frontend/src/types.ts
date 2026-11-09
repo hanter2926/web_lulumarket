@@ -12,6 +12,27 @@ export type ReportItem = {
   created_at: string;
 };
 
+export type PdfPageResult = {
+  page: number;
+  status?: string;
+  text_same: boolean;
+  first_text?: string;
+  second_text?: string;
+  visual?: {
+    difference_percentage: number;
+    differing_pixels: number | null;
+    overlay_png: string | null;
+  } | null;
+};
+
+export type PdfComparisonResult = {
+  first: { page_count: number; has_text_layer: boolean; scanned_likely: boolean };
+  second: { page_count: number; has_text_layer: boolean; scanned_likely: boolean };
+  text_differences: number;
+  visual_differences: number;
+  page_results: PdfPageResult[];
+};
+
 export type ApiResponse = {
   success?: boolean;
   message?: string;
@@ -34,5 +55,6 @@ export type ComparisonResponse = ApiResponse & {
     same_type: boolean;
     first: { name: string; size_bytes: number; content_type: string };
     second: { name: string; size_bytes: number; content_type: string };
+    pdf_comparison?: PdfComparisonResult;
   };
 };

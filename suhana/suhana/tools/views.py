@@ -1,4 +1,5 @@
 import json
+import math
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
@@ -42,7 +43,12 @@ def convert_units(request):
             {"success": False, "message": "Enter a valid numeric value."}, status=400
         )
 
-    if value < 0 or source not in UNIT_FACTORS or target not in UNIT_FACTORS:
+    if (
+        not math.isfinite(value)
+        or value < 0
+        or source not in UNIT_FACTORS
+        or target not in UNIT_FACTORS
+    ):
         return JsonResponse(
             {"success": False, "message": "Invalid unit or value."}, status=400
         )

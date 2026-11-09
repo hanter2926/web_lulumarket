@@ -107,7 +107,10 @@ select {
   font: inherit;
 }
 
-input:focus {
+input:focus,
+select:focus,
+button:focus-visible,
+a:focus-visible {
   border-color: #2563eb;
   outline: 3px solid rgb(37 99 235 / 16%);
 }
@@ -149,6 +152,31 @@ button:disabled {
   color: #65728b;
   line-height: 1.5;
   text-align: center;
+}
+
+.pdf-results {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.pdf-page-result {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #dbe4f2;
+  border-radius: 9px;
+  color: #526079;
+}
+
+.pdf-page-result strong {
+  color: #172033;
+}
+
+.pdf-page-result img {
+  width: min(100%, 420px);
+  border: 1px solid #fca5a5;
+  background: #fff1f2;
 }
 
 .status-message {

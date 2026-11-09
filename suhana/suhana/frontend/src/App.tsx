@@ -4,8 +4,8 @@ import AuthPanel from "./components/AuthPanel";
 import ToolPanels from "./components/ToolPanels";
 import StoragePanel from "./components/StoragePanel";
 import { DashboardPanel, HistoryPanel, PlansPanel } from "./components/WorkspacePanels";
-import { errorMessage, getCsrfToken, postJson } from "./api";
-import type { ActiveView, ApiResponse, RegistrationStep } from "./types";
+import { errorMessage, getCsrfToken, postJson, readJson } from "./api";
+import type { ActiveView, ApiResponse, ComparisonResponse, PdfComparisonResult, RegistrationStep } from "./types";
 
 const initialForm = {
   username: "",
@@ -36,6 +36,7 @@ function App() {
   });
   const [conversionResult, setConversionResult] = useState("");
   const [comparisonResult, setComparisonResult] = useState("");
+  const [pdfComparison, setPdfComparison] = useState<PdfComparisonResult | null>(null);
   const [dashboard, setDashboard] = useState<ApiResponse | null>(null);
   const [files, setFiles] = useState<ApiResponse["files"]>([]);
   const [folders, setFolders] = useState<ApiResponse["folders"]>([]);
@@ -215,6 +216,13 @@ function App() {
       }
 
       setStep("login");
+      setActiveView("auth");
+      setDashboard(null);
+      setFiles([]);
+      setFolders([]);
+      setReports([]);
+      setSelectedFolderId(null);
+      setPdfComparison(null);
       setMessage(data.message ?? "Logout successful.");
     } catch (error: unknown) {
       setMessage(errorMessage(error));
@@ -246,28 +254,48 @@ function App() {
   }
 
   async function loadDashboard() {
-      const response = await fetch("/api/storage/dashboard/", { credentials: "include" });
-      const data = (await response.json()) as ApiResponse;
-      if (response.ok) setDashboard(data);
+      try {
+        const response = await fetch("/api/storage/dashboard/", { credentials: "include" });
+        const data = await readJson(response);
+        if (response.ok) setDashboard(data);
+        else setMessage(data.message ?? "Unable to load dashboard.");
+      } catch (error: unknown) {
+        setMessage(errorMessage(error));
+      }
   }
 
   async function loadFiles(folderId = selectedFolderId) {
-      const query = folderId === null ? "" : `?folder=${folderId}`;
-      const response = await fetch(`/api/storage/files/${query}`, { credentials: "include" });
-      const data = (await response.json()) as ApiResponse;
-      if (response.ok) setFiles(data.files ?? []);
+      try {
+        const query = folderId === null ? "" : `?folder=${folderId}`;
+        const response = await fetch(`/api/storage/files/${query}`, { credentials: "include" });
+        const data = await readJson(response);
+        if (response.ok) setFiles(data.files ?? []);
+        else setMessage(data.message ?? "Unable to load files.");
+      } catch (error: unknown) {
+        setMessage(errorMessage(error));
+      }
   }
 
   async function loadFolders() {
-      const response = await fetch("/api/storage/folders/tree/", { credentials: "include" });
-      const data = (await response.json()) as ApiResponse;
-      if (response.ok) setFolders(data.folders ?? []);
+      try {
+        const response = await fetch("/api/storage/folders/tree/", { credentials: "include" });
+        const data = await readJson(response);
+        if (response.ok) setFolders(data.folders ?? []);
+        else setMessage(data.message ?? "Unable to load folders.");
+      } catch (error: unknown) {
+        setMessage(errorMessage(error));
+      }
   }
 
   async function loadReports() {
-      const response = await fetch("/api/tools/reports/", { credentials: "include" });
-      const data = (await response.json()) as ApiResponse;
-      if (response.ok) setReports(data.reports ?? []);
+      try {
+        const response = await fetch("/api/tools/reports/", { credentials: "include" });
+        const data = await readJson(response);
+        if (response.ok) setReports(data.reports ?? []);
+        else setMessage(data.message ?? "Unable to load comparison history.");
+      } catch (error: unknown) {
+        setMessage(errorMessage(error));
+      }
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -279,9 +307,11 @@ function App() {
           method: "POST", headers: { "X-CSRFToken": csrfToken },
           credentials: "include", body: formData,
         });
-        const data = (await response.json()) as ApiResponse;
+        const data = await readJson(response);
         setMessage(data.message ?? (response.ok ? "File uploaded." : "Upload failed."));
         if (response.ok) await loadFiles();
+      } catch (error: unknown) {
+        setMessage(errorMessage(error));
       } finally {
         setLoading(false);
       }
@@ -289,28 +319,40 @@ function App() {
 
   async function handleDeleteFile(id: number) {
       if (!window.confirm("Delete this file permanently?")) return;
-      const response = await fetch(`/api/storage/files/${id}/delete/`, {
-        method: "POST", headers: { "X-CSRFToken": csrfToken }, credentials: "include",
-      });
-      const data = (await response.json()) as ApiResponse;
-      setMessage(data.message ?? "File deleted.");
-      if (response.ok) await loadFiles();
+      try {
+        const response = await fetch(`/api/storage/files/${id}/delete/`, {
+          method: "POST", headers: { "X-CSRFToken": csrfToken }, credentials: "include",
+        });
+        const data = await readJson(response);
+        setMessage(data.message ?? (response.ok ? "File deleted." : "Unable to delete file."));
+        if (response.ok) await loadFiles();
+      } catch (error: unknown) {
+        setMessage(errorMessage(error));
+      }
   }
 
   async function handleResetRequest(event: React.FormEvent<HTMLFormElement>) {
       event.preventDefault();
-      const { response, data } = await postJson("/api/accounts/password-reset/request/",
-        { email: resetForm.email }, csrfToken);
-      setMessage(data.message ?? "Reset request submitted.");
-      if (response.ok) setResetRequested(true);
+      try {
+        const { response, data } = await postJson("/api/accounts/password-reset/request/",
+          { email: resetForm.email }, csrfToken);
+        setMessage(data.message ?? "Reset request submitted.");
+        if (response.ok) setResetRequested(true);
+      } catch (error: unknown) {
+        setMessage(errorMessage(error));
+      }
   }
 
   async function handleResetConfirm(event: React.FormEvent<HTMLFormElement>) {
       event.preventDefault();
-      const { response, data } = await postJson("/api/accounts/password-reset/confirm/",
-        resetForm, csrfToken);
-      setMessage(data.message ?? "Password reset complete.");
-      if (response.ok) { setResetRequested(false); setActiveView("auth"); setStep("login"); }
+      try {
+        const { response, data } = await postJson("/api/accounts/password-reset/confirm/",
+          resetForm, csrfToken);
+        setMessage(data.message ?? "Password reset complete.");
+        if (response.ok) { setResetRequested(false); setActiveView("auth"); setStep("login"); }
+      } catch (error: unknown) {
+        setMessage(errorMessage(error));
+      }
   }
 
   function openView(view: ActiveView) {
@@ -370,6 +412,7 @@ function App() {
     }
     setLoading(true);
     setComparisonResult("");
+    setPdfComparison(null);
     try {
       const response = await fetch("/api/tools/compare/", {
         method: "POST",
@@ -377,24 +420,26 @@ function App() {
         credentials: "include",
         body: formData,
       });
-      const data = (await response.json()) as ApiResponse & {
-        comparison?: {
-          same_content: boolean;
-          same_type: boolean;
-          first: { name: string; size_bytes: number; content_type: string };
-          second: { name: string; size_bytes: number; content_type: string };
-        };
-      };
+      const data = (await readJson(response)) as ComparisonResponse;
       if (!response.ok || !data.success || !data.comparison) {
         setComparisonResult(data.message ?? "Comparison failed.");
         return;
       }
       const result = data.comparison;
-      setComparisonResult(
-        result.same_content
-          ? "The files have identical content."
-          : `The files are different. Types match: ${result.same_type ? "yes" : "no"}.`,
-      );
+      if (result.pdf_comparison) {
+        const pdf = result.pdf_comparison;
+        setPdfComparison(pdf);
+        setComparisonResult(
+          `${pdf.text_differences} page text difference(s), ${pdf.visual_differences} visual difference(s). ` +
+          `Pages: ${pdf.first.page_count} vs ${pdf.second.page_count}.`,
+        );
+      } else {
+        setComparisonResult(
+          result.same_content
+            ? "The files have identical content."
+            : `The files are different. Types match: ${result.same_type ? "yes" : "no"}.`,
+        );
+      }
     } catch (error: unknown) {
       setComparisonResult(errorMessage(error));
     } finally {
@@ -452,19 +497,19 @@ function App() {
         {activeView === "plans" && <PlansPanel />}
 
         {activeView === "reset" && <ToolPanels active="reset" loading={loading} csrfReady={Boolean(csrfToken)}
-          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult}
+          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "converter" && <ToolPanels active="converter" loading={loading} csrfReady={Boolean(csrfToken)}
-          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult}
+          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "compare" && <ToolPanels active="compare" loading={loading} csrfReady={Boolean(csrfToken)}
-          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult}
+          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}

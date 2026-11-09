@@ -15,6 +15,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction, IntegrityError
 from django.utils import timezone
+from storage.models import StoragePlan, UserStorage
 
 from .models import PendingSignup
 from .utils import (
@@ -244,6 +245,13 @@ def verify_signup_otp(request):
             # Reuse the already-hashed password.
             user.password = pending.password_hash
             user.save()
+            plan = StoragePlan.objects.filter(is_active=True).order_by("quota_bytes").first()
+            if plan is None:
+                plan, _ = StoragePlan.objects.get_or_create(
+                    name="Free",
+                    defaults={"quota_bytes": 100 * 1024 * 1024, "is_active": True},
+                )
+            UserStorage.objects.get_or_create(user=user, defaults={"plan": plan})
 
             pending.delete()
 

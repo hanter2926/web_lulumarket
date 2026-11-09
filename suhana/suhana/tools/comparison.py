@@ -3,6 +3,8 @@ import re
 import struct
 from pathlib import Path
 
+from .pdf_rendering import PdfiumRenderer
+
 
 MAX_COMPARISON_FILE_SIZE = 25 * 1024 * 1024
 SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
@@ -42,9 +44,16 @@ def _image_dimensions(uploaded_file, content_type):
             while marker == b"\xff":
                 marker = uploaded_file.read(1)
             if marker in {b"\xc0", b"\xc1", b"\xc2", b"\xc3", b"\xc5", b"\xc6", b"\xc7", b"\xc9", b"\xca", b"\xcb", b"\xcd", b"\xce", b"\xcf"}:
-                length = struct.unpack(">H", uploaded_file.read(2))[0]
-                precision = uploaded_file.read(1)
-                height, width = struct.unpack(">HH", uploaded_file.read(4))
+                length_bytes = uploaded_file.read(2)
+                if len(length_bytes) != 2:
+                    break
+                length = struct.unpack(">H", length_bytes)[0]
+                if length < 7:
+                    break
+                frame = uploaded_file.read(5)
+                if len(frame) != 5:
+                    break
+                height, width = struct.unpack(">HH", frame[1:5])
                 return width, height
             length_bytes = uploaded_file.read(2)
             if len(length_bytes) != 2:
@@ -55,6 +64,20 @@ def _image_dimensions(uploaded_file, content_type):
             uploaded_file.seek(length - 2, 1)
 
     return None
+
+
+def _validate_signature(uploaded_file, content_type):
+    header = uploaded_file.read(32)
+    uploaded_file.seek(0)
+    valid = {
+        "image/png": header.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/gif": header[:6] in (b"GIF87a", b"GIF89a"),
+        "image/jpeg": header[:2] == b"\xff\xd8",
+        "image/webp": header[:4] == b"RIFF" and header[8:12] == b"WEBP",
+        SUPPORTED_PDF_TYPE: header.startswith(b"%PDF-"),
+    }
+    if not valid.get(content_type, False):
+        raise ValueError("The uploaded file content does not match its declared format.")
 
 
 def _pdf_page_count(uploaded_file):
@@ -75,9 +98,12 @@ def file_metadata(uploaded_file):
     }
 
     if content_type in SUPPORTED_IMAGE_TYPES:
+        _validate_signature(uploaded_file, content_type)
         metadata["dimensions"] = _image_dimensions(uploaded_file, content_type)
     elif content_type == SUPPORTED_PDF_TYPE:
-        metadata["page_count"] = _pdf_page_count(uploaded_file)
+        _validate_signature(uploaded_file, content_type)
+        metadata["page_count"] = PdfiumRenderer().inspect(uploaded_file.read())["page_count"]
+        uploaded_file.seek(0)
 
     return metadata
 
@@ -104,6 +130,11 @@ def compare_uploads(first, second):
         result["page_count_difference"] = (
             first_metadata["page_count"] - second_metadata["page_count"]
         )
+        result["pdf_comparison"] = PdfiumRenderer().compare(
+            first.read(), second.read()
+        )
+        first.seek(0)
+        second.seek(0)
     if first.content_type == second.content_type and first.content_type in SUPPORTED_IMAGE_TYPES:
         result["same_dimensions"] = first_metadata.get("dimensions") == second_metadata.get(
             "dimensions"

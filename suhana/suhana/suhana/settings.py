@@ -23,13 +23,15 @@ load_dotenv(BASE_DIR / ".env")
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY must be configured.")
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DJANGO_DEBUG", "False").strip().lower() in {"1", "true", "yes", "on"}
 
 ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
-    "testserver",
+    host.strip()
+    for host in os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",")
+    if host.strip()
 ]
 
 CSRF_TRUSTED_ORIGINS = [
@@ -92,11 +94,11 @@ WSGI_APPLICATION = 'suhana.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'suhana_db',
-        'USER': 'root',
+        'NAME': os.getenv('MYSQL_DATABASE', 'suhana_db'),
+        'USER': os.getenv('MYSQL_USER', 'root'),
         'PASSWORD': os.getenv('MYSQL_PASSWORD'),
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
+        'HOST': os.getenv('MYSQL_HOST', '127.0.0.1'),
+        'PORT': os.getenv('MYSQL_PORT', '3306'),
         'OPTIONS': {
             'charset': 'utf8mb4',
         },
@@ -154,3 +156,13 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "false").lower() == "true"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+    SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = False

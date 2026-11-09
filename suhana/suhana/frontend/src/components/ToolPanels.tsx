@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import type { PdfComparisonResult } from "../types";
 
 type Props = {
   active: "reset" | "converter" | "compare";
@@ -7,6 +8,7 @@ type Props = {
   conversion: { value: string; from: string; to: string };
   conversionResult: string;
   comparisonResult: string;
+  pdfComparison: PdfComparisonResult | null;
   resetForm: { email: string; otp: string; password: string };
   resetRequested: boolean;
   onConversion: (event: FormEvent<HTMLFormElement>) => void;
@@ -59,5 +61,13 @@ export default function ToolPanels(props: Props) {
       <input id="second-file" name="second" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" required />
       <button type="submit" disabled={props.loading || !props.csrfReady}>{props.loading ? "Comparing..." : "Compare files"}</button>
       {props.comparisonResult && <p className="result-panel" role="status">{props.comparisonResult}</p>}
+      {props.pdfComparison && <section className="pdf-results" aria-label="PDF comparison details">
+        {props.pdfComparison.page_results.map((page) => <article className="pdf-page-result" key={page.page}>
+          <strong>Page {page.page}</strong>
+          <span>{page.status ?? (page.text_same ? "Text identical" : "Text differs")}</span>
+          {page.visual && <span>Visual difference: {page.visual.difference_percentage}%</span>}
+          {page.visual?.overlay_png && <img src={page.visual.overlay_png} alt={`Difference overlay for page ${page.page}`} />}
+        </article>)}
+      </section>}
   </form>;
 }

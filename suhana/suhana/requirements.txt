@@ -1,0 +1,4 @@
+Django==5.2.19
+mysqlclient==2.3.0
+python-dotenv==1.2.4
+pypdfium2==5.15.2

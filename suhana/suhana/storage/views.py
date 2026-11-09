@@ -1,10 +1,13 @@
 import hashlib
+from pathlib import PurePath
 
 from django.db import IntegrityError, transaction
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from .models import Folder, StoredFile, UserStorage
+
+MAX_STORAGE_FILE_SIZE = 25 * 1024 * 1024
 
 
 def _auth_error(request):
@@ -140,6 +143,17 @@ def upload_file(request):
     uploaded = request.FILES.get("file")
     if uploaded is None:
         return JsonResponse({"success": False, "message": "Choose a file to upload."}, status=400)
+    if uploaded.size > MAX_STORAGE_FILE_SIZE:
+        return JsonResponse(
+            {"success": False, "message": "Each stored file must be 25 MB or smaller."},
+            status=413,
+        )
+    safe_name = PurePath(uploaded.name or "").name.strip()
+    if not safe_name or safe_name in {".", ".."} or len(safe_name) > 255:
+        return JsonResponse({"success": False, "message": "The file name is invalid."}, status=400)
+    content_type = uploaded.content_type or "application/octet-stream"
+    if any(ord(character) < 32 or ord(character) == 127 for character in content_type):
+        content_type = "application/octet-stream"
 
     folder = None
     folder_id = request.POST.get("folder")
@@ -164,10 +178,10 @@ def upload_file(request):
         stored = StoredFile.objects.create(
             owner=request.user,
             folder=folder,
-            name=uploaded.name,
+            name=safe_name,
             file=uploaded,
             size_bytes=uploaded.size,
-            content_type=uploaded.content_type or "",
+            content_type=content_type,
             sha256=digest.hexdigest(),
         )
         storage.used_bytes += uploaded.size
@@ -187,6 +201,7 @@ def download_file(request, file_id):
     response = FileResponse(stored.file.open("rb"), as_attachment=True, filename=stored.name)
     if stored.content_type:
         response["Content-Type"] = stored.content_type
+    response["X-Content-Type-Options"] = "nosniff"
     return response
 
 

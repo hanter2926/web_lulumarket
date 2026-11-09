@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from .models import PasswordResetChallenge, PendingSignup
 from .utils import hash_otp, hash_user_password
+from storage.models import UserStorage
 
 
 User = get_user_model()
@@ -85,6 +86,7 @@ class RegistrationApiTests(TestCase):
         self.assertFalse(
             PendingSignup.objects.filter(email="verified@example.com").exists()
         )
+        self.assertTrue(UserStorage.objects.filter(user=user).exists())
 
     def test_resend_obeys_cooldown(self):
         PendingSignup.objects.create(

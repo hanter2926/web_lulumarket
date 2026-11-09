@@ -27,7 +27,7 @@ export function HistoryPanel({ reports }: { reports: ReportItem[] }) {
 
 export function PlansPanel() {
   return <div className="workspace-panel plan-grid">
-    <article className="plan-card"><h2>Free</h2><p>Starter storage for personal comparisons.</p><strong>Upgrade-ready</strong></article>
-    <article className="plan-card featured"><h2>Pro</h2><p>Higher quota and room for larger workspaces.</p><strong>Payment integration coming later</strong></article>
+    <article className="plan-card"><h2>Free</h2><p>Starter storage for personal comparisons.</p><strong>Available now</strong></article>
+    <article className="plan-card featured"><h2>Pro</h2><p>Higher quota and room for larger workspaces.</p><strong>Contact support to upgrade</strong></article>
   </div>;
 }
