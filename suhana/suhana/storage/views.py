@@ -53,6 +53,16 @@ def list_files(request):
     ))})
 
 
+@require_GET
+def list_folders(request):
+    error = _auth_error(request)
+    if error:
+        return error
+    return JsonResponse({"success": True, "folders": list(
+        Folder.objects.filter(owner=request.user).values("id", "name", "parent_id")
+    )})
+
+
 @require_POST
 def create_folder(request):
     error = _auth_error(request)

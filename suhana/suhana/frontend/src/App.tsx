@@ -1,23 +1,11 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-
-type RegistrationStep = "register" | "verify" | "success" | "login" | "logged-in";
-type ActiveView = "auth" | "dashboard" | "storage" | "converter" | "compare" | "history" | "reset" | "plans";
-
-type ApiResponse = {
-  success?: boolean;
-  message?: string;
-  csrfToken?: string;
-  email?: string;
-  wait_seconds?: number;
-  result?: number;
-  username?: string;
-  storage?: { used_bytes: number; quota_bytes: number; plan: string } | null;
-  file_count?: number;
-  recent_files?: Array<{ id: number; name: string; size_bytes: number; content_type: string }>;
-  files?: Array<{ id: number; name: string; size_bytes: number; content_type: string; folder_id: number | null }>;
-  reports?: Array<{ id: number; first_name: string; second_name: string; comparison_type: string; result: { same_content: boolean }; created_at: string }>;
-};
+import AuthPanel from "./components/AuthPanel";
+import ToolPanels from "./components/ToolPanels";
+import StoragePanel from "./components/StoragePanel";
+import { DashboardPanel, HistoryPanel, PlansPanel } from "./components/WorkspacePanels";
+import { errorMessage, getCsrfToken, postJson } from "./api";
+import type { ActiveView, ApiResponse, RegistrationStep } from "./types";
 
 const initialForm = {
   username: "",
@@ -30,38 +18,6 @@ const initialLoginForm = {
   identifier: "",
   password: "",
 };
-
-async function getCsrfToken(): Promise<string> {
-  const response = await fetch("/api/accounts/csrf/", {
-    credentials: "include",
-  });
-  const data = (await response.json()) as ApiResponse;
-
-  if (!response.ok || !data.csrfToken) {
-    throw new Error("Unable to initialize secure registration.");
-  }
-
-  return data.csrfToken;
-}
-
-async function postJson(
-  url: string,
-  payload: Record<string, string>,
-  csrfToken: string,
-): Promise<{ response: Response; data: ApiResponse }> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-CSRFToken": csrfToken,
-    },
-    credentials: "include",
-    body: JSON.stringify(payload),
-  });
-
-  const data = (await response.json()) as ApiResponse;
-  return { response, data };
-}
 
 function App() {
   const [form, setForm] = useState(initialForm);
@@ -82,15 +38,20 @@ function App() {
   const [comparisonResult, setComparisonResult] = useState("");
   const [dashboard, setDashboard] = useState<ApiResponse | null>(null);
   const [files, setFiles] = useState<ApiResponse["files"]>([]);
+  const [folders, setFolders] = useState<ApiResponse["folders"]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [reports, setReports] = useState<ApiResponse["reports"]>([]);
   const [resetForm, setResetForm] = useState({ email: "", otp: "", password: "" });
   const [resetRequested, setResetRequested] = useState(false);
+
+  const updateFormField = (field: keyof typeof initialForm, value: string) =>
+    setForm((current) => ({ ...current, [field]: value }));
 
   useEffect(() => {
     getCsrfToken()
       .then(setCsrfToken)
       .catch((error: unknown) => {
-        setMessage(error instanceof Error ? error.message : "Unable to connect to server.");
+        setMessage(errorMessage(error));
       });
   }, []);
 
@@ -105,10 +66,6 @@ function App() {
 
     return () => window.clearInterval(timer);
   }, [resendCooldown]);
-
-  function updateField(field: keyof typeof initialForm, value: string) {
-    setForm((current) => ({ ...current, [field]: value }));
-  }
 
   async function handleRegister(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -145,7 +102,7 @@ function App() {
       setResendCooldown(60);
       setMessage(data.message ?? "OTP sent successfully. Please check your email.");
     } catch (error: unknown) {
-      setMessage(error instanceof Error ? error.message : "Unable to connect to server.");
+      setMessage(errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -178,7 +135,7 @@ function App() {
       setOtp("");
       setMessage(data.message ?? "Your account was created successfully.");
     } catch (error: unknown) {
-      setMessage(error instanceof Error ? error.message : "Unable to connect to server.");
+      setMessage(errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -207,7 +164,7 @@ function App() {
       setResendCooldown(60);
       setMessage(data.message ?? "A new OTP was sent.");
     } catch (error: unknown) {
-      setMessage(error instanceof Error ? error.message : "Unable to connect to server.");
+      setMessage(errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -240,7 +197,7 @@ function App() {
       setLoginForm(initialLoginForm);
       setMessage(data.message ?? "Login successful.");
     } catch (error: unknown) {
-      setMessage(error instanceof Error ? error.message : "Unable to connect to server.");
+      setMessage(errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -260,7 +217,7 @@ function App() {
       setStep("login");
       setMessage(data.message ?? "Logout successful.");
     } catch (error: unknown) {
-      setMessage(error instanceof Error ? error.message : "Unable to connect to server.");
+      setMessage(errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -282,7 +239,7 @@ function App() {
       }
       setConversionResult(`${data.result} ${conversion.to.toUpperCase()}`);
     } catch (error: unknown) {
-      setConversionResult(error instanceof Error ? error.message : "Unable to connect to server.");
+      setConversionResult(errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -294,10 +251,17 @@ function App() {
       if (response.ok) setDashboard(data);
   }
 
-  async function loadFiles() {
-      const response = await fetch("/api/storage/files/", { credentials: "include" });
+  async function loadFiles(folderId = selectedFolderId) {
+      const query = folderId === null ? "" : `?folder=${folderId}`;
+      const response = await fetch(`/api/storage/files/${query}`, { credentials: "include" });
       const data = (await response.json()) as ApiResponse;
       if (response.ok) setFiles(data.files ?? []);
+  }
+
+  async function loadFolders() {
+      const response = await fetch("/api/storage/folders/tree/", { credentials: "include" });
+      const data = (await response.json()) as ApiResponse;
+      if (response.ok) setFolders(data.folders ?? []);
   }
 
   async function loadReports() {
@@ -352,8 +316,49 @@ function App() {
   function openView(view: ActiveView) {
     setActiveView(view);
     if (view === "dashboard") void loadDashboard();
-    if (view === "storage") void loadFiles();
+    if (view === "storage") {
+      void loadFiles();
+      void loadFolders();
+    }
     if (view === "history") void loadReports();
+  }
+
+  async function createFolder() {
+    const name = window.prompt("Folder name");
+    if (!name?.trim()) return;
+    const body = new URLSearchParams({ name: name.trim() });
+    if (selectedFolderId !== null) body.set("parent", String(selectedFolderId));
+    const response = await fetch("/api/storage/folders/", {
+      method: "POST", headers: { "X-CSRFToken": csrfToken }, credentials: "include", body,
+    });
+    const data = (await response.json()) as ApiResponse;
+    setMessage(data.message ?? (response.ok ? "Folder created." : "Unable to create folder."));
+    if (response.ok) await loadFolders();
+  }
+
+  async function renameFolder(folderId: number, currentName: string) {
+    const name = window.prompt("New folder name", currentName);
+    if (!name?.trim()) return;
+    const body = new URLSearchParams({ name: name.trim() });
+    const response = await fetch(`/api/storage/folders/${folderId}/rename/`, {
+      method: "POST", headers: { "X-CSRFToken": csrfToken }, credentials: "include", body,
+    });
+    const data = (await response.json()) as ApiResponse;
+    setMessage(data.message ?? "Folder updated.");
+    if (response.ok) await loadFolders();
+  }
+
+  async function deleteFolder(folderId: number) {
+    if (!window.confirm("Delete this folder and all nested files?")) return;
+    const response = await fetch(`/api/storage/folders/${folderId}/delete/`, {
+      method: "POST", headers: { "X-CSRFToken": csrfToken }, credentials: "include",
+    });
+    const data = (await response.json()) as ApiResponse;
+    setMessage(data.message ?? "Folder deleted.");
+    if (response.ok) {
+      setSelectedFolderId(null);
+      await Promise.all([loadFolders(), loadFiles(null)]);
+    }
   }
 
   async function handleComparison(event: React.FormEvent<HTMLFormElement>) {
@@ -391,7 +396,7 @@ function App() {
           : `The files are different. Types match: ${result.same_type ? "yes" : "no"}.`,
       );
     } catch (error: unknown) {
-      setComparisonResult(error instanceof Error ? error.message : "Unable to connect to server.");
+      setComparisonResult(errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -436,200 +441,42 @@ function App() {
           )}
         </p>
 
-        {activeView === "dashboard" && (
-          <div className="workspace-panel">
-            <h2>Welcome, {dashboard?.username ?? "user"}</h2>
-            <p>{dashboard?.file_count ?? 0} files in your workspace.</p>
-            {dashboard?.storage && <p>Plan: <strong>{dashboard.storage.plan}</strong> · {dashboard.storage.used_bytes} / {dashboard.storage.quota_bytes} bytes used.</p>}
-            <div className="action-grid">
-              <button type="button" onClick={() => openView("storage")}>Manage files</button>
-              <button type="button" onClick={() => openView("history")}>View history</button>
-            </div>
-          </div>
-        )}
+        {activeView === "dashboard" && <DashboardPanel dashboard={dashboard}
+          onFiles={() => openView("storage")} onHistory={() => openView("history")} />}
+        {activeView === "storage" && <StoragePanel csrfReady={Boolean(csrfToken)} loading={loading}
+          selectedFolderId={selectedFolderId} folders={folders ?? []} files={files ?? []}
+          onSelectFolder={(id) => { setSelectedFolderId(id); void loadFiles(id); }}
+          onCreateFolder={createFolder} onRenameFolder={renameFolder} onDeleteFolder={deleteFolder}
+          onUpload={handleUpload} onDeleteFile={handleDeleteFile} />}
+        {activeView === "history" && <HistoryPanel reports={reports ?? []} />}
+        {activeView === "plans" && <PlansPanel />}
 
-        {activeView === "storage" && (
-          <div className="workspace-panel">
-            <form onSubmit={handleUpload}>
-              <label htmlFor="stored-file">Upload a file</label>
-              <input id="stored-file" name="file" type="file" required />
-              <button type="submit" disabled={loading || !csrfToken}>{loading ? "Uploading..." : "Upload"}</button>
-            </form>
-            <ul className="file-list">{files?.map((file) => <li key={file.id}>
-              <span>{file.name} <small>{file.size_bytes} bytes</small></span>
-              <span>
-                <a href={`/api/storage/files/${file.id}/download/`} target="_blank" rel="noreferrer">Download</a>
-                <button type="button" className="danger-button" onClick={() => handleDeleteFile(file.id)}>Delete</button>
-              </span>
-            </li>)}</ul>
-          </div>
-        )}
+        {activeView === "reset" && <ToolPanels active="reset" loading={loading} csrfReady={Boolean(csrfToken)}
+          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult}
+          resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
+          onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
+          onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
+          onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
+        {activeView === "converter" && <ToolPanels active="converter" loading={loading} csrfReady={Boolean(csrfToken)}
+          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult}
+          resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
+          onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
+          onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
+          onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
+        {activeView === "compare" && <ToolPanels active="compare" loading={loading} csrfReady={Boolean(csrfToken)}
+          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult}
+          resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
+          onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
+          onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
+          onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
 
-        {activeView === "history" && (
-          <div className="workspace-panel">
-            {reports?.length ? reports.map((report) => <article className="report-card" key={report.id}>
-              <strong>{report.first_name} vs {report.second_name}</strong>
-              <span>{report.result.same_content ? "Identical content" : "Differences found"} · {new Date(report.created_at).toLocaleString()}</span>
-            </article>) : <p>No saved comparison reports yet.</p>}
-          </div>
-        )}
-
-        {activeView === "plans" && (
-          <div className="workspace-panel plan-grid">
-            <article className="plan-card"><h2>Free</h2><p>Starter storage for personal comparisons.</p><strong>Upgrade-ready</strong></article>
-            <article className="plan-card featured"><h2>Pro</h2><p>Higher quota and room for larger workspaces.</p><strong>Payment integration coming later</strong></article>
-          </div>
-        )}
-
-        {activeView === "reset" && (
-          <form onSubmit={resetRequested ? handleResetConfirm : handleResetRequest}>
-            <label htmlFor="reset-email">Email</label>
-            <input id="reset-email" type="email" value={resetForm.email} onChange={(event) => setResetForm({ ...resetForm, email: event.target.value })} required />
-            {resetRequested && <>
-              <label htmlFor="reset-otp">OTP</label>
-              <input id="reset-otp" inputMode="numeric" maxLength={6} value={resetForm.otp} onChange={(event) => setResetForm({ ...resetForm, otp: event.target.value.replace(/\D/g, "") })} required />
-              <label htmlFor="reset-password">New password</label>
-              <input id="reset-password" type="password" autoComplete="new-password" value={resetForm.password} onChange={(event) => setResetForm({ ...resetForm, password: event.target.value })} required />
-            </>}
-            <button type="submit" disabled={loading || !csrfToken}>{resetRequested ? "Reset password" : "Send reset OTP"}</button>
-          </form>
-        )}
-
-        {activeView === "converter" && (
-          <form onSubmit={handleConversion}>
-            <label htmlFor="conversion-value">Value</label>
-            <input id="conversion-value" type="number" min="0" step="any"
-              value={conversion.value}
-              onChange={(event) => setConversion((current) => ({ ...current, value: event.target.value }))}
-              required />
-            <label htmlFor="conversion-from">From</label>
-            <select id="conversion-from" value={conversion.from}
-              onChange={(event) => setConversion((current) => ({ ...current, from: event.target.value }))}>
-              <option value="bit">Bit</option><option value="byte">Byte</option>
-              <option value="kb">KB</option><option value="mb">MB</option>
-              <option value="gb">GB</option><option value="tb">TB</option>
-            </select>
-            <label htmlFor="conversion-to">To</label>
-            <select id="conversion-to" value={conversion.to}
-              onChange={(event) => setConversion((current) => ({ ...current, to: event.target.value }))}>
-              <option value="bit">Bit</option><option value="byte">Byte</option>
-              <option value="kb">KB</option><option value="mb">MB</option>
-              <option value="gb">GB</option><option value="tb">TB</option>
-            </select>
-            <button type="submit" disabled={loading || !csrfToken}>
-              {loading ? "Converting..." : "Convert"}
-            </button>
-            {conversionResult && <p className="result-panel" role="status">{conversionResult}</p>}
-          </form>
-        )}
-
-        {activeView === "compare" && (
-          <form onSubmit={handleComparison}>
-            <p className="helper-text">Supported formats: PNG, JPEG, GIF, WEBP, and PDF. Maximum 25 MB per file.</p>
-            <label htmlFor="first-file">First file</label>
-            <input id="first-file" name="first" type="file"
-              accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" required />
-            <label htmlFor="second-file">Second file</label>
-            <input id="second-file" name="second" type="file"
-              accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" required />
-            <button type="submit" disabled={loading || !csrfToken}>
-              {loading ? "Comparing..." : "Compare files"}
-            </button>
-            {comparisonResult && <p className="result-panel" role="status">{comparisonResult}</p>}
-          </form>
-        )}
-
-        {activeView === "auth" && (
-        <>
-        {step === "register" && (
-          <form onSubmit={handleRegister}>
-            <label htmlFor="username">Username</label>
-            <input id="username" type="text" autoComplete="username" value={form.username}
-              onChange={(event) => updateField("username", event.target.value)} required />
-            <label htmlFor="email">Email address</label>
-            <input id="email" type="email" autoComplete="email" value={form.email}
-              onChange={(event) => updateField("email", event.target.value)} required />
-            <label htmlFor="password">Password</label>
-            <input id="password" type="password" autoComplete="new-password" value={form.password}
-              onChange={(event) => updateField("password", event.target.value)} required />
-            <label htmlFor="confirm-password">Confirm password</label>
-            <input id="confirm-password" type="password" autoComplete="new-password"
-              value={form.confirmPassword}
-              onChange={(event) => updateField("confirmPassword", event.target.value)} required />
-            <button type="submit" disabled={loading || !csrfToken}>
-              {loading ? "Please wait..." : "Create account"}
-            </button>
-          </form>
-        )}
-
-        {step === "register" && (
-          <button type="button" className="secondary-button"
-            onClick={() => setStep("login")} disabled={loading}>
-            Already have an account? Sign in
-          </button>
-        )}
-
-        {step === "verify" && (
-          <form onSubmit={handleVerify}>
-            <p className="helper-text">Enter the 6-digit code sent to {form.email}.</p>
-            <label htmlFor="otp">Verification code</label>
-            <input id="otp" type="text" inputMode="numeric" autoComplete="one-time-code"
-              maxLength={6} pattern="\d{6}" value={otp}
-              onChange={(event) => setOtp(event.target.value.replace(/\D/g, ""))} required />
-            <button type="submit" disabled={loading}>
-              {loading ? "Verifying..." : "Verify email"}
-            </button>
-            <button type="button" className="secondary-button" onClick={handleResend}
-              disabled={loading || resendCooldown > 0}>
-              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend OTP"}
-            </button>
-          </form>
-        )}
-
-        {step === "success" && (
-          <div className="success-panel">
-            <p>Your email has been verified and your account was created.</p>
-            <button type="button" onClick={() => setStep("login")}>Continue to login</button>
-          </div>
-        )}
-
-        {step === "login" && (
-          <form onSubmit={handleLogin}>
-            <label htmlFor="login-identifier">Username or email</label>
-            <input id="login-identifier" type="text" autoComplete="username"
-              value={loginForm.identifier}
-              onChange={(event) => setLoginForm((current) => ({
-                ...current,
-                identifier: event.target.value,
-              }))} required />
-            <label htmlFor="login-password">Password</label>
-            <input id="login-password" type="password" autoComplete="current-password"
-              value={loginForm.password}
-              onChange={(event) => setLoginForm((current) => ({
-                ...current,
-                password: event.target.value,
-              }))} required />
-            <button type="submit" disabled={loading || !csrfToken}>
-              {loading ? "Signing in..." : "Sign in"}
-            </button>
-            <button type="button" className="secondary-button"
-              onClick={() => setStep("register")} disabled={loading}>
-              Create a new account
-            </button>
-            <button type="button" className="secondary-button" onClick={() => setActiveView("reset")}>Forgot password?</button>
-          </form>
-        )}
-
-        {step === "logged-in" && (
-          <div className="success-panel">
-            <p>You are signed in and can continue using Suhana.</p>
-            <button type="button" onClick={handleLogout} disabled={loading}>
-              {loading ? "Signing out..." : "Sign out"}
-            </button>
-          </div>
-        )}
-        </>
-        )}
+        {activeView === "auth" && <AuthPanel step={step} loading={loading} csrfReady={Boolean(csrfToken)}
+          form={form} loginForm={loginForm} otp={otp} resendCooldown={resendCooldown}
+          onRegister={handleRegister} onVerify={handleVerify} onResend={handleResend}
+          onLogin={handleLogin} onLogout={handleLogout} onFieldChange={updateFormField}
+          onOtpChange={setOtp}
+          onLoginChange={(field, value) => setLoginForm((current) => ({ ...current, [field]: value }))}
+          onStepChange={setStep} onReset={() => setActiveView("reset")} />}
 
         {activeView === "auth" && message && <p className="status-message" role="status">{message}</p>}
       </section>

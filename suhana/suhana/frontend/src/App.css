@@ -175,6 +175,69 @@ button:disabled {
   gap: 18px;
 }
 
+.storage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.storage-toolbar button {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.folder-layout {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(0, 2fr);
+  gap: 18px;
+  text-align: left;
+}
+
+.folder-tree {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #dce5f5;
+  border-radius: 9px;
+  background: #f8fbff;
+}
+
+.folder-tree button {
+  margin: 0;
+  padding: 6px;
+  color: #334155;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+}
+
+.folder-tree .folder-selected {
+  color: #173a8a;
+  background: #dce8ff;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.folder-row button:first-child {
+  flex: 1;
+}
+
+.folder-action {
+  padding: 4px !important;
+  color: #2563eb !important;
+  font-size: 10px !important;
+}
+
+.folder-child {
+  margin-left: 12px;
+}
+
 .workspace-panel h2 {
   margin: 0;
   color: #173a8a;
@@ -264,6 +327,10 @@ button:disabled {
 
   .action-grid,
   .plan-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .folder-layout {
     grid-template-columns: 1fr;
   }
 
