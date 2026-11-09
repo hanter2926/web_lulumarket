@@ -64,3 +64,30 @@ class ToolsApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_authenticated_comparison_is_saved_to_owner_history(self):
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create_user(
+            username="report-owner", password="StrongPassword123!"
+        )
+        self.client.force_login(user)
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            b"\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+        )
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.png", png, content_type="image/png"),
+                "second": SimpleUploadedFile("second.png", png, content_type="image/png"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.json()["report_id"])
+
+        response = self.client.get("/api/tools/reports/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["reports"]), 1)

@@ -2,8 +2,11 @@ import json
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET
+from django.contrib.auth.decorators import login_required
 
 from .comparison import compare_uploads
+from .models import ComparisonReport
 
 
 UNIT_FACTORS = {
@@ -64,4 +67,26 @@ def compare_files(request):
     except ValueError as error:
         return JsonResponse({"success": False, "message": str(error)}, status=400)
 
-    return JsonResponse({"success": True, "comparison": result})
+    report_id = None
+    if request.user.is_authenticated:
+        report = ComparisonReport.objects.create(
+            owner=request.user,
+            first_name=first.name,
+            second_name=second.name,
+            comparison_type=first.content_type,
+            result=result,
+        )
+        report_id = report.id
+    return JsonResponse({"success": True, "comparison": result, "report_id": report_id})
+
+
+@require_GET
+def reports(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"success": False, "message": "Authentication required."}, status=401)
+    return JsonResponse({
+        "success": True,
+        "reports": list(ComparisonReport.objects.filter(owner=request.user).values(
+            "id", "first_name", "second_name", "comparison_type", "result", "created_at"
+        )),
+    })

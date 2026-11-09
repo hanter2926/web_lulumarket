@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 
-from .models import StoragePlan, StoredFile, UserStorage
+from .models import Folder, StoragePlan, StoredFile, UserStorage
 
 
 User = get_user_model()
@@ -51,3 +51,29 @@ class StorageApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 413)
         self.assertFalse(StoredFile.objects.exists())
+
+    def test_folder_creation_and_rename_are_owner_scoped(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            "/api/storage/folders/",
+            {"name": "Reports"},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 201)
+        folder_id = response.json()["folder_id"]
+
+        response = self.client.post(
+            f"/api/storage/folders/{folder_id}/rename/",
+            {"name": "Saved reports"},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Folder.objects.get(pk=folder_id).name, "Saved reports")
+
+        self.client.force_login(self.other_user)
+        response = self.client.post(
+            f"/api/storage/folders/{folder_id}/rename/",
+            {"name": "Private"},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 404)

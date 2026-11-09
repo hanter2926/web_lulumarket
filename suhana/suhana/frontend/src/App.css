@@ -169,6 +169,82 @@ button:disabled {
   text-align: center;
 }
 
+.workspace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.workspace-panel h2 {
+  margin: 0;
+  color: #173a8a;
+}
+
+.action-grid,
+.plan-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.file-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.file-list li,
+.report-card,
+.plan-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dce5f5;
+  border-radius: 9px;
+  background: #f8fbff;
+}
+
+.file-list small,
+.report-card span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.file-list a {
+  margin-right: 10px;
+  color: #2563eb;
+  font-size: 13px;
+}
+
+.danger-button {
+  margin: 0;
+  padding: 6px 8px;
+  background: #dc2626;
+  font-size: 12px;
+}
+
+.plan-card {
+  display: block;
+}
+
+.plan-card h2 {
+  margin: 0 0 8px;
+}
+
+.plan-card p {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.featured {
+  border-color: #93c5fd;
+}
+
 @media (max-width: 480px) {
   .app {
     padding: 16px;
@@ -176,5 +252,23 @@ button:disabled {
 
   .register-card {
     padding: 30px 22px;
+  }
+
+  .tool-nav {
+    overflow-x: auto;
+  }
+
+  .tool-nav button {
+    min-width: 86px;
+  }
+
+  .action-grid,
+  .plan-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .file-list li {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

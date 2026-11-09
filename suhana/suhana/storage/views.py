@@ -1,6 +1,6 @@
 import hashlib
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
@@ -69,6 +69,57 @@ def create_folder(request):
             return JsonResponse({"success": False, "message": "Parent folder not found."}, status=404)
     folder, created = Folder.objects.get_or_create(owner=request.user, parent=parent, name=name)
     return JsonResponse({"success": True, "created": created, "folder_id": folder.id}, status=201 if created else 200)
+
+
+@require_POST
+def rename_folder(request, folder_id):
+    error = _auth_error(request)
+    if error:
+        return error
+    folder = Folder.objects.filter(id=folder_id, owner=request.user).first()
+    if folder is None:
+        return JsonResponse({"success": False, "message": "Folder not found."}, status=404)
+    name = str(request.POST.get("name", "")).strip()
+    if not name or len(name) > 255:
+        return JsonResponse({"success": False, "message": "A valid folder name is required."}, status=400)
+    folder.name = name
+    try:
+        folder.save(update_fields=["name", "updated_at"])
+    except IntegrityError:
+        return JsonResponse({"success": False, "message": "A folder with that name already exists."}, status=409)
+    return JsonResponse({"success": True, "message": "Folder renamed."})
+
+
+@require_POST
+def delete_folder(request, folder_id):
+    error = _auth_error(request)
+    if error:
+        return error
+    with transaction.atomic():
+        folder = Folder.objects.filter(id=folder_id, owner=request.user).first()
+        if folder is None:
+            return JsonResponse({"success": False, "message": "Folder not found."}, status=404)
+        storage = UserStorage.objects.select_for_update().filter(user=request.user).first()
+        folder_ids = [folder.id]
+        pending_ids = [folder.id]
+        while pending_ids:
+            child_ids = list(
+                Folder.objects.filter(owner=request.user, parent_id__in=pending_ids)
+                .values_list("id", flat=True)
+            )
+            folder_ids.extend(child_ids)
+            pending_ids = child_ids
+        stored_files = StoredFile.objects.filter(
+            owner=request.user, folder_id__in=folder_ids
+        )
+        released = sum(stored_files.values_list("size_bytes", flat=True))
+        if storage:
+            storage.used_bytes = max(storage.used_bytes - released, 0)
+            storage.save(update_fields=["used_bytes"])
+        for stored in stored_files:
+            stored.file.delete(save=False)
+        folder.delete()
+    return JsonResponse({"success": True, "message": "Folder deleted."})
 
 
 @require_POST
