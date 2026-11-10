@@ -94,24 +94,28 @@ def register(request):
         )
 
     if User.objects.filter(username__iexact=username).exists():
+        logger.info("Registration rejected with HTTP 409: username already registered.")
         return JsonResponse(
             {"success": False, "message": "Username already exists."},
             status=409,
         )
 
     if User.objects.filter(email__iexact=email).exists():
+        logger.info("Registration rejected with HTTP 409: email already registered.")
         return JsonResponse(
             {"success": False, "message": "Email already registered."},
             status=409,
         )
 
     if PendingSignup.objects.filter(username__iexact=username).exists():
+        logger.info("Registration rejected with HTTP 409: username already pending.")
         return JsonResponse(
             {"success": False, "message": "Username registration is already pending."},
             status=409,
         )
 
     if PendingSignup.objects.filter(email__iexact=email).exists():
+        logger.info("Registration rejected with HTTP 409: email already pending.")
         return JsonResponse(
             {"success": False, "message": "Email registration is already pending. Please use Resend OTP."},
             status=409,
@@ -141,6 +145,7 @@ def register(request):
             )
 
     except IntegrityError:
+        logger.info("Registration rejected with HTTP 409: concurrent duplicate signup.")
         return JsonResponse(
             {"success": False, "message": "Registration is already pending."},
             status=409,
@@ -320,6 +325,7 @@ def login_view(request):
     user = authenticate(request, username=username, password=password)
     if user is None:
         record_login_failure(request, identifier)
+        logger.info("Login rejected with HTTP 401: invalid credentials.")
         return JsonResponse(
             {"success": False, "message": "Invalid username/email or password."},
             status=401,

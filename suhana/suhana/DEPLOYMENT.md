@@ -12,7 +12,7 @@
 
    Use the same command in Linux shells. The default executable is `tools/rust-engine/target/release/suhana-image-engine.exe` on Windows and `tools/rust-engine/target/release/suhana-image-engine` on Linux. Set `SUHANA_IMAGE_ENGINE` when the executable is installed elsewhere.
 4. The Rust PDF integration loads the PDFium native library distributed with `pypdfium2`. Set `SUHANA_PDFIUM_LIBRARY` to the full library path only when automatic discovery is not suitable (`pdfium.dll` on Windows, `libpdfium.so` on Linux). Retain the native distribution’s license files as described in `THIRD_PARTY_NOTICES.md`.
-5. Set `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, and all `MYSQL_*` variables.
+5. Set `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, and all `MYSQL_*` variables. Configure `EMAIL_HOST_USER` and `EMAIL_HOST_PASSWORD` for the Gmail SMTP account, and optionally set `EMAIL_TIMEOUT` (seconds; defaults to 10). SMTP is configured for STARTTLS on port 587, with implicit SSL disabled.
 6. Set `PROCESSING_JOB_ROOT` to a dedicated private temporary directory when the operating system’s default temp directory is not private to the application account. The default is a `suhana-processing-jobs` directory under the OS temp directory. POSIX permissions are restricted to the service account; on Windows, use a service account whose temp directory ACL is private.
 7. Set `DJANGO_SECURE_SSL_REDIRECT=true` only when the reverse proxy terminates HTTPS and forwards the correct protocol.
 

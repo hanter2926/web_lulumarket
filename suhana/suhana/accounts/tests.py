@@ -49,6 +49,30 @@ class RegistrationApiTests(TestCase):
         send_otp.assert_called_once()
 
     @patch("accounts.views.send_signup_otp", return_value=1)
+    def test_registration_conflict_logs_category_without_personal_data(self, send_otp):
+        User.objects.create_user(
+            username="existing-user",
+            email="existing@example.com",
+            password="StrongPassword123!",
+        )
+
+        with self.assertLogs("accounts.views", level="INFO") as logs:
+            response = self.post_json(
+                "/api/accounts/register/",
+                {
+                    "username": "existing-user",
+                    "email": "other@example.com",
+                    "password": "AnotherStrongPassword123!",
+                },
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("username already registered", "\n".join(logs.output))
+        self.assertNotIn("existing-user", "\n".join(logs.output))
+        self.assertNotIn("existing@example.com", "\n".join(logs.output))
+        send_otp.assert_not_called()
+
+    @patch("accounts.views.send_signup_otp", return_value=1)
     def test_invalid_otp_does_not_create_user(self, send_otp):
         self.post_json(
             "/api/accounts/register/",
@@ -109,14 +133,30 @@ class RegistrationApiTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_csrf_is_required_for_registration(self):
-        response = self.client.post(
-            "/api/accounts/register/",
-            {},
-            content_type="application/json",
-            HTTP_ORIGIN="http://localhost:5174",
-        )
+        with self.assertLogs("django.security.csrf", level="WARNING") as logs:
+            response = self.client.post(
+                "/api/accounts/register/",
+                {},
+                content_type="application/json",
+                HTTP_ORIGIN="http://localhost:5174",
+            )
 
         self.assertEqual(response.status_code, 403)
+        self.assertIn("CSRF token missing", "\n".join(logs.output))
+
+    def test_registration_rejects_untrusted_vite_fallback_port(self):
+        with self.assertLogs("django.security.csrf", level="WARNING") as logs:
+            response = self.client.post(
+                "/api/accounts/register/",
+                {},
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=self.csrf_token,
+                HTTP_ORIGIN="http://localhost:5175",
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Origin checking failed", "\n".join(logs.output))
+        self.assertIn("http://localhost:5175", "\n".join(logs.output))
 
     def test_login_accepts_username_and_creates_session(self):
         user = User.objects.create_user(
@@ -156,12 +196,15 @@ class RegistrationApiTests(TestCase):
             password="StrongPassword123!",
         )
 
-        response = self.post_json(
-            "/api/accounts/login/",
-            {"identifier": "login-user", "password": "wrong-password"},
-        )
+        with self.assertLogs("accounts.views", level="INFO") as logs:
+            response = self.post_json(
+                "/api/accounts/login/",
+                {"identifier": "login-user", "password": "wrong-password"},
+            )
 
         self.assertEqual(response.status_code, 401)
+        self.assertIn("Login rejected with HTTP 401", "\n".join(logs.output))
+        self.assertNotIn("login-user", "\n".join(logs.output))
         self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_login_rate_limit_allows_correct_credentials_after_failures(self):

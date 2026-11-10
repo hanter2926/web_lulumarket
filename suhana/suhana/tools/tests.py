@@ -6,6 +6,7 @@ import tempfile
 import time
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -378,14 +379,34 @@ class ImageComparisonTests(TestCase):
 
 
 class ProcessIsolationTests(TestCase):
+    def python_child_executable(self):
+        if os.name == "nt":
+            return sys._base_executable
+        return sys.executable
+
+    def test_windows_dispatch_does_not_use_posix_resource_limits(self):
+        command = ["engine", "inspect", "input"]
+        working_directory = Path.cwd()
+        with (
+            patch("tools.process_runner.os.name", "nt"),
+            patch("tools.process_runner._run_windows") as windows_runner,
+            patch("tools.process_runner._run_posix") as posix_runner,
+        ):
+            run_limited_process(command, working_directory, timeout_seconds=1)
+
+        windows_runner.assert_called_once_with(
+            command, working_directory, 1, None
+        )
+        posix_runner.assert_not_called()
+
     def test_child_timeout_terminates_the_worker(self):
-        command = [sys.executable, "-c", "import time; time.sleep(10)"]
+        command = [self.python_child_executable(), "-c", "import time; time.sleep(10)"]
 
         with self.assertRaises(ProcessTimeoutError):
             run_limited_process(command, Path.cwd(), timeout_seconds=0.25)
 
     def test_cancellation_terminates_the_worker(self):
-        command = [sys.executable, "-c", "import time; time.sleep(10)"]
+        command = [self.python_child_executable(), "-c", "import time; time.sleep(10)"]
         cancel_at = time.monotonic() + 0.25
 
         with self.assertRaises(ProcessCancelledError):
@@ -398,12 +419,12 @@ class ProcessIsolationTests(TestCase):
 
     def test_crashed_child_does_not_affect_later_worker(self):
         crashed = run_limited_process(
-            [sys.executable, "-c", "import os; os._exit(37)"],
+            [self.python_child_executable(), "-c", "import os; os._exit(37)"],
             Path.cwd(),
             timeout_seconds=5,
         )
         healthy = run_limited_process(
-            [sys.executable, "-c", "print('alive')"],
+            [self.python_child_executable(), "-c", "print('alive')"],
             Path.cwd(),
             timeout_seconds=5,
         )
@@ -422,7 +443,11 @@ class ProcessIsolationTests(TestCase):
                 "$memory = New-Object byte[] (1GB); Write-Output 'allocated'",
             ]
         else:
-            command = [sys.executable, "-c", "memory = bytearray(1024 * 1024 * 1024)"]
+            command = [
+                self.python_child_executable(),
+                "-c",
+                "memory = bytearray(1024 * 1024 * 1024)",
+            ]
 
         result = run_limited_process(command, Path.cwd(), timeout_seconds=15)
 

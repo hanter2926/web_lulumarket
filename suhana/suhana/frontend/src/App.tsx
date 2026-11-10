@@ -100,7 +100,7 @@ function App() {
       );
 
       if (!response.ok || !data.success) {
-        setMessage(data.message ?? "Registration failed.");
+        setMessage(data.message ?? `Registration failed (HTTP ${response.status}).`);
         return;
       }
 

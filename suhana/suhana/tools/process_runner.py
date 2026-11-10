@@ -46,6 +46,13 @@ def _apply_posix_limits():
 
 
 def _run_posix(command, cwd, timeout_seconds, cancel_check):
+    try:
+        import resource
+    except ImportError as error:
+        raise ProcessLimitError(
+            "POSIX worker resource limits require the Python resource module."
+        ) from error
+
     process = subprocess.Popen(
         command,
         stdin=subprocess.DEVNULL,
