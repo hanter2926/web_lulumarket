@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import AuthPanel from "./components/AuthPanel";
 import ToolPanels from "./components/ToolPanels";
@@ -36,8 +36,20 @@ function App() {
   });
   const [conversionResult, setConversionResult] = useState("");
   const [comparisonResult, setComparisonResult] = useState("");
+  const [compressionResult, setCompressionResult] = useState<{
+    message: string;
+    inputBytes?: number;
+    outputBytes?: number;
+    downloadUrl?: string;
+    filename?: string;
+  } | null>(null);
   const [pdfComparison, setPdfComparison] = useState<PdfComparisonResult | null>(null);
   const [activeComparisonJob, setActiveComparisonJob] = useState<{
+    statusUrl: string;
+    cancelUrl: string;
+    token: string;
+  } | null>(null);
+  const [activeCompressionJob, setActiveCompressionJob] = useState<{
     statusUrl: string;
     cancelUrl: string;
     token: string;
@@ -49,11 +61,25 @@ function App() {
   const [reports, setReports] = useState<ApiResponse["reports"]>([]);
   const [resetForm, setResetForm] = useState({ email: "", otp: "", password: "" });
   const [resetRequested, setResetRequested] = useState(false);
+  const registrationInFlight = useRef(false);
+  const compressionInFlight = useRef(false);
 
   const updateFormField = (field: keyof typeof initialForm, value: string) =>
     setForm((current) => ({ ...current, [field]: value }));
 
   useEffect(() => {
+    if (
+      import.meta.env.DEV &&
+      ["localhost", "127.0.0.1"].includes(window.location.hostname) &&
+      Boolean(window.location.port) &&
+      window.location.port !== "5174"
+    ) {
+      const canonicalUrl = new URL(window.location.href);
+      canonicalUrl.port = "5174";
+      window.location.replace(canonicalUrl.toString());
+      return;
+    }
+
     getCsrfToken()
       .then(setCsrfToken)
       .catch((error: unknown) => {
@@ -73,8 +99,17 @@ function App() {
     return () => window.clearInterval(timer);
   }, [resendCooldown]);
 
+  useEffect(() => {
+    const downloadUrl = compressionResult?.downloadUrl;
+    if (!downloadUrl) return;
+    return () => URL.revokeObjectURL(downloadUrl);
+  }, [compressionResult?.downloadUrl]);
+
   async function handleRegister(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (registrationInFlight.current) {
+      return;
+    }
     setMessage("");
 
     if (form.password !== form.confirmPassword) {
@@ -87,6 +122,7 @@ function App() {
       return;
     }
 
+    registrationInFlight.current = true;
     setLoading(true);
     try {
       const { response, data } = await postJson(
@@ -100,7 +136,12 @@ function App() {
       );
 
       if (!response.ok || !data.success) {
-        setMessage(data.message ?? `Registration failed (HTTP ${response.status}).`);
+        setMessage(
+          data.message ??
+            (response.status === 403
+              ? "Registration was blocked by security validation. Refresh the page and try again."
+              : `Registration failed (HTTP ${response.status}).`),
+        );
         return;
       }
 
@@ -110,6 +151,7 @@ function App() {
     } catch (error: unknown) {
       setMessage(errorMessage(error));
     } finally {
+      registrationInFlight.current = false;
       setLoading(false);
     }
   }
@@ -507,6 +549,143 @@ function App() {
     }
   }
 
+  async function handleCompression(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (compressionInFlight.current) return;
+    const formData = new FormData(event.currentTarget);
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      setCompressionResult({ message: "Choose a non-empty file to compress." });
+      return;
+    }
+
+    compressionInFlight.current = true;
+    setLoading(true);
+    setCompressionResult({ message: "Uploading file to the private processing queue..." });
+    setActiveCompressionJob(null);
+    try {
+      const response = await fetch("/api/tools/compress/", {
+        method: "POST",
+        headers: { "X-CSRFToken": csrfToken },
+        credentials: "include",
+        body: formData,
+      });
+      const accepted = await readJson(response);
+      if (!response.ok || !accepted.success || !accepted.status_url || !accepted.cancel_url || !accepted.job_token) {
+        setCompressionResult({ message: accepted.message ?? `Compression failed (HTTP ${response.status}).` });
+        return;
+      }
+
+      const activeJob = {
+        statusUrl: accepted.status_url,
+        cancelUrl: accepted.cancel_url,
+        token: accepted.job_token,
+      };
+      setActiveCompressionJob(activeJob);
+      setCompressionResult({ message: "Compression queued." });
+
+      let completed: ApiResponse | null = null;
+      while (true) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        const statusResponse = await fetch(activeJob.statusUrl, {
+          headers: { "X-Job-Token": activeJob.token },
+          credentials: "include",
+        });
+        const statusData = await readJson(statusResponse);
+        if (!statusResponse.ok || !statusData.status) {
+          setCompressionResult({
+            message: statusData.message ?? "Unable to check compression status.",
+          });
+          return;
+        }
+        if (statusData.state === "queued" || statusData.state === "processing") {
+          setCompressionResult({ message: statusData.stage ?? "Compressing file..." });
+          continue;
+        }
+        if (statusData.state === "cancelled") {
+          setCompressionResult({ message: statusData.stage ?? "Compression cancelled." });
+          return;
+        }
+        if (statusData.state === "failed" || !statusData.compression || !statusData.download_url) {
+          setCompressionResult({
+            message: statusData.message ?? statusData.stage ?? "Compression failed.",
+          });
+          return;
+        }
+        if (statusData.state !== "completed") {
+          setCompressionResult({ message: "The worker returned an unknown compression state." });
+          return;
+        }
+        completed = statusData;
+        break;
+      }
+
+      const compression = completed?.compression;
+      const downloadUrl = completed?.download_url;
+      if (!compression || !downloadUrl) {
+        throw new Error("The compression worker returned incomplete output details.");
+      }
+      const downloadResponse = await fetch(downloadUrl, {
+        headers: { "X-Job-Token": activeJob.token },
+        credentials: "include",
+      });
+      if (!downloadResponse.ok) {
+        const downloadError = await readJson(downloadResponse);
+        setCompressionResult({
+          message: downloadError.message ?? "The compressed output could not be downloaded.",
+        });
+        return;
+      }
+      const blob = await downloadResponse.blob();
+      if (blob.size !== compression.output_bytes || blob.size === 0) {
+        throw new Error("The downloaded file size did not match the validated compression result.");
+      }
+      const actualReduction = compression.input_bytes - blob.size;
+      const reductionPercent = actualReduction > 0
+        ? ` Reduced by ${((actualReduction / compression.input_bytes) * 100).toFixed(1)}%.`
+        : " The valid output was checked but is not smaller than the input.";
+      setCompressionResult({
+        message: `Compression complete.${reductionPercent}`,
+        inputBytes: compression.input_bytes,
+        outputBytes: blob.size,
+        downloadUrl: URL.createObjectURL(blob),
+        filename: compression.filename,
+      });
+    } catch (error: unknown) {
+      setCompressionResult({ message: errorMessage(error) });
+    } finally {
+      compressionInFlight.current = false;
+      setLoading(false);
+      setActiveCompressionJob(null);
+    }
+  }
+
+  async function cancelCompression() {
+    if (!activeCompressionJob) return;
+    try {
+      const response = await fetch(activeCompressionJob.cancelUrl, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "X-Job-Token": activeCompressionJob.token,
+        },
+        credentials: "include",
+      });
+      const data = await readJson(response);
+      if (!response.ok) {
+        setCompressionResult({ message: data.message ?? "Unable to cancel compression." });
+      } else {
+        setCompressionResult({
+          message: data.status === "cancelled"
+            ? "Compression cancelled."
+            : "Cancellation requested. The worker is stopping safely.",
+        });
+      }
+    } catch (error: unknown) {
+      setCompressionResult({ message: errorMessage(error) });
+    }
+  }
+
   async function cancelComparison() {
     if (!activeComparisonJob) return;
     try {
@@ -548,6 +727,8 @@ function App() {
             onClick={() => setActiveView("converter")}>Unit converter</button>
           <button type="button" className={activeView === "compare" ? "nav-active" : "nav-button"}
             onClick={() => setActiveView("compare")}>Compare files</button>
+          <button type="button" className={activeView === "compress" ? "nav-active" : "nav-button"}
+            onClick={() => setActiveView("compress")}>Compress files</button>
           <button type="button" className={activeView === "plans" ? "nav-active" : "nav-button"}
             onClick={() => setActiveView("plans")}>Plans</button>
         </nav>
@@ -556,6 +737,7 @@ function App() {
         <p className="subtitle">
           {activeView === "converter" && "Convert digital storage units"}
           {activeView === "compare" && "Compare image and PDF files"}
+          {activeView === "compress" && "Compress and download a file"}
           {activeView === "dashboard" && "Your Suhana workspace"}
           {activeView === "storage" && "Private cloud storage"}
           {activeView === "history" && "Saved comparison reports"}
@@ -583,24 +765,43 @@ function App() {
         {activeView === "plans" && <PlansPanel />}
 
         {activeView === "reset" && <ToolPanels active="reset" loading={loading} csrfReady={Boolean(csrfToken)}
-          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
+          comparisonResult={comparisonResult} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
+          canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
-          onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
+          onComparison={handleComparison} onCompression={handleCompression}
+          onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "converter" && <ToolPanels active="converter" loading={loading} csrfReady={Boolean(csrfToken)}
-          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
+          comparisonResult={comparisonResult} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
+          canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
-          onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
+          onComparison={handleComparison} onCompression={handleCompression}
+          onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "compare" && <ToolPanels active="compare" loading={loading} csrfReady={Boolean(csrfToken)}
-          conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
+          comparisonResult={comparisonResult} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
+          canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
-          onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
+          onComparison={handleComparison} onCompression={handleCompression}
+          onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
+          onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
+          onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
+        {activeView === "compress" && <ToolPanels active="compress" loading={loading} csrfReady={Boolean(csrfToken)}
+          conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
+          comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
+          canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
+          resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
+          onComparison={handleComparison} onCompression={handleCompression}
+          onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
 

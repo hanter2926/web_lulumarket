@@ -18,7 +18,7 @@
 
 ## Database and worker
 
-Run `python manage.py check --deploy` before releasing. Migration `tools.0002_comparisonqueuecontrol_comparisonjob` creates the async job queue tables and must be applied only after explicit database-change approval and during an approved deployment window. Do not reset the database or remove existing migrations.
+Run `python manage.py check --deploy` before releasing. Migrations `tools.0002_comparisonqueuecontrol_comparisonjob` and `tools.0003_comparisonjob_job_type` create the async job queue and distinguish comparison from compression jobs. Apply them only after explicit database-change approval and during an approved deployment window. Do not reset the database or remove existing migrations.
 
 After the migration is approved and applied, run the worker under a process supervisor, separately from Django web workers:
 
@@ -28,11 +28,13 @@ python manage.py run_comparison_worker --workers 2
 
 Use a Windows service manager or Task Scheduler on Windows and systemd or a container orchestrator on Linux. Configure the supervisor to restart a failed worker and to stop it cleanly. The database queue lock enforces a global maximum of two concurrent jobs across worker processes; the queue admits at most 100 active jobs, with at most three active jobs per authenticated user or anonymous requester. Do not run `--once` in production; it is intended for tests and controlled operations.
 
-The worker claims jobs from the database, stages uploads outside `MEDIA_ROOT`, and launches one Rust process per operation. Each child has a 20-second wall timeout, 25-second CPU-time limit, 512 MiB memory limit, and one-process limit. Windows uses Job Objects; POSIX uses CPU/address-space limits and a separate process group. Cancellation terminates the child process or process group. Deploy on a supported Windows or POSIX host; unsupported platforms fail closed rather than processing in-process. Additional service/container limits are recommended as defense in depth.
+The worker claims comparison and compression jobs from the database, stages uploads and validated compression outputs outside `MEDIA_ROOT`, and launches one Rust process per operation. Each child has a 20-second wall timeout, 25-second CPU-time limit, 512 MiB memory limit, and one-process limit. Windows uses Job Objects; POSIX uses CPU/address-space limits and a separate process group. Cancellation terminates the child process or process group. Deploy on a supported Windows or POSIX host; unsupported platforms fail closed rather than processing in-process. Additional service/container limits are recommended as defense in depth.
 
 The upload and decoder limits are deliberately strict: 25 MiB per file; images up to 8,192 pixels per dimension, 100 animation frames, 20 million decoded pixels per image and 40 million per pair; PDFs up to 100 pages and 150 DPI, 20 million pixels per page, 80 million per document and 160 million combined. The default PDF render resolution is 120 DPI. Limits may reject files accepted by the former Python implementation.
 
-Comparison submission keeps the existing `POST /api/tools/compare/` path but now returns HTTP 202 with a job ID and capability token. Clients poll the returned status URL and may submit a cancellation request to the returned cancel URL. The capability token is required for status and cancellation; authenticated job results remain bound to their owner. The frontend implements polling and cancellation.
+Comparison submission keeps the existing `POST /api/tools/compare/` path but now returns HTTP 202 with a job ID and capability token. Compression is submitted as `POST /api/tools/compress/` using the `file` multipart field; it uses the same queue, status, cancellation, and capability-token rules. Its download URL requires the same job token and serves only output validated by the Rust worker. Temporary compression files are removed by the one-day job cleanup.
+
+Image compression preserves the source format: PNG and WEBP are encoded losslessly, JPEG is re-encoded at quality 90, and GIF frames are retained. Animated PNG and animated WEBP are explicitly rejected. PDF stream compression preserves pages and is validated by PDFium before a job can complete. The API reports actual input/output byte counts; clients must treat output that is not smaller as a valid result with no size reduction, not as a claimed optimization. The frontend implements progress polling, cancellation, and downloading.
 
 ## Web server and cleanup
 

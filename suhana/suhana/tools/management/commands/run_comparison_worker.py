@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Run isolated asynchronous image and PDF comparison workers."
+    help = "Run isolated asynchronous image/PDF comparison and compression workers."
 
     def add_arguments(self, parser):
         parser.add_argument("--workers", type=int, default=MAX_CONCURRENT_COMPARISON_JOBS)

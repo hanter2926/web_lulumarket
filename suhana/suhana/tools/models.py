@@ -24,6 +24,10 @@ class ComparisonQueueControl(models.Model):
 
 
 class ComparisonJob(models.Model):
+    class Type(models.TextChoices):
+        COMPARISON = "compare", "Comparison"
+        COMPRESSION = "compress", "Compression"
+
     class Status(models.TextChoices):
         QUEUED = "queued", "Queued"
         RUNNING = "running", "Running"
@@ -37,6 +41,11 @@ class ComparisonJob(models.Model):
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
+    )
+    job_type = models.CharField(
+        max_length=12,
+        choices=Type.choices,
+        default=Type.COMPARISON,
     )
     first_name = models.CharField(max_length=255)
     second_name = models.CharField(max_length=255)

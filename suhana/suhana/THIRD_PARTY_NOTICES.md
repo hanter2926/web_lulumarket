@@ -26,6 +26,7 @@ The direct Rust dependencies, pinned by `tools/rust-engine/Cargo.lock`, are:
 |---|---:|---|
 | base64 | 0.22.1 | MIT OR Apache-2.0 |
 | image | 0.25.10 | MIT OR Apache-2.0 |
+| lopdf | 0.47.0 | MIT |
 | pdfium-render | 0.9.5 | MIT OR Apache-2.0 |
 | serde | 1.0.229 | MIT OR Apache-2.0 |
 | serde_json | 1.0.154 | MIT OR Apache-2.0 |
@@ -48,5 +49,22 @@ The following inventory covers every registry crate in the locked Cargo metadata
 | Unlicense OR MIT | byteorder@1.5.0, byteorder-lite@0.1.0, memchr@2.8.3 |
 | Zlib | zlib-rs@0.6.8 |
 | Zlib OR Apache-2.0 OR MIT | bytemuck@1.25.2 |
+
+PDF compression adds 43 locked registry crates. Their declared license expressions are taken from the locked crates' Cargo metadata:
+
+| Crate license expression | Added locked crates (`name@version`) |
+|---|---|
+| (Apache-2.0 OR MIT) AND BSD-3-Clause | encoding_rs@0.8.44 |
+| (MIT OR Apache-2.0) AND Unicode-3.0 | unicode-normalization@0.1.26, unicode-properties@0.1.5 |
+| Apache-2.0 OR MIT | const-oid@0.10.2, equivalent@1.0.3, indexmap@2.14.2, multiversion_no_op@1.0.0 |
+| BSD-3-Clause | alloc-no-stdlib@2.0.4, alloc-stdlib@0.2.4 |
+| BSD-3-Clause/MIT | brotli-decompressor@5.0.3 |
+| MIT | lopdf@0.47.0, nom@8.0.0 |
+| MIT OR Apache-2.0 | aes@0.9.2, block-buffer@0.12.1, block-padding@0.4.2, cbc@0.2.1, chacha20@0.10.2, cipher@0.5.2, cpubits@0.1.1, cpufeatures@0.3.1, crypto-common@0.2.2, digest@0.11.3, ecb@0.2.1, getrandom@0.4.3, hashbrown@0.17.1, hybrid-array@0.4.15, inout@0.2.6, md-5@0.11.0, rand@0.10.3, rand_core@0.10.1, scopeguard@1.2.0, sha2@0.11.1, simdutf8@0.1.5, thiserror@2.0.21, thiserror-impl@2.0.21, typenum@1.20.1, unicode-bidi@0.3.18 |
+| MIT OR Apache-2.0 OR LGPL-2.1-or-later | r-efi@6.0.0 |
+| MIT/Apache-2.0 | core_detect@1.0.0, rangemap@1.8.0, stringprep@0.1.5 |
+| Zlib OR Apache-2.0 OR MIT | tinyvec@1.13.3 |
+
+`r-efi` is a target-specific transitive crate and is not used by the Windows or Linux worker builds; its expression also offers MIT or Apache-2.0 alternatives. The `lopdf` dependency is configured with default features disabled to avoid its optional parallel and date/time features.
 
 The exact versions and dependency graph are recorded in `tools/rust-engine/Cargo.lock`. PDFium is a native dependency supplied by pypdfium2, not a Cargo crate; its bundled notices remain applicable.

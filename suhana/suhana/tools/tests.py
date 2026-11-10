@@ -8,7 +8,7 @@ from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from PIL import Image
+from PIL import Image, ImageOps
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import Client, TestCase, TransactionTestCase, override_settings
@@ -23,6 +23,7 @@ from .process_runner import (
     ProcessTimeoutError,
     run_limited_process,
 )
+from .rust_engine import ProcessingEngineError, compress_image
 
 
 def _image_bytes(fmt, color, size=(2, 2), **kwargs):
@@ -31,6 +32,23 @@ def _image_bytes(fmt, color, size=(2, 2), **kwargs):
     image = Image.new(mode, size, color[:3] if mode == "RGB" else color)
     image.save(output, format=fmt, **kwargs)
     return output.getvalue()
+
+
+def _pdf_with_redundant_content():
+    content = b"% repeated content that compresses well\n" * 5_000
+    content += b"BT /F1 24 Tf 72 720 Td (worker) Tj ET\n"
+    return (
+        b"%PDF-1.4\n"
+        b"1 0 obj<< /Type /Catalog /Pages 2 0 R>>endobj\n"
+        b"2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1>>endobj\n"
+        b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>endobj\n"
+        + f"4 0 obj<< /Length {len(content)}>>stream\n".encode()
+        + content
+        + b"endstream endobj\n"
+        + b"5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica>>endobj\n"
+        + b"trailer<< /Root 1 0 R>>\n%%EOF"
+    )
 
 
 @override_settings(ROOT_URLCONF="suhana.urls")
@@ -152,6 +170,273 @@ class ToolsApiTests(TransactionTestCase):
             status.json()["comparison"]["pdf_comparison"]["first"]["page_count"],
             1,
         )
+
+    def run_compression(self, data, name, content_type):
+        response = self.client.post(
+            "/api/tools/compress/",
+            {"file": SimpleUploadedFile(name, data, content_type=content_type)},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 202, response.content)
+        accepted = response.json()
+        call_command("run_comparison_worker", once=True, stdout=io.StringIO())
+        status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(status.status_code, 200)
+        return accepted, status
+
+    def test_png_compression_produces_valid_download_and_checks_real_size(self):
+        image = Image.new("RGB", (512, 512), (20, 40, 60))
+        source = io.BytesIO()
+        image.save(source, format="PNG", compress_level=0)
+        original = source.getvalue()
+
+        accepted, status = self.run_compression(original, "photo.png", "image/png")
+
+        self.assertEqual(status.json()["state"], "completed")
+        compression = status.json()["compression"]
+        self.assertEqual(compression["input_bytes"], len(original))
+        self.assertLess(compression["output_bytes"], len(original))
+        self.assertEqual(compression["saved_bytes"], len(original) - compression["output_bytes"])
+
+        denied = self.client.get(status.json()["download_url"])
+        self.assertEqual(denied.status_code, 404)
+        download = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(download.status_code, 200)
+        output = b"".join(download.streaming_content)
+        self.assertEqual(len(output), compression["output_bytes"])
+        self.assertEqual(output[:8], b"\x89PNG\r\n\x1a\n")
+        with Image.open(io.BytesIO(output)) as compressed:
+            self.assertEqual(compressed.size, image.size)
+            self.assertEqual(compressed.convert("RGB").getpixel((0, 0)), image.getpixel((0, 0)))
+
+    def test_large_image_compression_stays_within_resource_and_output_limits(self):
+        pixels = os.urandom(2048 * 2048 * 3)
+        image = Image.frombytes("RGB", (2048, 2048), pixels)
+        source = io.BytesIO()
+        image.save(source, format="PNG", compress_level=0)
+        original = source.getvalue()
+        self.assertGreater(len(original), 10 * 1024 * 1024)
+        self.assertLessEqual(len(original), 25 * 1024 * 1024)
+
+        accepted, status = self.run_compression(original, "large.png", "image/png")
+
+        self.assertEqual(status.json()["state"], "completed")
+        compression = status.json()["compression"]
+        self.assertEqual(compression["input_bytes"], len(original))
+        self.assertGreater(compression["output_bytes"], 0)
+        self.assertLessEqual(compression["output_bytes"], 25 * 1024 * 1024)
+        download = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(download.status_code, 200)
+        downloaded = b"".join(download.streaming_content)
+        self.assertEqual(len(downloaded), compression["output_bytes"])
+
+    def test_pdf_compression_preserves_rendered_content_and_page_count(self):
+        original = _pdf_with_redundant_content()
+        accepted, status = self.run_compression(original, "report.pdf", "application/pdf")
+
+        self.assertEqual(status.json()["state"], "completed")
+        compression = status.json()["compression"]
+        self.assertLess(compression["output_bytes"], len(original))
+        self.assertEqual(compression["page_count"], 1)
+        download = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        output = b"".join(download.streaming_content)
+        self.assertEqual(len(output), compression["output_bytes"])
+        self.assertTrue(output.startswith(b"%PDF-"))
+        comparison = PdfiumRenderer(dpi=72).compare(original, output)
+        self.assertEqual(comparison["first"]["page_count"], comparison["second"]["page_count"])
+        self.assertEqual(comparison["text_differences"], 0)
+        self.assertEqual(comparison["visual_differences"], 0)
+
+    def test_jpeg_gif_and_webp_compression_keep_their_formats(self):
+        jpeg = _image_bytes("JPEG", (100, 120, 140), size=(32, 32))
+        jpeg_accepted, jpeg_status = self.run_compression(jpeg, "photo.jpg", "image/jpeg")
+        self.assertEqual(jpeg_status.json()["state"], "completed")
+        jpeg_download = self.client.get(
+            jpeg_status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=jpeg_accepted["job_token"],
+        )
+        with Image.open(io.BytesIO(b"".join(jpeg_download.streaming_content))) as image:
+            self.assertEqual(image.format, "JPEG")
+
+        first = Image.new("RGBA", (16, 16), (255, 0, 0, 255))
+        second = Image.new("RGBA", (16, 16), (0, 255, 0, 255))
+        gif_buffer = io.BytesIO()
+        first.save(
+            gif_buffer,
+            format="GIF",
+            save_all=True,
+            append_images=[second],
+            duration=[100, 200],
+            loop=0,
+        )
+        gif_accepted, gif_status = self.run_compression(
+            gif_buffer.getvalue(), "animation.gif", "image/gif"
+        )
+        self.assertEqual(gif_status.json()["state"], "completed")
+        gif_output = self.client.get(
+            gif_status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=gif_accepted["job_token"],
+        )
+        with Image.open(io.BytesIO(b"".join(gif_output.streaming_content))) as image:
+            self.assertEqual(image.format, "GIF")
+            self.assertEqual(image.n_frames, 2)
+
+        webp = _image_bytes("WEBP", (100, 120, 140), size=(32, 32))
+        accepted, webp_status = self.run_compression(webp, "photo.webp", "image/webp")
+        self.assertEqual(webp_status.json()["state"], "completed")
+        webp_download = self.client.get(
+            webp_status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        output = b"".join(webp_download.streaming_content)
+        with Image.open(io.BytesIO(output)) as image:
+            self.assertEqual(image.format, "WEBP")
+
+    def test_jpeg_compression_applies_exif_orientation(self):
+        image = Image.new("RGB", (32, 16), (90, 120, 150))
+        exif = Image.Exif()
+        exif[274] = 6
+        source = io.BytesIO()
+        image.save(source, format="JPEG", quality=95, exif=exif)
+
+        accepted, status = self.run_compression(source.getvalue(), "oriented.jpg", "image/jpeg")
+        download = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+
+        with Image.open(io.BytesIO(b"".join(download.streaming_content))) as compressed:
+            self.assertEqual(compressed.size, (16, 32))
+            self.assertEqual(compressed.getexif().get(274, 1), 1)
+
+    def test_compression_rejects_unsupported_and_mismatched_files(self):
+        unsupported = self.client.post(
+            "/api/tools/compress/",
+            {"file": SimpleUploadedFile("file.txt", b"no", content_type="text/plain")},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(unsupported.status_code, 400)
+        self.assertIn("Only PNG", unsupported.json()["message"])
+
+        mismatched = self.client.post(
+            "/api/tools/compress/",
+            {
+                "file": SimpleUploadedFile(
+                    "file.png", b"not a PNG", content_type="image/png"
+                )
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(mismatched.status_code, 400)
+
+    def test_compression_rejects_files_over_the_input_limit(self):
+        response = self.client.post(
+            "/api/tools/compress/",
+            {
+                "file": SimpleUploadedFile(
+                    "large.png",
+                    b"\x89PNG\r\n\x1a\n" + b"x" * (25 * 1024 * 1024),
+                    content_type="image/png",
+                )
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("25 MB", response.json()["message"])
+
+    def test_worker_failure_is_reported_and_later_compression_recovers(self):
+        image = _image_bytes("PNG", (10, 20, 30, 255), size=(32, 32))
+        failed = self.client.post(
+            "/api/tools/compress/",
+            {"file": SimpleUploadedFile("failed.png", image, content_type="image/png")},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        accepted = failed.json()
+        with patch(
+            "tools.processing_jobs.compress_image",
+            side_effect=ProcessingEngineError("The isolated Rust processing engine failed."),
+        ):
+            call_command("run_comparison_worker", once=True, stdout=io.StringIO())
+        failure_status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(failure_status.json()["state"], "failed")
+        self.assertIn("isolated Rust processing engine failed", failure_status.json()["message"])
+
+        _, recovered = self.run_compression(image, "recovered.png", "image/png")
+        self.assertEqual(recovered.json()["state"], "completed")
+
+    def test_invalid_compression_output_is_never_marked_complete(self):
+        image = _image_bytes("PNG", (10, 20, 30, 255), size=(32, 32))
+        response = self.client.post(
+            "/api/tools/compress/",
+            {"file": SimpleUploadedFile("invalid-output.png", image, content_type="image/png")},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        accepted = response.json()
+        with patch(
+            "tools.processing_jobs.compress_image",
+            return_value=(
+                {"input_bytes": len(image), "output_bytes": 3},
+                b"bad",
+            ),
+        ):
+            call_command("run_comparison_worker", once=True, stdout=io.StringIO())
+
+        status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(status.json()["state"], "failed")
+        self.assertFalse((self.private_root / accepted["job_id"]).exists())
+
+    def test_queued_compression_cancellation_removes_private_input(self):
+        image = _image_bytes("PNG", (10, 20, 30, 255), size=(32, 32))
+        response = self.client.post(
+            "/api/tools/compress/",
+            {"file": SimpleUploadedFile("cancel.png", image, content_type="image/png")},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        accepted = response.json()
+        job_directory = self.private_root / accepted["job_id"]
+        self.assertTrue(job_directory.is_dir())
+
+        cancelled = self.client.post(
+            accepted["cancel_url"],
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertEqual(cancelled.json()["state"], "cancelled")
+        self.assertFalse(job_directory.exists())
+
+    def test_completed_compression_files_expire_with_the_job(self):
+        image = _image_bytes("PNG", (10, 20, 30, 255), size=(32, 32))
+        accepted, _ = self.run_compression(image, "expired.png", "image/png")
+        job_directory = self.private_root / accepted["job_id"]
+        self.assertTrue((job_directory / "output").is_file())
+        ComparisonJob.objects.filter(pk=accepted["job_id"]).update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        cleanup_expired_jobs()
+
+        self.assertFalse(ComparisonJob.objects.filter(pk=accepted["job_id"]).exists())
+        self.assertFalse(job_directory.exists())
 
     def test_compare_requires_both_supported_files(self):
         first = SimpleUploadedFile("first.txt", b"one", content_type="text/plain")
@@ -567,6 +852,20 @@ class ProcessIsolationTests(TestCase):
 
         self.assertEqual(crashed.returncode, 37)
         self.assertEqual(healthy.stdout.strip(), "alive")
+
+    def test_compression_worker_timeout_is_reported(self):
+        with (
+            patch("tools.rust_engine._engine_path", return_value=Path(sys.executable)),
+            patch(
+                "tools.rust_engine.run_limited_process",
+                side_effect=ProcessTimeoutError,
+            ),
+            self.assertRaisesRegex(
+                ProcessingEngineError,
+                "20-second worker timeout",
+            ),
+        ):
+            compress_image(b"input")
 
     def test_child_cannot_exceed_os_memory_limit(self):
         if os.name == "nt":

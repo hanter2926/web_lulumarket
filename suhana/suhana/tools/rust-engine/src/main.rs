@@ -6,10 +6,13 @@ use std::process::ExitCode;
 
 use base64::Engine;
 use image::codecs::gif::GifDecoder;
-use image::codecs::png::PngDecoder;
+use image::codecs::gif::GifEncoder;
+use image::codecs::jpeg::JpegEncoder;
+use image::codecs::png::{CompressionType, FilterType, PngDecoder, PngEncoder};
 use image::codecs::webp::WebPDecoder;
 use image::{
-    AnimationDecoder, DynamicImage, Frame, ImageDecoder, ImageFormat, ImageReader, RgbaImage,
+    AnimationDecoder, DynamicImage, Frame, ImageDecoder, ImageEncoder, ImageFormat, ImageReader,
+    RgbaImage,
 };
 use serde::Serialize;
 
@@ -234,6 +237,117 @@ fn decode_image(path: &Path) -> Result<DecodedImage, EngineError> {
     })
 }
 
+fn compress_image(input_path: &Path, output_path: &Path) -> Result<(), EngineError> {
+    let metadata =
+        fs::metadata(input_path).map_err(|_| fail("The uploaded image could not be read."))?;
+    if metadata.len() > MAX_FILE_BYTES {
+        return Err(fail("Each compression file must be 25 MB or smaller."));
+    }
+    let data = fs::read(input_path).map_err(|_| fail("The uploaded image could not be read."))?;
+    let format = image::guess_format(&data)
+        .map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+    format_name(format)?;
+
+    let mut encoded = Cursor::new(Vec::new());
+    match format {
+        ImageFormat::Png => {
+            let decoder = PngDecoder::new(BufReader::new(Cursor::new(&data)))
+                .map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+            if decoder
+                .is_apng()
+                .map_err(|_| fail("The uploaded image is malformed or unsupported."))?
+            {
+                return Err(fail("Animated PNG compression is not supported."));
+            }
+            let (width, height) = decoder.dimensions();
+            validate_dimensions(width, height, 0)?;
+            let image = DynamicImage::from_decoder(decoder)
+                .map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+            PngEncoder::new_with_quality(&mut encoded, CompressionType::Best, FilterType::Adaptive)
+                .write_image(
+                    image.as_bytes(),
+                    image.width(),
+                    image.height(),
+                    image.color().into(),
+                )
+                .map_err(|_| fail("The image could not be optimized."))?;
+        }
+        ImageFormat::Jpeg => {
+            let mut decoder = image::codecs::jpeg::JpegDecoder::new(Cursor::new(&data))
+                .map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+            let (width, height) = decoder.dimensions();
+            validate_dimensions(width, height, 0)?;
+            let orientation = decoder
+                .orientation()
+                .map_err(|_| fail("The uploaded image has invalid orientation metadata."))?;
+            let mut image = DynamicImage::from_decoder(decoder)
+                .map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+            image.apply_orientation(orientation);
+            JpegEncoder::new_with_quality(&mut encoded, 90)
+                .encode_image(&image)
+                .map_err(|_| fail("The image could not be optimized."))?;
+        }
+        ImageFormat::Gif => {
+            let decoder = GifDecoder::new(BufReader::new(Cursor::new(&data)))
+                .map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+            let (width, height) = decoder.dimensions();
+            validate_dimensions(width, height, 0)?;
+            let mut frames = Vec::new();
+            let mut total_pixels = 0;
+            for frame in decoder.into_frames() {
+                if frames.len() >= MAX_FRAMES {
+                    return Err(fail("Animated images may contain at most 100 frames."));
+                }
+                let frame =
+                    frame.map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+                let delay = frame.delay();
+                let left = frame.left();
+                let top = frame.top();
+                let buffer = frame.into_buffer();
+                total_pixels = validate_dimensions(buffer.width(), buffer.height(), total_pixels)?;
+                frames.push(Frame::from_parts(buffer, left, top, delay));
+            }
+            if frames.is_empty() {
+                return Err(fail("The uploaded image is malformed or unsupported."));
+            }
+            GifEncoder::new_with_speed(&mut encoded, 1)
+                .encode_frames(frames)
+                .map_err(|_| fail("The image could not be optimized."))?;
+        }
+        ImageFormat::WebP => {
+            let decoder = WebPDecoder::new(BufReader::new(Cursor::new(&data)))
+                .map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+            if decoder.has_animation() {
+                return Err(fail("Animated WEBP compression is not supported."));
+            }
+            let (width, height) = decoder.dimensions();
+            validate_dimensions(width, height, 0)?;
+            let mut decoder = decoder;
+            let orientation = decoder
+                .orientation()
+                .map_err(|_| fail("The uploaded image has invalid orientation metadata."))?;
+            let mut image = DynamicImage::from_decoder(decoder)
+                .map_err(|_| fail("The uploaded image is malformed or unsupported."))?;
+            image.apply_orientation(orientation);
+            image
+                .write_to(&mut encoded, ImageFormat::WebP)
+                .map_err(|_| fail("The image could not be optimized."))?;
+        }
+        _ => return Err(fail("Only PNG, JPEG, GIF, and WEBP images are supported.")),
+    }
+
+    let output = encoded.into_inner();
+    if output.is_empty() || output.len() as u64 > MAX_FILE_BYTES {
+        return Err(fail("The optimized image exceeds the 25 MB output limit."));
+    }
+    fs::write(output_path, &output).map_err(|_| fail("The optimized image could not be saved."))?;
+    let verified = decode_image(output_path)?;
+    if verified.metadata.format != format_name(format)? {
+        return Err(fail("The optimized image format did not match the input."));
+    }
+    Ok(())
+}
+
 fn overlay_data_url(
     width: u32,
     height: u32,
@@ -407,6 +521,22 @@ fn run() -> Result<(), EngineError> {
                     .map_err(|_| fail("Could not encode image comparison."))?
             );
         }
+        [_, operation, input, output] if operation == "compress-image" => {
+            compress_image(Path::new(input), Path::new(output))?;
+            let input_bytes = fs::metadata(input)
+                .map_err(|_| fail("The uploaded image could not be read."))?
+                .len();
+            let output_bytes = fs::metadata(output)
+                .map_err(|_| fail("The optimized image could not be read."))?
+                .len();
+            println!(
+                "{}",
+                serde_json::json!({
+                    "input_bytes": input_bytes,
+                    "output_bytes": output_bytes
+                })
+            );
+        }
         [_, operation, library_path, dpi, pdf_path] if operation == "pdf-inspect" => {
             let dpi = dpi
                 .parse::<f32>()
@@ -436,6 +566,16 @@ fn run() -> Result<(), EngineError> {
                 "{}",
                 serde_json::to_string(&result)
                     .map_err(|_| fail("Could not encode PDF comparison."))?
+            );
+        }
+        [_, operation, library_path, input, output] if operation == "pdf-compress" => {
+            let result =
+                pdf::compress(Path::new(library_path), Path::new(input), Path::new(output))
+                    .map_err(fail)?;
+            println!(
+                "{}",
+                serde_json::to_string(&result)
+                    .map_err(|_| fail("Could not encode PDF compression metadata."))?
             );
         }
         _ => return Err(fail("Invalid image engine command.")),

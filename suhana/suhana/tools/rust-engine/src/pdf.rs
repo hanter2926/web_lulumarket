@@ -333,3 +333,55 @@ pub fn compare(
         "overlays_are_temporary": true
     }))
 }
+
+pub fn compress(
+    library_path: &Path,
+    input_path: &Path,
+    output_path: &Path,
+) -> Result<Value, String> {
+    let started = Instant::now();
+    let input = read_pdf(input_path)?;
+    let pdfium = bind_pdfium(library_path)?;
+    let source = open_document(&pdfium, &input)?;
+    let page_count = source.pages().len() as usize;
+    if page_count == 0 || page_count > MAX_PAGES {
+        return Err(format!(
+            "PDFs must contain between 1 and {MAX_PAGES} pages."
+        ));
+    }
+    if !source.signatures().is_empty() {
+        return Err(
+            "Digitally signed PDFs cannot be compressed because rewriting invalidates signatures."
+                .to_owned(),
+        );
+    }
+    drop(source);
+
+    let mut document = lopdf::Document::load_mem(&input)
+        .map_err(|_| "The PDF is malformed, encrypted, or unsupported.".to_owned())?;
+    if document.is_encrypted() {
+        return Err("Password-protected PDFs cannot be compressed.".to_owned());
+    }
+    document.compress();
+    let mut output = Vec::new();
+    document
+        .save_to(&mut output)
+        .map_err(|_| "The PDF could not be optimized.".to_owned())?;
+    if output.is_empty() || output.len() as u64 > MAX_FILE_BYTES {
+        return Err("The optimized PDF exceeds the 25 MB output limit.".to_owned());
+    }
+    if started.elapsed() > PROCESSING_BUDGET {
+        return Err("PDF compression exceeded the 20-second processing budget.".to_owned());
+    }
+
+    let optimized = open_document(&pdfium, &output)?;
+    if optimized.pages().len() as usize != page_count {
+        return Err("PDF optimization changed the page count.".to_owned());
+    }
+    fs::write(output_path, &output).map_err(|_| "The optimized PDF could not be saved.")?;
+    Ok(json!({
+        "input_bytes": input.len(),
+        "output_bytes": output.len(),
+        "page_count": page_count
+    }))
+}

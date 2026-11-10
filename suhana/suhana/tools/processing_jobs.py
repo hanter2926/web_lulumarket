@@ -25,6 +25,8 @@ from .rust_engine import (
     ProcessingCancelledError,
     ProcessingEngineError,
     cancellation_check,
+    compress_image,
+    compress_pdf,
 )
 
 
@@ -89,6 +91,19 @@ def _remove_job_directory(job_id):
         shutil.rmtree(resolved)
 
 
+def compression_output_path(job_id):
+    directory = _job_directory(job_id)
+    if directory.is_symlink():
+        raise FileNotFoundError
+    output = directory / "output"
+    if output.is_symlink():
+        raise FileNotFoundError
+    resolved = output.resolve()
+    if resolved.parent != directory.resolve() or not resolved.is_file():
+        raise FileNotFoundError
+    return resolved
+
+
 def _safe_upload_name(upload):
     name = Path(upload.name.replace("\\", "/")).name[:255]
     return name or "upload.bin"
@@ -103,6 +118,15 @@ def _validate_upload(upload):
     _validate_signature(upload, upload.content_type)
 
 
+def _validate_compression_upload(upload):
+    allowed = SUPPORTED_IMAGE_TYPES | {SUPPORTED_PDF_TYPE}
+    if upload.content_type not in allowed:
+        raise ValueError("Only PNG, JPEG, GIF, WEBP, and PDF files can be compressed.")
+    if upload.size > MAX_COMPARISON_FILE_SIZE:
+        raise ValueError("The compression input must be 25 MB or smaller.")
+    _validate_signature(upload, upload.content_type)
+
+
 def _write_private_upload(upload, destination):
     upload.seek(0)
     written = 0
@@ -110,7 +134,7 @@ def _write_private_upload(upload, destination):
         for chunk in upload.chunks():
             written += len(chunk)
             if written > MAX_COMPARISON_FILE_SIZE:
-                raise ValueError("Each comparison file must be 25 MB or smaller.")
+                raise ValueError("Each uploaded file must be 25 MB or smaller.")
             output.write(chunk)
         output.flush()
         os.fsync(output.fileno())
@@ -126,9 +150,12 @@ def _requester_fingerprint(request):
     ).hexdigest()
 
 
-def enqueue_comparison(request, first, second):
-    _validate_upload(first)
-    _validate_upload(second)
+def _enqueue_job(request, first, second, job_type):
+    if job_type == ComparisonJob.Type.COMPRESSION:
+        _validate_compression_upload(first)
+    else:
+        _validate_upload(first)
+        _validate_upload(second)
 
     job_id = uuid.uuid4()
     token = secrets.token_urlsafe(32)
@@ -137,7 +164,8 @@ def enqueue_comparison(request, first, second):
     committed = False
     try:
         _write_private_upload(first, job_directory / "first")
-        _write_private_upload(second, job_directory / "second")
+        if second is not None:
+            _write_private_upload(second, job_directory / "second")
 
         owner_id = request.user.pk if request.user.is_authenticated else None
         requester_key = _requester_fingerprint(request)
@@ -165,10 +193,11 @@ def enqueue_comparison(request, first, second):
             job = ComparisonJob.objects.create(
                 id=job_id,
                 owner_id=owner_id,
+                job_type=job_type,
                 first_name=_safe_upload_name(first),
-                second_name=_safe_upload_name(second),
+                second_name=_safe_upload_name(second) if second is not None else "",
                 first_content_type=first.content_type,
-                second_content_type=second.content_type,
+                second_content_type=second.content_type if second is not None else "",
                 requester_key=requester_key,
                 access_token_hash=hashlib.sha256(token.encode("ascii")).hexdigest(),
                 expires_at=timezone.now() + COMPARISON_JOB_TTL,
@@ -178,6 +207,14 @@ def enqueue_comparison(request, first, second):
     finally:
         if not committed:
             _remove_job_directory(job_id)
+
+
+def enqueue_comparison(request, first, second):
+    return _enqueue_job(request, first, second, ComparisonJob.Type.COMPARISON)
+
+
+def enqueue_compression(request, upload):
+    return _enqueue_job(request, upload, None, ComparisonJob.Type.COMPRESSION)
 
 
 def authorized_job(request, job_id):
@@ -281,7 +318,11 @@ def _finish_job(job_id, status, result=None, error=""):
             job.status = status
             job.result = result
             job.error = error
-            if status == ComparisonJob.Status.SUCCEEDED and job.owner_id is not None:
+            if (
+                status == ComparisonJob.Status.SUCCEEDED
+                and job.job_type == ComparisonJob.Type.COMPARISON
+                and job.owner_id is not None
+            ):
                 report = ComparisonReport.objects.create(
                     owner_id=job.owner_id,
                     first_name=job.first_name,
@@ -314,26 +355,95 @@ def _check_cancelled(job_id):
 def process_comparison_job(job_id):
     job = ComparisonJob.objects.get(pk=job_id)
     directory = _job_directory(job.id)
+    preserve_output = False
     try:
         first_path = directory / "first"
-        second_path = directory / "second"
-        first = SimpleUploadedFile(
-            job.first_name,
-            first_path.read_bytes(),
-            content_type=job.first_content_type,
-        )
-        second = SimpleUploadedFile(
-            job.second_name,
-            second_path.read_bytes(),
-            content_type=job.second_content_type,
-        )
-        with cancellation_check(lambda: _check_cancelled(job_id)):
-            result = compare_uploads(first, second)
-        _finish_job(job_id, ComparisonJob.Status.SUCCEEDED, result=result)
+        first_data = first_path.read_bytes()
+        if job.job_type == ComparisonJob.Type.COMPRESSION:
+            with cancellation_check(lambda: _check_cancelled(job_id)):
+                engine_result, output_data = (
+                    compress_pdf(first_data)
+                    if job.first_content_type == SUPPORTED_PDF_TYPE
+                    else compress_image(first_data)
+                )
+            if (
+                engine_result.get("input_bytes") != len(first_data)
+                or engine_result.get("output_bytes") != len(output_data)
+                or not output_data
+                or len(output_data) > MAX_COMPARISON_FILE_SIZE
+            ):
+                raise ProcessingEngineError(
+                    "The Rust processing engine returned invalid compression output."
+                )
+            output_upload = SimpleUploadedFile(
+                job.first_name,
+                output_data,
+                content_type=job.first_content_type,
+            )
+            _validate_signature(output_upload, job.first_content_type)
+            suffix = {
+                "image/png": ".png",
+                "image/jpeg": ".jpg",
+                "image/gif": ".gif",
+                "image/webp": ".webp",
+                SUPPORTED_PDF_TYPE: ".pdf",
+            }[job.first_content_type]
+            stem = Path(job.first_name).stem
+            safe_stem = "".join(
+                character if character.isalnum() or character in "._-" else "_"
+                for character in stem
+            ).strip("._")[:180]
+            output_name = f"{safe_stem or 'file'}_compressed{suffix}"
+            output_path = directory / "output"
+            with output_path.open("xb") as output_file:
+                output_file.write(output_data)
+                output_file.flush()
+                os.fsync(output_file.fileno())
+            compression = {
+                "input_bytes": len(first_data),
+                "output_bytes": len(output_data),
+                "saved_bytes": max(0, len(first_data) - len(output_data)),
+                "reduced": len(output_data) < len(first_data),
+                "filename": output_name,
+                "content_type": job.first_content_type,
+                "page_count": engine_result.get("page_count"),
+            }
+            completed = _finish_job(
+                job_id,
+                ComparisonJob.Status.SUCCEEDED,
+                result=compression,
+            )
+            preserve_output = completed.status == ComparisonJob.Status.SUCCEEDED
+        else:
+            second_path = directory / "second"
+            first = SimpleUploadedFile(
+                job.first_name,
+                first_data,
+                content_type=job.first_content_type,
+            )
+            second = SimpleUploadedFile(
+                job.second_name,
+                second_path.read_bytes(),
+                content_type=job.second_content_type,
+            )
+            with cancellation_check(lambda: _check_cancelled(job_id)):
+                result = compare_uploads(first, second)
+            _finish_job(job_id, ComparisonJob.Status.SUCCEEDED, result=result)
     except ProcessingCancelledError:
         _finish_job(job_id, ComparisonJob.Status.CANCELLED)
     except ValueError as error:
         _finish_job(job_id, ComparisonJob.Status.FAILED, error=str(error))
+    except ProcessingEngineError as error:
+        if job.job_type == ComparisonJob.Type.COMPRESSION:
+            logger.error("Compression job %s failed: %s", job_id, error)
+            _finish_job(job_id, ComparisonJob.Status.FAILED, error=str(error))
+        else:
+            logger.exception("Comparison job %s failed unexpectedly.", job_id)
+            _finish_job(
+                job_id,
+                ComparisonJob.Status.FAILED,
+                error="The comparison could not be completed.",
+            )
     except Exception:
         logger.exception("Comparison job %s failed unexpectedly.", job_id)
         _finish_job(
@@ -342,10 +452,11 @@ def process_comparison_job(job_id):
             error="The comparison could not be completed.",
         )
     finally:
-        try:
-            _remove_job_directory(job_id)
-        except OSError:
-            logger.exception("Could not remove private input files for job %s.", job_id)
+        if not preserve_output:
+            try:
+                _remove_job_directory(job_id)
+            except OSError:
+                logger.exception("Could not remove private input files for job %s.", job_id)
 
 
 def cleanup_expired_jobs():

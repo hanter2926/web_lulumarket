@@ -1,5 +1,5 @@
 export type RegistrationStep = "register" | "verify" | "success" | "login" | "logged-in";
-export type ActiveView = "auth" | "dashboard" | "storage" | "converter" | "compare" | "history" | "reset" | "plans";
+export type ActiveView = "auth" | "dashboard" | "storage" | "converter" | "compare" | "compress" | "history" | "reset" | "plans";
 
 export type FolderItem = { id: number; name: string; parent_id: number | null };
 export type FileItem = { id: number; name: string; size_bytes: number; content_type: string; folder_id: number | null };
@@ -54,7 +54,17 @@ export type ApiResponse = {
   stage?: string;
   status_url?: string;
   cancel_url?: string;
+  download_url?: string;
   cancel_requested?: boolean;
+  compression?: {
+    input_bytes: number;
+    output_bytes: number;
+    saved_bytes: number;
+    reduced: boolean;
+    filename: string;
+    content_type: string;
+    page_count?: number | null;
+  };
 };
 
 export type ComparisonResult = {

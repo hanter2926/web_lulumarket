@@ -2,19 +2,29 @@ import type { FormEvent } from "react";
 import type { PdfComparisonResult } from "../types";
 
 type Props = {
-  active: "reset" | "converter" | "compare";
+  active: "reset" | "converter" | "compare" | "compress";
   loading: boolean;
   csrfReady: boolean;
   conversion: { value: string; from: string; to: string };
   conversionResult: string;
+  compressionResult: {
+    message: string;
+    inputBytes?: number;
+    outputBytes?: number;
+    downloadUrl?: string;
+    filename?: string;
+  } | null;
   comparisonResult: string;
   pdfComparison: PdfComparisonResult | null;
   canCancelComparison: boolean;
+  canCancelCompression: boolean;
   resetForm: { email: string; otp: string; password: string };
   resetRequested: boolean;
   onConversion: (event: FormEvent<HTMLFormElement>) => void;
   onComparison: (event: FormEvent<HTMLFormElement>) => void;
+  onCompression: (event: FormEvent<HTMLFormElement>) => void;
   onCancelComparison: () => void;
+  onCancelCompression: () => void;
   onResetRequest: (event: FormEvent<HTMLFormElement>) => void;
   onResetConfirm: (event: FormEvent<HTMLFormElement>) => void;
   onConversionChange: (field: "value" | "from" | "to", value: string) => void;
@@ -22,6 +32,18 @@ type Props = {
 };
 
 const units = ["bit", "byte", "kb", "mb", "gb", "tb"];
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} bytes`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = -1;
+  do {
+    value /= 1024;
+    unitIndex += 1;
+  } while (value >= 1024 && unitIndex < units.length - 1);
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
 
 function UnitSelect({ id, value, onChange }: { id: string; value: string; onChange: (value: string) => void }) {
   return <select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
@@ -54,6 +76,32 @@ export default function ToolPanels(props: Props) {
       <UnitSelect id="conversion-to" value={props.conversion.to} onChange={(value) => props.onConversionChange("to", value)} />
       <button type="submit" disabled={props.loading || !props.csrfReady}>{props.loading ? "Converting..." : "Convert"}</button>
       {props.conversionResult && <p className="result-panel" role="status">{props.conversionResult}</p>}
+  </form>;
+  if (props.active === "compress") return <form onSubmit={props.onCompression}>
+      <p className="helper-text">
+        Compress PDF, PNG, JPEG, GIF, or WEBP files. Maximum 25 MB per file.
+        Images are re-encoded with format-appropriate settings; PDF streams are optimized.
+        Animated PNG and animated WEBP files are not supported.
+      </p>
+      <label htmlFor="compression-file">File</label>
+      <input id="compression-file" name="file" type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" required />
+      <button type="submit" disabled={props.loading || !props.csrfReady}>
+        {props.loading ? "Compressing..." : "Compress file"}
+      </button>
+      {props.canCancelCompression && <button type="button" onClick={props.onCancelCompression}>
+        Cancel compression
+      </button>}
+      {props.compressionResult && <div className="result-panel" role="status">
+        <p>{props.compressionResult.message}</p>
+        {props.compressionResult.inputBytes !== undefined &&
+          props.compressionResult.outputBytes !== undefined &&
+          <p>Input: {formatBytes(props.compressionResult.inputBytes)} · Output: {formatBytes(props.compressionResult.outputBytes)}</p>}
+        {props.compressionResult.downloadUrl && props.compressionResult.filename &&
+          <a href={props.compressionResult.downloadUrl} download={props.compressionResult.filename}>
+            Download {props.compressionResult.filename}
+          </a>}
+      </div>}
   </form>;
   return <form onSubmit={props.onComparison}>
       <p className="helper-text">Supported formats: PNG, JPEG, GIF, WEBP, and PDF. Maximum 25 MB per file.</p>

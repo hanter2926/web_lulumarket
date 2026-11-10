@@ -83,6 +83,7 @@ def _run(
     second_data=None,
     timeout_seconds=ENGINE_TIMEOUT_SECONDS,
     engine_args=(),
+    output_file=False,
 ):
     if not _PROCESS_SLOTS.acquire(timeout=timeout_seconds):
         raise ProcessingEngineError("Processing capacity is currently exhausted.")
@@ -107,6 +108,10 @@ def _run(
                 second_path = job_directory / "second"
                 second_path.write_bytes(second_data)
                 command.append(str(second_path))
+            output_path = None
+            if output_file:
+                output_path = job_directory / "output"
+                command.append(str(output_path))
 
             try:
                 process = run_limited_process(
@@ -150,6 +155,11 @@ def _run(
                     or "PDF page" in message
                     or "PDF exceeds" in message
                     or "PDF pair" in message
+                    or "compression" in message.lower()
+                    or "compressed" in message.lower()
+                    or "optimized image" in message.lower()
+                    or "unsupported" in message.lower()
+                    or "animated" in message.lower()
                 ):
                     raise ProcessingInputError(message)
                 raise ProcessingEngineError("The isolated Rust processing engine failed.")
@@ -162,6 +172,17 @@ def _run(
                 ) from error
             if not isinstance(result, dict):
                 raise ProcessingEngineError("The Rust processing engine returned invalid output.")
+            if output_path is not None:
+                try:
+                    result["output_data"] = output_path.read_bytes()
+                except OSError as error:
+                    raise ProcessingEngineError(
+                        "The Rust processing engine did not produce an output file."
+                    ) from error
+                if not result["output_data"]:
+                    raise ProcessingEngineError(
+                        "The Rust processing engine produced an empty output file."
+                    )
             return result, process.pid
     finally:
         _PROCESS_SLOTS.release()
@@ -207,3 +228,31 @@ def compare_pdf(
         timeout_seconds=timeout_seconds,
         engine_args=(str(dpi),),
     )
+
+
+def _compression_result(data, result):
+    output = result.pop("output_data", None)
+    if (
+        not isinstance(output, bytes)
+        or result.get("input_bytes") != len(data)
+        or result.get("output_bytes") != len(output)
+    ):
+        raise ProcessingEngineError(
+            "The Rust processing engine returned invalid compression output."
+        )
+    return result, output
+
+
+def compress_image(data):
+    result, _ = _run("compress-image", data, output_file=True)
+    return _compression_result(data, result)
+
+
+def compress_pdf(data, timeout_seconds=ENGINE_TIMEOUT_SECONDS):
+    result, _ = _run(
+        "pdf-compress",
+        data,
+        timeout_seconds=timeout_seconds,
+        output_file=True,
+    )
+    return _compression_result(data, result)

@@ -1,4 +1,5 @@
 from datetime import timedelta
+import re
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -46,6 +47,62 @@ class RegistrationApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(User.objects.filter(username="new-user").exists())
         self.assertTrue(PendingSignup.objects.filter(email="new@example.com").exists())
+        send_otp.assert_called_once()
+
+    def test_registration_email_otp_verification_and_login_uses_test_backend(self):
+        response = self.post_json(
+            "/api/accounts/register/",
+            {
+                "username": "email-flow-user",
+                "email": "email-flow@example.com",
+                "password": "StrongPassword123!",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(username="email-flow-user").exists())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["email-flow@example.com"])
+        otp = re.search(r"OTP is: (\d{6})", mail.outbox[0].body)
+        self.assertIsNotNone(otp)
+
+        verified = self.post_json(
+            "/api/accounts/verify-otp/",
+            {"email": "email-flow@example.com", "otp": otp.group(1)},
+        )
+        self.assertEqual(verified.status_code, 201)
+        self.assertTrue(User.objects.filter(username="email-flow-user").exists())
+
+        login = self.post_json(
+            "/api/accounts/login/",
+            {"identifier": "email-flow-user", "password": "StrongPassword123!"},
+        )
+        self.assertEqual(login.status_code, 200)
+        self.assertEqual(login.json()["username"], "email-flow-user")
+
+    @patch(
+        "accounts.views.send_signup_otp",
+        side_effect=TimeoutError("SMTP connection timed out"),
+    )
+    def test_registration_timeout_returns_safe_error_and_removes_pending_signup(
+        self, send_otp
+    ):
+        with self.assertLogs("accounts.views", level="ERROR") as logs:
+            response = self.post_json(
+                "/api/accounts/register/",
+                {
+                    "username": "timeout-user",
+                    "email": "timeout@example.com",
+                    "password": "StrongPassword123!",
+                },
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.json()["message"], "Unable to send OTP. Please try again."
+        )
+        self.assertFalse(User.objects.filter(username="timeout-user").exists())
+        self.assertFalse(PendingSignup.objects.filter(email="timeout@example.com").exists())
+        self.assertNotIn("timeout@example.com", "\n".join(logs.output))
         send_otp.assert_called_once()
 
     @patch("accounts.views.send_signup_otp", return_value=1)
