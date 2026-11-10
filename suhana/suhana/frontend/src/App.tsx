@@ -37,6 +37,11 @@ function App() {
   const [conversionResult, setConversionResult] = useState("");
   const [comparisonResult, setComparisonResult] = useState("");
   const [pdfComparison, setPdfComparison] = useState<PdfComparisonResult | null>(null);
+  const [activeComparisonJob, setActiveComparisonJob] = useState<{
+    statusUrl: string;
+    cancelUrl: string;
+    token: string;
+  } | null>(null);
   const [dashboard, setDashboard] = useState<ApiResponse | null>(null);
   const [files, setFiles] = useState<ApiResponse["files"]>([]);
   const [folders, setFolders] = useState<ApiResponse["folders"]>([]);
@@ -413,6 +418,7 @@ function App() {
     setLoading(true);
     setComparisonResult("");
     setPdfComparison(null);
+    setActiveComparisonJob(null);
     try {
       const response = await fetch("/api/tools/compare/", {
         method: "POST",
@@ -421,11 +427,51 @@ function App() {
         body: formData,
       });
       const data = (await readJson(response)) as ComparisonResponse;
-      if (!response.ok || !data.success || !data.comparison) {
+      if (!response.ok || !data.success || !data.status_url || !data.cancel_url || !data.job_token) {
         setComparisonResult(data.message ?? "Comparison failed.");
         return;
       }
-      const result = data.comparison;
+      const activeJob = {
+        statusUrl: data.status_url,
+        cancelUrl: data.cancel_url,
+        token: data.job_token,
+      };
+      setActiveComparisonJob(activeJob);
+      setComparisonResult("Comparison queued. Processing...");
+
+      let completed: ComparisonResponse;
+      while (true) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        const statusResponse = await fetch(activeJob.statusUrl, {
+          headers: { "X-Job-Token": activeJob.token },
+          credentials: "include",
+        });
+        const statusData = (await readJson(statusResponse)) as ComparisonResponse;
+        if (!statusResponse.ok || !statusData.status) {
+          setComparisonResult(statusData.message ?? "Unable to check comparison status.");
+          return;
+        }
+        if (statusData.status === "queued" || statusData.status === "running") {
+          setComparisonResult(statusData.status === "running" ? "Comparing files..." : "Comparison queued...");
+          continue;
+        }
+        if (statusData.status === "cancelled") {
+          setComparisonResult("Comparison cancelled.");
+          return;
+        }
+        if (statusData.status === "failed" || !statusData.comparison) {
+          setComparisonResult(statusData.message ?? "Comparison failed.");
+          return;
+        }
+        completed = statusData;
+        break;
+      }
+
+      const result = completed.comparison;
+      if (!result) {
+        setComparisonResult("Comparison finished without a result.");
+        return;
+      }
       if (result.pdf_comparison) {
         const pdf = result.pdf_comparison;
         setPdfComparison(pdf);
@@ -444,6 +490,33 @@ function App() {
       setComparisonResult(errorMessage(error));
     } finally {
       setLoading(false);
+      setActiveComparisonJob(null);
+    }
+  }
+
+  async function cancelComparison() {
+    if (!activeComparisonJob) return;
+    try {
+      const response = await fetch(activeComparisonJob.cancelUrl, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "X-Job-Token": activeComparisonJob.token,
+        },
+        credentials: "include",
+      });
+      const data = await readJson(response);
+      if (!response.ok) {
+        setComparisonResult(data.message ?? "Unable to cancel comparison.");
+      } else {
+        setComparisonResult(
+          data.status === "cancelled"
+            ? "Comparison cancelled."
+            : "Cancellation requested. The worker is stopping safely.",
+        );
+      }
+    } catch (error: unknown) {
+      setComparisonResult(errorMessage(error));
     }
   }
 
@@ -498,18 +571,21 @@ function App() {
 
         {activeView === "reset" && <ToolPanels active="reset" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "converter" && <ToolPanels active="converter" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "compare" && <ToolPanels active="compare" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}

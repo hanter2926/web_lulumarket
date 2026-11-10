@@ -9,10 +9,12 @@ type Props = {
   conversionResult: string;
   comparisonResult: string;
   pdfComparison: PdfComparisonResult | null;
+  canCancelComparison: boolean;
   resetForm: { email: string; otp: string; password: string };
   resetRequested: boolean;
   onConversion: (event: FormEvent<HTMLFormElement>) => void;
   onComparison: (event: FormEvent<HTMLFormElement>) => void;
+  onCancelComparison: () => void;
   onResetRequest: (event: FormEvent<HTMLFormElement>) => void;
   onResetConfirm: (event: FormEvent<HTMLFormElement>) => void;
   onConversionChange: (field: "value" | "from" | "to", value: string) => void;
@@ -60,6 +62,7 @@ export default function ToolPanels(props: Props) {
       <label htmlFor="second-file">Second file</label>
       <input id="second-file" name="second" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" required />
       <button type="submit" disabled={props.loading || !props.csrfReady}>{props.loading ? "Comparing..." : "Compare files"}</button>
+      {props.canCancelComparison && <button type="button" onClick={props.onCancelComparison}>Cancel comparison</button>}
       {props.comparisonResult && <p className="result-panel" role="status">{props.comparisonResult}</p>}
       {props.pdfComparison && <section className="pdf-results" aria-label="PDF comparison details">
         {props.pdfComparison.page_results.map((page) => <article className="pdf-page-result" key={page.page}>

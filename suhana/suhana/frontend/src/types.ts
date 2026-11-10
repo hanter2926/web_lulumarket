@@ -47,14 +47,23 @@ export type ApiResponse = {
   files?: FileItem[];
   reports?: ReportItem[];
   folders?: FolderItem[];
+  job_id?: string;
+  job_token?: string;
+  status?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  status_url?: string;
+  cancel_url?: string;
+  cancel_requested?: boolean;
+};
+
+export type ComparisonResult = {
+  same_content: boolean;
+  same_type: boolean;
+  first: { name: string; size_bytes: number; content_type: string };
+  second: { name: string; size_bytes: number; content_type: string };
+  pdf_comparison?: PdfComparisonResult;
+  image_comparison?: { same_visual: boolean };
 };
 
 export type ComparisonResponse = ApiResponse & {
-  comparison?: {
-    same_content: boolean;
-    same_type: boolean;
-    first: { name: string; size_bytes: number; content_type: string };
-    second: { name: string; size_bytes: number; content_type: string };
-    pdf_comparison?: PdfComparisonResult;
-  };
+  comparison?: ComparisonResult;
 };

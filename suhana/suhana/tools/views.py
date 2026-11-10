@@ -2,12 +2,18 @@ import json
 import math
 
 from django.http import JsonResponse
-from django.views.decorators.http import require_POST
-from django.views.decorators.http import require_GET
-from django.contrib.auth.decorators import login_required
-
-from .comparison import compare_uploads
-from .models import ComparisonReport
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_GET, require_POST
+from .models import ComparisonJob, ComparisonReport
+from .processing_jobs import (
+    ComparisonJobAccessError,
+    ComparisonJobExpired,
+    ComparisonQueueFull,
+    authorized_job,
+    cancel_comparison_job,
+    enqueue_comparison,
+)
+from .rust_engine import ProcessingEngineError
 
 
 UNIT_FACTORS = {
@@ -69,24 +75,74 @@ def compare_files(request):
         )
 
     try:
-        result = compare_uploads(first, second)
+        job, token = enqueue_comparison(request, first, second)
+    except ComparisonQueueFull as error:
+        return JsonResponse({"success": False, "message": str(error)}, status=429)
+    except ProcessingEngineError as error:
+        return JsonResponse({"success": False, "message": str(error)}, status=503)
     except ValueError as error:
         return JsonResponse({"success": False, "message": str(error)}, status=400)
 
-    report_id = None
-    if request.user.is_authenticated:
-        report = ComparisonReport.objects.create(
-            owner=request.user,
-            first_name=first.name,
-            second_name=second.name,
-            comparison_type=first.content_type,
-            result=result,
-        )
-        report_id = report.id
-    return JsonResponse({"success": True, "comparison": result, "report_id": report_id})
+    status_url = f"/api/tools/jobs/{job.id}/"
+    return JsonResponse(
+        {
+            "success": True,
+            "job_id": str(job.id),
+            "job_token": token,
+            "status": job.status,
+            "status_url": status_url,
+            "cancel_url": f"{status_url}cancel/",
+        },
+        status=202,
+    )
+
+
+def _job_response(job):
+    response = {
+        "success": job.status not in {ComparisonJob.Status.FAILED},
+        "job_id": str(job.id),
+        "status": job.status,
+        "cancel_requested": job.cancel_requested,
+        "created_at": job.created_at.isoformat(),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+    }
+    if job.status == ComparisonJob.Status.SUCCEEDED:
+        response["comparison"] = job.result
+        response["report_id"] = job.report_id
+    elif job.status == ComparisonJob.Status.FAILED:
+        response["message"] = job.error
+    return response
 
 
 @require_GET
+@never_cache
+def comparison_job_status(request, job_id):
+    try:
+        job = authorized_job(request, job_id)
+    except ComparisonJobAccessError:
+        return JsonResponse({"success": False, "message": "Job not found."}, status=404)
+    except ComparisonJobExpired:
+        return JsonResponse({"success": False, "message": "Job has expired."}, status=410)
+    return JsonResponse(_job_response(job))
+
+
+@require_POST
+def cancel_comparison(request, job_id):
+    try:
+        job = authorized_job(request, job_id)
+    except ComparisonJobAccessError:
+        return JsonResponse({"success": False, "message": "Job not found."}, status=404)
+    except ComparisonJobExpired:
+        return JsonResponse({"success": False, "message": "Job has expired."}, status=410)
+
+    job = cancel_comparison_job(job.id)
+    response = _job_response(job)
+    return JsonResponse(response)
+
+
+@require_GET
+@never_cache
 def reports(request):
     if not request.user.is_authenticated:
         return JsonResponse({"success": False, "message": "Authentication required."}, status=401)

@@ -10,10 +10,12 @@ const props = {
   conversionResult: "",
   comparisonResult: "",
   pdfComparison: null,
+  canCancelComparison: false,
   resetForm: { email: "", otp: "", password: "" },
   resetRequested: false,
   onConversion: vi.fn(),
   onComparison: vi.fn(),
+  onCancelComparison: vi.fn(),
   onResetRequest: vi.fn(),
   onResetConfirm: vi.fn(),
   onConversionChange: vi.fn(),
@@ -50,5 +52,13 @@ describe("ToolPanels", () => {
 
     expect(screen.getByText("Page 1")).toBeInTheDocument();
     expect(screen.getByAltText("Difference overlay for page 1")).toBeInTheDocument();
+  });
+
+  it("allows cancellation while a comparison is running", () => {
+    render(<ToolPanels {...props} loading canCancelComparison />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel comparison" }));
+
+    expect(props.onCancelComparison).toHaveBeenCalled();
   });
 });

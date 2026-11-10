@@ -1,12 +1,27 @@
 import io
 import json
+import os
+import sys
+import tempfile
+import time
+from datetime import timedelta
+from pathlib import Path
 
 from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase, override_settings
+from django.core.management import call_command
+from django.test import Client, TestCase, TransactionTestCase, override_settings
+from django.utils import timezone
 
+from .models import ComparisonJob, ComparisonQueueControl
+from .processing_jobs import cleanup_expired_jobs
+from .image_comparison import compare_images, image_metadata
 from .pdf_rendering import IsolatedPdfRendererClient, PdfRenderingError, PdfiumRenderer
-from .image_comparison import compare_images
+from .process_runner import (
+    ProcessCancelledError,
+    ProcessTimeoutError,
+    run_limited_process,
+)
 
 
 def _image_bytes(fmt, color, size=(2, 2), **kwargs):
@@ -18,8 +33,15 @@ def _image_bytes(fmt, color, size=(2, 2), **kwargs):
 
 
 @override_settings(ROOT_URLCONF="suhana.urls")
-class ToolsApiTests(TestCase):
+class ToolsApiTests(TransactionTestCase):
     def setUp(self):
+        private_root = tempfile.TemporaryDirectory(prefix="suhana-jobs-test-")
+        self.addCleanup(private_root.cleanup)
+        self.private_root = Path(private_root.name)
+        settings_override = override_settings(PROCESSING_JOB_ROOT=self.private_root)
+        settings_override.enable()
+        self.addCleanup(settings_override.disable)
+        ComparisonQueueControl.objects.get_or_create(pk=1)
         self.client = Client(enforce_csrf_checks=True)
         response = self.client.get("/api/accounts/csrf/")
         self.csrf_token = response.json()["csrfToken"]
@@ -56,8 +78,19 @@ class ToolsApiTests(TestCase):
             HTTP_X_CSRFTOKEN=self.csrf_token,
         )
 
-        self.assertEqual(response.status_code, 200)
-        comparison = response.json()["comparison"]
+        self.assertEqual(response.status_code, 202)
+        accepted = response.json()
+        job_id = accepted["job_id"]
+        self.assertEqual(accepted["status"], ComparisonJob.Status.QUEUED)
+        self.assertTrue((self.private_root / job_id).is_dir())
+        call_command("run_comparison_worker", once=True, stdout=io.StringIO())
+        status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(status.status_code, 200)
+        self.assertIn("no-store", status["Cache-Control"])
+        comparison = status.json()["comparison"]
         self.assertTrue(comparison["same_content"])
         self.assertEqual(comparison["first"]["dimensions"], [1, 1])
         self.assertTrue(comparison["image_comparison"]["same_visual"])
@@ -112,12 +145,73 @@ class ToolsApiTests(TestCase):
             },
             HTTP_X_CSRFTOKEN=self.csrf_token,
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNotNone(response.json()["report_id"])
+        self.assertEqual(response.status_code, 202)
+        accepted = response.json()
+        call_command("run_comparison_worker", once=True, stdout=io.StringIO())
 
         response = self.client.get("/api/tools/reports/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["reports"]), 1)
+
+    def test_comparison_job_requires_its_capability_token(self):
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.png", png, content_type="image/png"),
+                "second": SimpleUploadedFile("second.png", png, content_type="image/png"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        status = self.client.get(
+            response.json()["status_url"],
+            HTTP_X_JOB_TOKEN="wrong-token",
+        )
+
+        self.assertEqual(status.status_code, 404)
+
+    def test_queued_comparison_can_be_cancelled(self):
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.png", png, content_type="image/png"),
+                "second": SimpleUploadedFile("second.png", png, content_type="image/png"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        accepted = response.json()
+
+        cancelled = self.client.post(
+            accepted["cancel_url"],
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertEqual(cancelled.json()["status"], ComparisonJob.Status.CANCELLED)
+        self.assertFalse((self.private_root / accepted["job_id"]).exists())
+
+    def test_expired_queued_job_is_cancelled_and_removed(self):
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.png", png, content_type="image/png"),
+                "second": SimpleUploadedFile("second.png", png, content_type="image/png"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        job_id = response.json()["job_id"]
+        ComparisonJob.objects.filter(pk=job_id).update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        cleanup_expired_jobs()
+
+        self.assertFalse(ComparisonJob.objects.filter(pk=job_id).exists())
+        self.assertFalse((self.private_root / job_id).exists())
 
 
 def _pdf_with_text(text):
@@ -233,6 +327,43 @@ class ImageComparisonTests(TestCase):
         self.assertTrue(result["animated"])
         self.assertEqual(len(result["frame_results"]), 2)
 
+    def test_supported_static_formats_decode_and_compare_identically(self):
+        for fmt in ("PNG", "JPEG", "GIF", "WEBP"):
+            with self.subTest(format=fmt):
+                image = _image_bytes(fmt, (30, 60, 90, 255))
+                result = compare_images(image, image)
+
+                self.assertTrue(result["same_visual"])
+                self.assertEqual(result["first_format"], fmt)
+
+    def test_opaque_rgba_png_metadata_preserves_alpha_channel(self):
+        image = _image_bytes("PNG", (30, 60, 90, 255))
+
+        self.assertTrue(image_metadata(image)["has_alpha"])
+
+    def test_animated_webp_and_apng_compare_each_frame(self):
+        for fmt in ("WEBP", "PNG"):
+            with self.subTest(format=fmt):
+                frames = [
+                    Image.new("RGBA", (2, 2), color)
+                    for color in ((255, 0, 0, 255), (0, 0, 255, 255))
+                ]
+                output = io.BytesIO()
+                frames[0].save(
+                    output,
+                    format=fmt,
+                    save_all=True,
+                    append_images=frames[1:],
+                    duration=100,
+                    loop=0,
+                )
+
+                result = compare_images(output.getvalue(), output.getvalue())
+
+                self.assertTrue(result["animated"])
+                self.assertEqual(len(result["frame_results"]), 2)
+                self.assertTrue(result["same_visual"])
+
     def test_malformed_image_is_rejected_by_api(self):
         response = self.client.post(
             "/api/tools/compare/",
@@ -244,3 +375,59 @@ class ImageComparisonTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+
+class ProcessIsolationTests(TestCase):
+    def test_child_timeout_terminates_the_worker(self):
+        command = [sys.executable, "-c", "import time; time.sleep(10)"]
+
+        with self.assertRaises(ProcessTimeoutError):
+            run_limited_process(command, Path.cwd(), timeout_seconds=0.25)
+
+    def test_cancellation_terminates_the_worker(self):
+        command = [sys.executable, "-c", "import time; time.sleep(10)"]
+        cancel_at = time.monotonic() + 0.25
+
+        with self.assertRaises(ProcessCancelledError):
+            run_limited_process(
+                command,
+                Path.cwd(),
+                timeout_seconds=5,
+                cancel_check=lambda: time.monotonic() >= cancel_at,
+            )
+
+    def test_crashed_child_does_not_affect_later_worker(self):
+        crashed = run_limited_process(
+            [sys.executable, "-c", "import os; os._exit(37)"],
+            Path.cwd(),
+            timeout_seconds=5,
+        )
+        healthy = run_limited_process(
+            [sys.executable, "-c", "print('alive')"],
+            Path.cwd(),
+            timeout_seconds=5,
+        )
+
+        self.assertEqual(crashed.returncode, 37)
+        self.assertEqual(healthy.stdout.strip(), "alive")
+
+    def test_child_cannot_exceed_os_memory_limit(self):
+        if os.name == "nt":
+            command = [
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; "
+                "$memory = New-Object byte[] (1GB); Write-Output 'allocated'",
+            ]
+        else:
+            command = [sys.executable, "-c", "memory = bytearray(1024 * 1024 * 1024)"]
+
+        result = run_limited_process(command, Path.cwd(), timeout_seconds=15)
+
+        self.assertNotEqual(result.returncode, 0)
+        if os.name == "nt":
+            self.assertIn("OutOfMemoryException", result.stderr)
+        else:
+            self.assertIn("MemoryError", result.stderr)
