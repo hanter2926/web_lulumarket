@@ -33,6 +33,41 @@ export type PdfComparisonResult = {
   page_results: PdfPageResult[];
 };
 
+export type ImageVisualResult = {
+  same_dimensions: boolean;
+  differing_pixels: number | null;
+  difference_percentage: number;
+  overlay_png: string | null;
+};
+
+export type ImageComparisonResult = {
+  first: {
+    dimensions: [number, number];
+    format: string;
+    animated: boolean;
+    frame_count: number;
+    has_alpha: boolean;
+  };
+  second: {
+    dimensions: [number, number];
+    format: string;
+    animated: boolean;
+    frame_count: number;
+    has_alpha: boolean;
+  };
+  first_format: string;
+  second_format: string;
+  animated: boolean;
+  frame_count_difference: number;
+  frame_results: Array<{
+    frame: number;
+    status: "compared" | "added" | "removed";
+    visual: ImageVisualResult | null;
+  }>;
+  visual_differences: number;
+  same_visual: boolean;
+};
+
 export type ApiResponse = {
   success?: boolean;
   message?: string;
@@ -73,7 +108,7 @@ export type ComparisonResult = {
   first: { name: string; size_bytes: number; content_type: string };
   second: { name: string; size_bytes: number; content_type: string };
   pdf_comparison?: PdfComparisonResult;
-  image_comparison?: { same_visual: boolean };
+  image_comparison?: ImageComparisonResult;
 };
 
 export type ComparisonResponse = ApiResponse & {

@@ -5,7 +5,14 @@ import ToolPanels from "./components/ToolPanels";
 import StoragePanel from "./components/StoragePanel";
 import { DashboardPanel, HistoryPanel, PlansPanel } from "./components/WorkspacePanels";
 import { errorMessage, getCsrfToken, postJson, readJson } from "./api";
-import type { ActiveView, ApiResponse, ComparisonResponse, PdfComparisonResult, RegistrationStep } from "./types";
+import type {
+  ActiveView,
+  ApiResponse,
+  ComparisonResponse,
+  ImageComparisonResult,
+  PdfComparisonResult,
+  RegistrationStep,
+} from "./types";
 
 const initialForm = {
   username: "",
@@ -44,6 +51,7 @@ function App() {
     filename?: string;
   } | null>(null);
   const [pdfComparison, setPdfComparison] = useState<PdfComparisonResult | null>(null);
+  const [imageComparison, setImageComparison] = useState<ImageComparisonResult | null>(null);
   const [activeComparisonJob, setActiveComparisonJob] = useState<{
     statusUrl: string;
     cancelUrl: string;
@@ -270,6 +278,7 @@ function App() {
       setReports([]);
       setSelectedFolderId(null);
       setPdfComparison(null);
+      setImageComparison(null);
       setMessage(data.message ?? "Logout successful.");
     } catch (error: unknown) {
       setMessage(errorMessage(error));
@@ -460,6 +469,7 @@ function App() {
     setLoading(true);
     setComparisonResult("");
     setPdfComparison(null);
+    setImageComparison(null);
     setActiveComparisonJob(null);
     try {
       const response = await fetch("/api/tools/compare/", {
@@ -533,6 +543,14 @@ function App() {
         setComparisonResult(
           `${pdf.text_differences} page text difference(s), ${pdf.visual_differences} visual difference(s). ` +
           `Pages: ${pdf.first.page_count} vs ${pdf.second.page_count}.`,
+        );
+      } else if (result.image_comparison) {
+        const image = result.image_comparison;
+        setImageComparison(image);
+        setComparisonResult(
+          image.same_visual
+            ? "No pixel-level visual differences were found."
+            : `${image.visual_differences} frame(s) have pixel-level visual differences.`,
         );
       } else {
         setComparisonResult(
@@ -641,11 +659,13 @@ function App() {
         throw new Error("The downloaded file size did not match the validated compression result.");
       }
       const actualReduction = compression.input_bytes - blob.size;
-      const reductionPercent = actualReduction > 0
+      const sizeChange = actualReduction > 0
         ? ` Reduced by ${((actualReduction / compression.input_bytes) * 100).toFixed(1)}%.`
-        : " The valid output was checked but is not smaller than the input.";
+        : actualReduction < 0
+          ? ` Output is ${((Math.abs(actualReduction) / compression.input_bytes) * 100).toFixed(1)}% larger than the input.`
+          : " Output size is unchanged.";
       setCompressionResult({
-        message: `Compression complete.${reductionPercent}`,
+        message: `Compression complete.${sizeChange}`,
         inputBytes: compression.input_bytes,
         outputBytes: blob.size,
         downloadUrl: URL.createObjectURL(blob),
@@ -714,7 +734,7 @@ function App() {
 
   return (
     <main className="app">
-      <section className="register-card" aria-labelledby="page-title">
+      <section className={`register-card register-card-${activeView}`} aria-labelledby="page-title">
         <nav className="tool-nav" aria-label="Suhana tools">
           <button type="button" className={activeView === "auth" ? "nav-active" : "nav-button"}
             onClick={() => setActiveView("auth")}>Account</button>
@@ -754,19 +774,20 @@ function App() {
           )}
         </p>
 
-        {activeView === "dashboard" && <DashboardPanel dashboard={dashboard}
-          onFiles={() => openView("storage")} onHistory={() => openView("history")} />}
-        {activeView === "storage" && <StoragePanel csrfReady={Boolean(csrfToken)} loading={loading}
-          selectedFolderId={selectedFolderId} folders={folders ?? []} files={files ?? []}
-          onSelectFolder={(id) => { setSelectedFolderId(id); void loadFiles(id); }}
-          onCreateFolder={createFolder} onRenameFolder={renameFolder} onDeleteFolder={deleteFolder}
-          onUpload={handleUpload} onDeleteFile={handleDeleteFile} />}
-        {activeView === "history" && <HistoryPanel reports={reports ?? []} />}
-        {activeView === "plans" && <PlansPanel />}
+        <div className={`view-content view-${activeView}`}>
+          {activeView === "dashboard" && <DashboardPanel dashboard={dashboard}
+            onFiles={() => openView("storage")} onHistory={() => openView("history")} />}
+          {activeView === "storage" && <StoragePanel csrfReady={Boolean(csrfToken)} loading={loading}
+            selectedFolderId={selectedFolderId} folders={folders ?? []} files={files ?? []}
+            onSelectFolder={(id) => { setSelectedFolderId(id); void loadFiles(id); }}
+            onCreateFolder={createFolder} onRenameFolder={renameFolder} onDeleteFolder={deleteFolder}
+            onUpload={handleUpload} onDeleteFile={handleDeleteFile} />}
+          {activeView === "history" && <HistoryPanel reports={reports ?? []} />}
+          {activeView === "plans" && <PlansPanel />}
 
-        {activeView === "reset" && <ToolPanels active="reset" loading={loading} csrfReady={Boolean(csrfToken)}
+          {activeView === "reset" && <ToolPanels active="reset" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
-          comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          comparisonResult={comparisonResult} imageComparison={imageComparison} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
@@ -776,7 +797,7 @@ function App() {
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "converter" && <ToolPanels active="converter" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
-          comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          comparisonResult={comparisonResult} imageComparison={imageComparison} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
@@ -786,7 +807,7 @@ function App() {
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "compare" && <ToolPanels active="compare" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
-          comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          comparisonResult={comparisonResult} imageComparison={imageComparison} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
@@ -796,7 +817,7 @@ function App() {
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "compress" && <ToolPanels active="compress" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
-          comparisonResult={comparisonResult} pdfComparison={pdfComparison}
+          comparisonResult={comparisonResult} imageComparison={imageComparison} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
@@ -805,7 +826,7 @@ function App() {
           onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
 
-        {activeView === "auth" && <AuthPanel step={step} loading={loading} csrfReady={Boolean(csrfToken)}
+          {activeView === "auth" && <AuthPanel step={step} loading={loading} csrfReady={Boolean(csrfToken)}
           form={form} loginForm={loginForm} otp={otp} resendCooldown={resendCooldown}
           onRegister={handleRegister} onVerify={handleVerify} onResend={handleResend}
           onLogin={handleLogin} onLogout={handleLogout} onFieldChange={updateFormField}
@@ -813,7 +834,8 @@ function App() {
           onLoginChange={(field, value) => setLoginForm((current) => ({ ...current, [field]: value }))}
           onStepChange={setStep} onReset={() => setActiveView("reset")} />}
 
-        {activeView === "auth" && message && <p className="status-message" role="status">{message}</p>}
+          {activeView === "auth" && message && <p className="status-message" role="status">{message}</p>}
+        </div>
       </section>
     </main>
   );

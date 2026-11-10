@@ -289,9 +289,14 @@ class ToolsApiTests(TransactionTestCase):
             gif_status.json()["download_url"],
             HTTP_X_JOB_TOKEN=gif_accepted["job_token"],
         )
+        gif_frames = []
         with Image.open(io.BytesIO(b"".join(gif_output.streaming_content))) as image:
             self.assertEqual(image.format, "GIF")
             self.assertEqual(image.n_frames, 2)
+            for frame_index in range(image.n_frames):
+                image.seek(frame_index)
+                gif_frames.append(image.convert("RGB").getpixel((0, 0)))
+        self.assertEqual(gif_frames, [(255, 0, 0), (0, 255, 0)])
 
         webp = _image_bytes("WEBP", (100, 120, 140), size=(32, 32))
         accepted, webp_status = self.run_compression(webp, "photo.webp", "image/webp")
@@ -301,8 +306,11 @@ class ToolsApiTests(TransactionTestCase):
             HTTP_X_JOB_TOKEN=accepted["job_token"],
         )
         output = b"".join(webp_download.streaming_content)
+        with Image.open(io.BytesIO(webp)) as original:
+            original_pixel = original.convert("RGBA").getpixel((0, 0))
         with Image.open(io.BytesIO(output)) as image:
             self.assertEqual(image.format, "WEBP")
+            self.assertEqual(image.convert("RGBA").getpixel((0, 0)), original_pixel)
 
     def test_jpeg_compression_applies_exif_orientation(self):
         image = Image.new("RGB", (32, 16), (90, 120, 150))

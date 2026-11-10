@@ -1,6 +1,8 @@
+import tempfile
+
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from .models import Folder, StoragePlan, StoredFile, UserStorage
 
@@ -10,6 +12,11 @@ User = get_user_model()
 
 class StorageApiTests(TestCase):
     def setUp(self):
+        media_root = tempfile.TemporaryDirectory(prefix="suhana-storage-test-")
+        self.addCleanup(media_root.cleanup)
+        media_settings = override_settings(MEDIA_ROOT=media_root.name)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
         self.client = Client(enforce_csrf_checks=True)
         response = self.client.get("/api/accounts/csrf/")
         self.csrf_token = response.json()["csrfToken"]

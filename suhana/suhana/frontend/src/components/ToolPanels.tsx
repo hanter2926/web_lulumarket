@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import type { PdfComparisonResult } from "../types";
+import type { ImageComparisonResult, PdfComparisonResult } from "../types";
 
 type Props = {
   active: "reset" | "converter" | "compare" | "compress";
@@ -15,6 +15,7 @@ type Props = {
     filename?: string;
   } | null;
   comparisonResult: string;
+  imageComparison: ImageComparisonResult | null;
   pdfComparison: PdfComparisonResult | null;
   canCancelComparison: boolean;
   canCancelCompression: boolean;
@@ -96,7 +97,10 @@ export default function ToolPanels(props: Props) {
         <p>{props.compressionResult.message}</p>
         {props.compressionResult.inputBytes !== undefined &&
           props.compressionResult.outputBytes !== undefined &&
-          <p>Input: {formatBytes(props.compressionResult.inputBytes)} · Output: {formatBytes(props.compressionResult.outputBytes)}</p>}
+          <p>
+            Original: {formatBytes(props.compressionResult.inputBytes)} ({props.compressionResult.inputBytes.toLocaleString()} bytes)
+            {" "}· Compressed: {formatBytes(props.compressionResult.outputBytes)} ({props.compressionResult.outputBytes.toLocaleString()} bytes)
+          </p>}
         {props.compressionResult.downloadUrl && props.compressionResult.filename &&
           <a href={props.compressionResult.downloadUrl} download={props.compressionResult.filename}>
             Download {props.compressionResult.filename}
@@ -112,6 +116,30 @@ export default function ToolPanels(props: Props) {
       <button type="submit" disabled={props.loading || !props.csrfReady}>{props.loading ? "Comparing..." : "Compare files"}</button>
       {props.canCancelComparison && <button type="button" onClick={props.onCancelComparison}>Cancel comparison</button>}
       {props.comparisonResult && <p className="result-panel" role="status">{props.comparisonResult}</p>}
+      {props.imageComparison && <section className="image-results" aria-label="Image comparison details">
+        <p>
+          First: {props.imageComparison.first_format} {props.imageComparison.first.dimensions.join(" x ")}.
+          {" "}Second: {props.imageComparison.second_format} {props.imageComparison.second.dimensions.join(" x ")}.
+        </p>
+        <p>
+          {props.imageComparison.same_visual
+            ? "No pixel-level visual differences found."
+            : `${props.imageComparison.visual_differences} frame(s) have visual differences.`}
+        </p>
+        {props.imageComparison.frame_results.map((frame) => <article className="image-frame-result" key={frame.frame}>
+          <strong>Frame {frame.frame}</strong>
+          {frame.status !== "compared" && <span>Frame {frame.status} in the second image.</span>}
+          {frame.visual && <>
+            <span>
+              {frame.visual.same_dimensions
+                ? `${frame.visual.differing_pixels ?? 0} differing pixels · ${frame.visual.difference_percentage}%`
+                : "Frame dimensions differ; all pixels are treated as different."}
+            </span>
+            {frame.visual.overlay_png &&
+              <img src={frame.visual.overlay_png} alt={`Difference overlay for frame ${frame.frame}`} />}
+          </>}
+        </article>)}
+      </section>}
       {props.pdfComparison && <section className="pdf-results" aria-label="PDF comparison details">
         {props.pdfComparison.page_results.map((page) => <article className="pdf-page-result" key={page.page}>
           <strong>Page {page.page}</strong>

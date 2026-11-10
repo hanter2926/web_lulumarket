@@ -10,6 +10,7 @@ const props = {
   conversionResult: "",
   compressionResult: null,
   comparisonResult: "",
+  imageComparison: null,
   pdfComparison: null,
   canCancelComparison: false,
   canCancelCompression: false,
@@ -58,6 +59,49 @@ describe("ToolPanels", () => {
     expect(screen.getByAltText("Difference overlay for page 1")).toBeInTheDocument();
   });
 
+  it("renders pixel-level image differences and an overlay preview", () => {
+    render(
+      <ToolPanels
+        {...props}
+        imageComparison={{
+          first: {
+            dimensions: [2, 2],
+            format: "PNG",
+            animated: false,
+            frame_count: 1,
+            has_alpha: true,
+          },
+          second: {
+            dimensions: [2, 2],
+            format: "PNG",
+            animated: false,
+            frame_count: 1,
+            has_alpha: true,
+          },
+          first_format: "PNG",
+          second_format: "PNG",
+          animated: false,
+          frame_count_difference: 0,
+          frame_results: [{
+            frame: 1,
+            status: "compared",
+            visual: {
+              same_dimensions: true,
+              differing_pixels: 2,
+              difference_percentage: 50,
+              overlay_png: "data:image/png;base64,test",
+            },
+          }],
+          visual_differences: 1,
+          same_visual: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("2 differing pixels · 50%")).toBeInTheDocument();
+    expect(screen.getByAltText("Difference overlay for frame 1")).toBeInTheDocument();
+  });
+
   it("allows cancellation while a comparison is running", () => {
     render(<ToolPanels {...props} loading canCancelComparison />);
 
@@ -86,6 +130,8 @@ describe("ToolPanels", () => {
       "download",
       "image_compressed.png",
     );
-    expect(screen.getByText("Input: 400 bytes · Output: 300 bytes")).toBeInTheDocument();
+    expect(screen.getByText(
+      "Original: 400 bytes (400 bytes) · Compressed: 300 bytes (300 bytes)",
+    )).toBeInTheDocument();
   });
 });
