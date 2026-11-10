@@ -87,6 +87,15 @@ def compare_files(request):
         return JsonResponse({"success": False, "message": str(error)}, status=503)
     except ValueError as error:
         return JsonResponse({"success": False, "message": str(error)}, status=400)
+    except Exception:
+        logger.exception("Comparison request could not be queued.")
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "The comparison could not be started. Please try again.",
+            },
+            status=500,
+        )
 
     status_url = f"/api/tools/jobs/{job.id}/"
     response = _job_response(job)

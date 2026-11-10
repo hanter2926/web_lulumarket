@@ -458,6 +458,30 @@ class ToolsApiTests(TransactionTestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_compare_queue_exception_is_logged_and_returns_safe_json(self):
+        image = _image_bytes("PNG", (10, 20, 30, 255), size=(2, 2))
+        with patch(
+            "tools.views.enqueue_comparison",
+            side_effect=RuntimeError("private internal diagnostic"),
+        ):
+            with self.assertLogs("tools.views", level="ERROR") as captured:
+                response = self.client.post(
+                    "/api/tools/compare/",
+                    {
+                        "first": SimpleUploadedFile("first.png", image, content_type="image/png"),
+                        "second": SimpleUploadedFile("second.png", image, content_type="image/png"),
+                    },
+                    HTTP_X_CSRFTOKEN=self.csrf_token,
+                )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.json()["message"],
+            "The comparison could not be started. Please try again.",
+        )
+        self.assertNotIn("private internal diagnostic", response.content.decode())
+        self.assertIn("private internal diagnostic", captured.output[0])
+
     def test_compare_rejects_mismatched_image_signature(self):
         response = self.client.post(
             "/api/tools/compare/",
@@ -469,6 +493,45 @@ class ToolsApiTests(TransactionTestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_compare_uses_file_signature_when_browser_mime_is_wrong(self):
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(2, 2))
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.png", png, content_type="image/jpeg"),
+                "second": SimpleUploadedFile("second.png", png, content_type="image/png"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        self.assertEqual(response.status_code, 202, response.content)
+        accepted = response.json()
+        job = ComparisonJob.objects.get(pk=accepted["job_id"])
+        self.assertEqual(job.first_content_type, "image/png")
+        self.assertEqual(job.second_content_type, "image/png")
+        call_command("run_comparison_worker", once=True, stdout=io.StringIO())
+        status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(status.json()["state"], "completed")
+        self.assertTrue(status.json()["comparison"]["image_comparison"]["same_visual"])
+
+    def test_compression_uses_file_signature_when_browser_mime_is_wrong(self):
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(16, 16))
+        accepted, status = self.run_compression(png, "photo.png", "image/jpeg")
+
+        self.assertEqual(status.json()["state"], "completed")
+        job = ComparisonJob.objects.get(pk=accepted["job_id"])
+        self.assertEqual(job.first_content_type, "image/png")
+        downloaded = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        output = b"".join(downloaded.streaming_content)
+        with Image.open(io.BytesIO(output)) as image:
+            self.assertEqual(image.format, "PNG")
 
     def test_unit_conversion_rejects_non_finite_values(self):
         for value in ("NaN", "Infinity", "-Infinity"):

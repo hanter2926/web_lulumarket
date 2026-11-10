@@ -15,6 +15,7 @@ from .rust_engine import ProcessingEngineError
 MAX_COMPARISON_FILE_SIZE = 25 * 1024 * 1024
 SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 SUPPORTED_PDF_TYPE = "application/pdf"
+SUPPORTED_CONTENT_TYPES = SUPPORTED_IMAGE_TYPES | {SUPPORTED_PDF_TYPE}
 
 
 def _sha256(uploaded_file):
@@ -72,18 +73,26 @@ def _image_dimensions(uploaded_file, content_type):
     return None
 
 
-def _validate_signature(uploaded_file, content_type):
-    header = uploaded_file.read(32)
+def detect_content_type(uploaded_file):
+    header = uploaded_file.read(12)
     uploaded_file.seek(0)
-    valid = {
-        "image/png": header.startswith(b"\x89PNG\r\n\x1a\n"),
-        "image/gif": header[:6] in (b"GIF87a", b"GIF89a"),
-        "image/jpeg": header[:2] == b"\xff\xd8",
-        "image/webp": header[:4] == b"RIFF" and header[8:12] == b"WEBP",
-        SUPPORTED_PDF_TYPE: header.startswith(b"%PDF-"),
-    }
-    if not valid.get(content_type, False):
-        raise ValueError("The uploaded file content does not match its declared format.")
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if header[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "image/webp"
+    if header.startswith(b"%PDF-"):
+        return SUPPORTED_PDF_TYPE
+    raise ValueError("Only PNG, JPEG, GIF, WEBP, and PDF file content is supported.")
+
+
+def _validate_signature(uploaded_file, content_type):
+    detected_content_type = detect_content_type(uploaded_file)
+    if detected_content_type != content_type:
+        raise ValueError("The file content does not match the expected output format.")
 
 
 def _invalid_engine_result():

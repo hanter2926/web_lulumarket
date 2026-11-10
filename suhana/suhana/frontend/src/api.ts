@@ -39,3 +39,12 @@ export async function postJson(
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unable to connect to server.";
 }
+
+export function responseErrorMessage(
+  response: Response,
+  data: ApiResponse,
+  operation: string,
+): string {
+  const message = typeof data.message === "string" ? data.message.trim() : "";
+  return message || `${operation} failed (HTTP ${response.status}).`;
+}

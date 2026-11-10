@@ -15,8 +15,9 @@ from django.utils import timezone
 
 from .comparison import (
     MAX_COMPARISON_FILE_SIZE,
-    SUPPORTED_IMAGE_TYPES,
+    SUPPORTED_CONTENT_TYPES,
     SUPPORTED_PDF_TYPE,
+    detect_content_type,
     _validate_signature,
     compare_uploads,
 )
@@ -110,21 +111,21 @@ def _safe_upload_name(upload):
 
 
 def _validate_upload(upload):
-    allowed = SUPPORTED_IMAGE_TYPES | {SUPPORTED_PDF_TYPE}
-    if upload.content_type not in allowed:
-        raise ValueError("Only PNG, JPEG, GIF, WEBP, and PDF files are supported.")
     if upload.size > MAX_COMPARISON_FILE_SIZE:
         raise ValueError("Each comparison file must be 25 MB or smaller.")
-    _validate_signature(upload, upload.content_type)
+    content_type = detect_content_type(upload)
+    if content_type not in SUPPORTED_CONTENT_TYPES:
+        raise ValueError("Only PNG, JPEG, GIF, WEBP, and PDF files are supported.")
+    return content_type
 
 
 def _validate_compression_upload(upload):
-    allowed = SUPPORTED_IMAGE_TYPES | {SUPPORTED_PDF_TYPE}
-    if upload.content_type not in allowed:
-        raise ValueError("Only PNG, JPEG, GIF, WEBP, and PDF files can be compressed.")
     if upload.size > MAX_COMPARISON_FILE_SIZE:
         raise ValueError("The compression input must be 25 MB or smaller.")
-    _validate_signature(upload, upload.content_type)
+    content_type = detect_content_type(upload)
+    if content_type not in SUPPORTED_CONTENT_TYPES:
+        raise ValueError("Only PNG, JPEG, GIF, WEBP, and PDF files can be compressed.")
+    return content_type
 
 
 def _write_private_upload(upload, destination):
@@ -152,10 +153,14 @@ def _requester_fingerprint(request):
 
 def _enqueue_job(request, first, second, job_type):
     if job_type == ComparisonJob.Type.COMPRESSION:
-        _validate_compression_upload(first)
+        first_content_type = _validate_compression_upload(first)
+        second_content_type = ""
     else:
-        _validate_upload(first)
-        _validate_upload(second)
+        first_content_type = _validate_upload(first)
+        second_content_type = _validate_upload(second)
+    first.content_type = first_content_type
+    if second is not None:
+        second.content_type = second_content_type
 
     job_id = uuid.uuid4()
     token = secrets.token_urlsafe(32)
@@ -196,8 +201,8 @@ def _enqueue_job(request, first, second, job_type):
                 job_type=job_type,
                 first_name=_safe_upload_name(first),
                 second_name=_safe_upload_name(second) if second is not None else "",
-                first_content_type=first.content_type,
-                second_content_type=second.content_type if second is not None else "",
+                first_content_type=first_content_type,
+                second_content_type=second_content_type,
                 requester_key=requester_key,
                 access_token_hash=hashlib.sha256(token.encode("ascii")).hexdigest(),
                 expires_at=timezone.now() + COMPARISON_JOB_TTL,

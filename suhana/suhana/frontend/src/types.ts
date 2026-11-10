@@ -1,5 +1,5 @@
 export type RegistrationStep = "register" | "verify" | "success" | "login" | "logged-in";
-export type ActiveView = "auth" | "dashboard" | "storage" | "converter" | "compare" | "compress" | "history" | "reset" | "plans";
+export type ActiveView = "auth" | "dashboard" | "storage" | "converter" | "image-size" | "compare" | "compress" | "history" | "reset" | "plans";
 
 export type FolderItem = { id: number; name: string; parent_id: number | null };
 export type FileItem = { id: number; name: string; size_bytes: number; content_type: string; folder_id: number | null };

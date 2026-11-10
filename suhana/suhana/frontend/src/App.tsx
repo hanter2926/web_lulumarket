@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import AuthPanel from "./components/AuthPanel";
+import ImageSizeAnalyzer from "./components/ImageSizeAnalyzer";
 import ToolPanels from "./components/ToolPanels";
 import StoragePanel from "./components/StoragePanel";
 import { DashboardPanel, HistoryPanel, PlansPanel } from "./components/WorkspacePanels";
-import { errorMessage, getCsrfToken, postJson, readJson } from "./api";
+import { errorMessage, getCsrfToken, postJson, readJson, responseErrorMessage } from "./api";
+import {
+  createTextDownload,
+  createVerifiedPngDownload,
+  revokeDownloads,
+  verifyImageBlob,
+  verifyPdfHeader,
+  type DownloadArtifact,
+} from "./downloadUtils";
 import type {
   ActiveView,
   ApiResponse,
@@ -13,6 +22,8 @@ import type {
   PdfComparisonResult,
   RegistrationStep,
 } from "./types";
+
+type ToolStatus = "idle" | "file_selected" | "processing" | "success" | "error";
 
 const initialForm = {
   username: "",
@@ -25,6 +36,61 @@ const initialLoginForm = {
   identifier: "",
   password: "",
 };
+
+function csvRow(values: Array<string | number | boolean | null>) {
+  return values.map((value) => {
+    const text = value === null ? "" : String(value);
+    const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safeText.replaceAll('"', '""')}"`;
+  }).join(",");
+}
+
+function comparisonCsv(result: NonNullable<ComparisonResponse["comparison"]>) {
+  const rows = [
+    csvRow(["Metric", "Value"]),
+    csvRow(["Same content", result.same_content]),
+    csvRow(["Same format", result.same_type]),
+    csvRow(["First file", result.first.name]),
+    csvRow(["First format", result.first.content_type]),
+    csvRow(["First size bytes", result.first.size_bytes]),
+    csvRow(["Second file", result.second.name]),
+    csvRow(["Second format", result.second.content_type]),
+    csvRow(["Second size bytes", result.second.size_bytes]),
+  ];
+  if (result.image_comparison) {
+    rows.push(
+      csvRow(["Comparison", "Pixel-level image comparison"]),
+      csvRow(["Same visual", result.image_comparison.same_visual]),
+      csvRow(["Visual differences", result.image_comparison.visual_differences]),
+    );
+    result.image_comparison.frame_results.forEach((frame) => {
+      rows.push(csvRow([
+        `Frame ${frame.frame}`,
+        frame.status,
+        frame.visual?.differing_pixels ?? "",
+        frame.visual?.difference_percentage ?? "",
+      ]));
+    });
+  }
+  if (result.pdf_comparison) {
+    rows.push(
+      csvRow(["Comparison", "PDF page comparison"]),
+      csvRow(["First page count", result.pdf_comparison.first.page_count]),
+      csvRow(["Second page count", result.pdf_comparison.second.page_count]),
+      csvRow(["Text differences", result.pdf_comparison.text_differences]),
+      csvRow(["Visual differences", result.pdf_comparison.visual_differences]),
+    );
+    result.pdf_comparison.page_results.forEach((page) => {
+      rows.push(csvRow([
+        `Page ${page.page}`,
+        page.status ?? (page.text_same ? "Text identical" : "Text differs"),
+        page.visual?.difference_percentage ?? "",
+        page.visual?.differing_pixels ?? "",
+      ]));
+    });
+  }
+  return `${rows.join("\r\n")}\r\n`;
+}
 
 function App() {
   const [form, setForm] = useState(initialForm);
@@ -42,7 +108,11 @@ function App() {
     to: "mb",
   });
   const [conversionResult, setConversionResult] = useState("");
+  const [conversionStatus, setConversionStatus] = useState<ToolStatus>("idle");
+  const [conversionDownload, setConversionDownload] = useState<DownloadArtifact | null>(null);
   const [comparisonResult, setComparisonResult] = useState("");
+  const [comparisonStatus, setComparisonStatus] = useState<ToolStatus>("idle");
+  const [comparisonDownloads, setComparisonDownloads] = useState<DownloadArtifact[]>([]);
   const [compressionResult, setCompressionResult] = useState<{
     message: string;
     inputBytes?: number;
@@ -50,6 +120,7 @@ function App() {
     downloadUrl?: string;
     filename?: string;
   } | null>(null);
+  const [compressionStatus, setCompressionStatus] = useState<ToolStatus>("idle");
   const [pdfComparison, setPdfComparison] = useState<PdfComparisonResult | null>(null);
   const [imageComparison, setImageComparison] = useState<ImageComparisonResult | null>(null);
   const [activeComparisonJob, setActiveComparisonJob] = useState<{
@@ -70,7 +141,12 @@ function App() {
   const [resetForm, setResetForm] = useState({ email: "", otp: "", password: "" });
   const [resetRequested, setResetRequested] = useState(false);
   const registrationInFlight = useRef(false);
+  const conversionInFlight = useRef(false);
+  const comparisonInFlight = useRef(false);
   const compressionInFlight = useRef(false);
+  const comparisonRun = useRef(0);
+  const compressionRun = useRef(0);
+  const conversionRun = useRef(0);
 
   const updateFormField = (field: keyof typeof initialForm, value: string) =>
     setForm((current) => ({ ...current, [field]: value }));
@@ -112,6 +188,12 @@ function App() {
     if (!downloadUrl) return;
     return () => URL.revokeObjectURL(downloadUrl);
   }, [compressionResult?.downloadUrl]);
+
+  useEffect(() => () => {
+    if (conversionDownload) URL.revokeObjectURL(conversionDownload.url);
+  }, [conversionDownload]);
+
+  useEffect(() => () => revokeDownloads(comparisonDownloads), [comparisonDownloads]);
 
   async function handleRegister(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -289,7 +371,15 @@ function App() {
 
   async function handleConversion(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (conversionInFlight.current) return;
+    conversionInFlight.current = true;
+    const run = ++conversionRun.current;
+    if (conversionDownload) {
+      URL.revokeObjectURL(conversionDownload.url);
+      setConversionDownload(null);
+    }
     setLoading(true);
+    setConversionStatus("processing");
     setConversionResult("");
     try {
       const { response, data } = await postJson(
@@ -297,15 +387,36 @@ function App() {
         conversion,
         csrfToken,
       );
+      if (run !== conversionRun.current) return;
       if (!response.ok || !data.success) {
-        setConversionResult(data.message ?? "Conversion failed.");
+        setConversionStatus("error");
+        setConversionResult(responseErrorMessage(response, data, "Conversion"));
         return;
       }
       setConversionResult(`${data.result} ${conversion.to.toUpperCase()}`);
+      const report = createTextDownload(
+        `value,from,to,result\r\n${csvRow([
+          conversion.value,
+          conversion.from,
+          conversion.to,
+          data.result ?? "",
+        ])}\r\n`,
+        "text/csv;charset=utf-8",
+        "unit-conversion.csv",
+      );
+      if (!report) throw new Error("The conversion report could not be generated.");
+      setConversionDownload(report);
+      setConversionStatus("success");
     } catch (error: unknown) {
-      setConversionResult(errorMessage(error));
+      if (run === conversionRun.current) {
+        setConversionStatus("error");
+        setConversionResult(errorMessage(error));
+      }
     } finally {
-      setLoading(false);
+      if (run === conversionRun.current) {
+        conversionInFlight.current = false;
+        setLoading(false);
+      }
     }
   }
 
@@ -461,16 +572,27 @@ function App() {
 
   async function handleComparison(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    if (!formData.get("first") || !formData.get("second")) {
-      setComparisonResult("Choose two files before comparing.");
-      return;
-    }
-    setLoading(true);
+    if (comparisonInFlight.current) return;
+    const run = ++comparisonRun.current;
+    setComparisonDownloads([]);
     setComparisonResult("");
     setPdfComparison(null);
     setImageComparison(null);
+    const formData = new FormData(event.currentTarget);
+    const firstFile = formData.get("first");
+    const secondFile = formData.get("second");
+    if (!(firstFile instanceof File) || !(secondFile instanceof File) ||
+        firstFile.size === 0 || secondFile.size === 0) {
+      setLoading(false);
+      setComparisonStatus("error");
+      setComparisonResult("Choose two files before comparing.");
+      return;
+    }
+    comparisonInFlight.current = true;
+    setLoading(true);
+    setComparisonStatus("processing");
     setActiveComparisonJob(null);
+    let pendingDownloads: DownloadArtifact[] = [];
     try {
       const response = await fetch("/api/tools/compare/", {
         method: "POST",
@@ -479,8 +601,10 @@ function App() {
         body: formData,
       });
       const data = (await readJson(response)) as ComparisonResponse;
+      if (run !== comparisonRun.current) return;
       if (!response.ok || !data.success || !data.status_url || !data.cancel_url || !data.job_token) {
-        setComparisonResult(data.message ?? "Comparison failed.");
+        setComparisonStatus("error");
+        setComparisonResult(responseErrorMessage(response, data, "Comparison request"));
         return;
       }
       const activeJob = {
@@ -499,8 +623,10 @@ function App() {
           credentials: "include",
         });
         const statusData = (await readJson(statusResponse)) as ComparisonResponse;
+        if (run !== comparisonRun.current) return;
         if (!statusResponse.ok || !statusData.status) {
-          setComparisonResult(statusData.message ?? "Unable to check comparison status.");
+          setComparisonStatus("error");
+          setComparisonResult(responseErrorMessage(statusResponse, statusData, "Comparison status check"));
           return;
         }
         const state = statusData.state ?? (
@@ -517,14 +643,17 @@ function App() {
           continue;
         }
         if (state === "cancelled") {
+          setComparisonStatus("idle");
           setComparisonResult(statusData.stage ?? "Comparison cancelled.");
           return;
         }
         if (state === "failed" || !statusData.comparison) {
+          setComparisonStatus("error");
           setComparisonResult(statusData.message ?? statusData.stage ?? "Comparison failed.");
           return;
         }
         if (state !== "completed") {
+          setComparisonStatus("error");
           setComparisonResult("The worker returned an unknown comparison state.");
           return;
         }
@@ -534,12 +663,33 @@ function App() {
 
       const result = completed.comparison;
       if (!result) {
+        setComparisonStatus("error");
         setComparisonResult("Comparison finished without a result.");
         return;
       }
+      const report = createTextDownload(
+        comparisonCsv(result),
+        "text/csv;charset=utf-8",
+        "comparison-report.csv",
+      );
+      if (!report) throw new Error("The comparison report could not be generated.");
+      const downloads: DownloadArtifact[] = [report];
+      pendingDownloads = downloads;
       if (result.pdf_comparison) {
         const pdf = result.pdf_comparison;
         setPdfComparison(pdf);
+        for (const page of pdf.page_results) {
+          if (!page.visual?.overlay_png) continue;
+          const overlay = await createVerifiedPngDownload(
+            page.visual.overlay_png,
+            `pdf-page-${page.page}-difference.png`,
+          );
+          if (run !== comparisonRun.current) {
+            revokeDownloads([report, ...downloads.slice(1)]);
+            return;
+          }
+          if (overlay) downloads.push(overlay);
+        }
         setComparisonResult(
           `${pdf.text_differences} page text difference(s), ${pdf.visual_differences} visual difference(s). ` +
           `Pages: ${pdf.first.page_count} vs ${pdf.second.page_count}.`,
@@ -547,6 +697,18 @@ function App() {
       } else if (result.image_comparison) {
         const image = result.image_comparison;
         setImageComparison(image);
+        for (const frame of image.frame_results) {
+          if (!frame.visual?.overlay_png) continue;
+          const overlay = await createVerifiedPngDownload(
+            frame.visual.overlay_png,
+            `image-frame-${frame.frame}-difference.png`,
+          );
+          if (run !== comparisonRun.current) {
+            revokeDownloads([report, ...downloads.slice(1)]);
+            return;
+          }
+          if (overlay) downloads.push(overlay);
+        }
         setComparisonResult(
           image.same_visual
             ? "No pixel-level visual differences were found."
@@ -559,26 +721,56 @@ function App() {
             : `The files are different. Types match: ${result.same_type ? "yes" : "no"}.`,
         );
       }
+      if (run === comparisonRun.current) {
+        setComparisonDownloads(downloads);
+        setComparisonStatus("success");
+      } else {
+        revokeDownloads(downloads);
+      }
     } catch (error: unknown) {
-      setComparisonResult(errorMessage(error));
+      revokeDownloads(pendingDownloads);
+      if (run === comparisonRun.current) {
+        setComparisonStatus("error");
+        setComparisonResult(errorMessage(error));
+      }
     } finally {
-      setLoading(false);
-      setActiveComparisonJob(null);
+      if (run === comparisonRun.current) {
+        comparisonInFlight.current = false;
+        setLoading(false);
+        setActiveComparisonJob(null);
+      }
     }
+  }
+
+  function handleComparisonInputChange() {
+    comparisonRun.current += 1;
+    comparisonInFlight.current = false;
+    setLoading(false);
+    setComparisonStatus("file_selected");
+    setComparisonResult("");
+    setImageComparison(null);
+    setPdfComparison(null);
+    setActiveComparisonJob(null);
+    setComparisonDownloads([]);
   }
 
   async function handleCompression(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (compressionInFlight.current) return;
+    const run = ++compressionRun.current;
+    setCompressionResult(null);
     const formData = new FormData(event.currentTarget);
     const file = formData.get("file");
     if (!(file instanceof File) || file.size === 0) {
+      setLoading(false);
+      setCompressionStatus("error");
       setCompressionResult({ message: "Choose a non-empty file to compress." });
       return;
     }
 
     compressionInFlight.current = true;
     setLoading(true);
+    setCompressionStatus("processing");
     setCompressionResult({ message: "Uploading file to the private processing queue..." });
     setActiveCompressionJob(null);
     try {
@@ -589,8 +781,12 @@ function App() {
         body: formData,
       });
       const accepted = await readJson(response);
+      if (run !== compressionRun.current) return;
       if (!response.ok || !accepted.success || !accepted.status_url || !accepted.cancel_url || !accepted.job_token) {
-        setCompressionResult({ message: accepted.message ?? `Compression failed (HTTP ${response.status}).` });
+        setCompressionStatus("error");
+        setCompressionResult({
+          message: responseErrorMessage(response, accepted, "Compression request"),
+        });
         return;
       }
 
@@ -610,9 +806,11 @@ function App() {
           credentials: "include",
         });
         const statusData = await readJson(statusResponse);
+        if (run !== compressionRun.current) return;
         if (!statusResponse.ok || !statusData.status) {
+          setCompressionStatus("error");
           setCompressionResult({
-            message: statusData.message ?? "Unable to check compression status.",
+            message: responseErrorMessage(statusResponse, statusData, "Compression status check"),
           });
           return;
         }
@@ -621,16 +819,19 @@ function App() {
           continue;
         }
         if (statusData.state === "cancelled") {
+          setCompressionStatus("idle");
           setCompressionResult({ message: statusData.stage ?? "Compression cancelled." });
           return;
         }
         if (statusData.state === "failed" || !statusData.compression || !statusData.download_url) {
+          setCompressionStatus("error");
           setCompressionResult({
             message: statusData.message ?? statusData.stage ?? "Compression failed.",
           });
           return;
         }
         if (statusData.state !== "completed") {
+          setCompressionStatus("error");
           setCompressionResult({ message: "The worker returned an unknown compression state." });
           return;
         }
@@ -649,8 +850,9 @@ function App() {
       });
       if (!downloadResponse.ok) {
         const downloadError = await readJson(downloadResponse);
+        setCompressionStatus("error");
         setCompressionResult({
-          message: downloadError.message ?? "The compressed output could not be downloaded.",
+          message: responseErrorMessage(downloadResponse, downloadError, "Compressed output download"),
         });
         return;
       }
@@ -658,6 +860,13 @@ function App() {
       if (blob.size !== compression.output_bytes || blob.size === 0) {
         throw new Error("The downloaded file size did not match the validated compression result.");
       }
+      const verified = compression.content_type === "application/pdf"
+        ? verifyPdfHeader(new Uint8Array(await blob.slice(0, 5).arrayBuffer()))
+        : await verifyImageBlob(blob);
+      if (!verified) {
+        throw new Error("The downloaded output could not be opened as the expected file type.");
+      }
+      if (run !== compressionRun.current) return;
       const actualReduction = compression.input_bytes - blob.size;
       const sizeChange = actualReduction > 0
         ? ` Reduced by ${((actualReduction / compression.input_bytes) * 100).toFixed(1)}%.`
@@ -671,13 +880,28 @@ function App() {
         downloadUrl: URL.createObjectURL(blob),
         filename: compression.filename,
       });
+      setCompressionStatus("success");
     } catch (error: unknown) {
-      setCompressionResult({ message: errorMessage(error) });
+      if (run === compressionRun.current) {
+        setCompressionStatus("error");
+        setCompressionResult({ message: errorMessage(error) });
+      }
     } finally {
-      compressionInFlight.current = false;
-      setLoading(false);
-      setActiveCompressionJob(null);
+      if (run === compressionRun.current) {
+        compressionInFlight.current = false;
+        setLoading(false);
+        setActiveCompressionJob(null);
+      }
     }
+  }
+
+  function handleCompressionInputChange() {
+    compressionRun.current += 1;
+    compressionInFlight.current = false;
+    setLoading(false);
+    setCompressionStatus("file_selected");
+    setCompressionResult(null);
+    setActiveCompressionJob(null);
   }
 
   async function cancelCompression() {
@@ -745,6 +969,8 @@ function App() {
           </>}
           <button type="button" className={activeView === "converter" ? "nav-active" : "nav-button"}
             onClick={() => setActiveView("converter")}>Unit converter</button>
+          <button type="button" className={activeView === "image-size" ? "nav-active" : "nav-button"}
+            onClick={() => setActiveView("image-size")}>Image size analyzer</button>
           <button type="button" className={activeView === "compare" ? "nav-active" : "nav-button"}
             onClick={() => setActiveView("compare")}>Compare files</button>
           <button type="button" className={activeView === "compress" ? "nav-active" : "nav-button"}
@@ -756,6 +982,7 @@ function App() {
         <h1 id="page-title">Suhana</h1>
         <p className="subtitle">
           {activeView === "converter" && "Convert digital storage units"}
+          {activeView === "image-size" && "Inspect image size and dimensions"}
           {activeView === "compare" && "Compare image and PDF files"}
           {activeView === "compress" && "Compress and download a file"}
           {activeView === "dashboard" && "Your Suhana workspace"}
@@ -775,6 +1002,7 @@ function App() {
         </p>
 
         <div className={`view-content view-${activeView}`}>
+          {activeView === "image-size" && <ImageSizeAnalyzer />}
           {activeView === "dashboard" && <DashboardPanel dashboard={dashboard}
             onFiles={() => openView("storage")} onHistory={() => openView("history")} />}
           {activeView === "storage" && <StoragePanel csrfReady={Boolean(csrfToken)} loading={loading}
@@ -787,43 +1015,95 @@ function App() {
 
           {activeView === "reset" && <ToolPanels active="reset" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
+          conversionStatus={conversionStatus} conversionDownload={conversionDownload}
+          comparisonStatus={comparisonStatus} comparisonDownloads={comparisonDownloads}
+          compressionStatus={compressionStatus}
           comparisonResult={comparisonResult} imageComparison={imageComparison} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onCompression={handleCompression}
           onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
-          onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
+          onConversionChange={(field, value) => {
+            conversionRun.current += 1;
+            conversionInFlight.current = false;
+            setLoading(false);
+            setConversionStatus("file_selected");
+            setConversionResult("");
+            if (conversionDownload) URL.revokeObjectURL(conversionDownload.url);
+            setConversionDownload(null);
+            setConversion((current) => ({ ...current, [field]: value }));
+          }}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "converter" && <ToolPanels active="converter" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
+          conversionStatus={conversionStatus} conversionDownload={conversionDownload}
+          comparisonStatus={comparisonStatus} comparisonDownloads={comparisonDownloads}
+          compressionStatus={compressionStatus}
           comparisonResult={comparisonResult} imageComparison={imageComparison} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onCompression={handleCompression}
           onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
-          onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
+          onConversionChange={(field, value) => {
+            conversionRun.current += 1;
+            conversionInFlight.current = false;
+            setLoading(false);
+            setConversionStatus("file_selected");
+            setConversionResult("");
+            if (conversionDownload) URL.revokeObjectURL(conversionDownload.url);
+            setConversionDownload(null);
+            setConversion((current) => ({ ...current, [field]: value }));
+          }}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "compare" && <ToolPanels active="compare" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
+          conversionStatus={conversionStatus} conversionDownload={conversionDownload}
+          comparisonStatus={comparisonStatus} comparisonDownloads={comparisonDownloads}
+          compressionStatus={compressionStatus}
           comparisonResult={comparisonResult} imageComparison={imageComparison} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onCompression={handleCompression}
+          onComparisonInputChange={handleComparisonInputChange}
+          onCompressionInputChange={handleCompressionInputChange}
           onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
-          onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
+          onConversionChange={(field, value) => {
+            conversionRun.current += 1;
+            conversionInFlight.current = false;
+            setLoading(false);
+            setConversionStatus("file_selected");
+            setConversionResult("");
+            if (conversionDownload) URL.revokeObjectURL(conversionDownload.url);
+            setConversionDownload(null);
+            setConversion((current) => ({ ...current, [field]: value }));
+          }}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
         {activeView === "compress" && <ToolPanels active="compress" loading={loading} csrfReady={Boolean(csrfToken)}
           conversion={conversion} conversionResult={conversionResult} compressionResult={compressionResult}
+          conversionStatus={conversionStatus} conversionDownload={conversionDownload}
+          comparisonStatus={comparisonStatus} comparisonDownloads={comparisonDownloads}
+          compressionStatus={compressionStatus}
           comparisonResult={comparisonResult} imageComparison={imageComparison} pdfComparison={pdfComparison}
           canCancelComparison={Boolean(activeComparisonJob)} onCancelComparison={cancelComparison}
           canCancelCompression={Boolean(activeCompressionJob)} onCancelCompression={cancelCompression}
           resetForm={resetForm} resetRequested={resetRequested} onConversion={handleConversion}
           onComparison={handleComparison} onCompression={handleCompression}
+          onComparisonInputChange={handleComparisonInputChange}
+          onCompressionInputChange={handleCompressionInputChange}
           onResetRequest={handleResetRequest} onResetConfirm={handleResetConfirm}
-          onConversionChange={(field, value) => setConversion((current) => ({ ...current, [field]: value }))}
+          onConversionChange={(field, value) => {
+            conversionRun.current += 1;
+            conversionInFlight.current = false;
+            setLoading(false);
+            setConversionStatus("file_selected");
+            setConversionResult("");
+            if (conversionDownload) URL.revokeObjectURL(conversionDownload.url);
+            setConversionDownload(null);
+            setConversion((current) => ({ ...current, [field]: value }));
+          }}
           onResetChange={(field, value) => setResetForm((current) => ({ ...current, [field]: value }))} />}
 
           {activeView === "auth" && <AuthPanel step={step} loading={loading} csrfReady={Boolean(csrfToken)}

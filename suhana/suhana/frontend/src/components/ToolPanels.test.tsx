@@ -8,6 +8,11 @@ const props = {
   csrfReady: true,
   conversion: { value: "1", from: "gb", to: "mb" },
   conversionResult: "",
+  conversionStatus: "idle" as const,
+  conversionDownload: null,
+  comparisonStatus: "idle" as const,
+  comparisonDownloads: [],
+  compressionStatus: "idle" as const,
   compressionResult: null,
   comparisonResult: "",
   imageComparison: null,
@@ -41,6 +46,11 @@ describe("ToolPanels", () => {
     render(
       <ToolPanels
         {...props}
+        comparisonStatus="success"
+        comparisonDownloads={[
+          { url: "blob:report", filename: "comparison-report.csv" },
+          { url: "blob:page-difference", filename: "pdf-page-1-difference.png" },
+        ]}
         pdfComparison={{
           first: { page_count: 1, has_text_layer: true, scanned_likely: false },
           second: { page_count: 1, has_text_layer: true, scanned_likely: false },
@@ -57,12 +67,18 @@ describe("ToolPanels", () => {
 
     expect(screen.getByText("Page 1")).toBeInTheDocument();
     expect(screen.getByAltText("Difference overlay for page 1")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download pdf-page-1-difference.png" })).toBeInTheDocument();
   });
 
   it("renders pixel-level image differences and an overlay preview", () => {
     render(
       <ToolPanels
         {...props}
+        comparisonStatus="success"
+        comparisonDownloads={[
+          { url: "blob:report", filename: "comparison-report.csv" },
+          { url: "blob:frame-difference", filename: "image-frame-1-difference.png" },
+        ]}
         imageComparison={{
           first: {
             dimensions: [2, 2],
@@ -100,6 +116,7 @@ describe("ToolPanels", () => {
 
     expect(screen.getByText("2 differing pixels · 50%")).toBeInTheDocument();
     expect(screen.getByAltText("Difference overlay for frame 1")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download image-frame-1-difference.png" })).toBeInTheDocument();
   });
 
   it("allows cancellation while a comparison is running", () => {
@@ -122,6 +139,7 @@ describe("ToolPanels", () => {
           downloadUrl: "blob:compressed-output",
           filename: "image_compressed.png",
         }}
+        compressionStatus="success"
       />,
     );
 
@@ -133,5 +151,82 @@ describe("ToolPanels", () => {
     expect(screen.getByText(
       "Original: 400 bytes (400 bytes) · Compressed: 300 bytes (300 bytes)",
     )).toBeInTheDocument();
+    expect(screen.getByText("Space saved: 100 bytes (25.0%).")).toBeInTheDocument();
+  });
+
+  it("reports honestly when compression increases the file size", () => {
+    render(
+      <ToolPanels
+        {...props}
+        active="compress"
+        compressionResult={{
+          message: "Compression complete. Output is 25.0% larger than the input.",
+          inputBytes: 400,
+          outputBytes: 500,
+          downloadUrl: "blob:compressed-output",
+          filename: "image_compressed.png",
+        }}
+        compressionStatus="success"
+      />,
+    );
+
+    expect(screen.getByText(
+      "Size increased by 100 bytes (25.0%); no space was saved.",
+    )).toBeInTheDocument();
+  });
+
+  it("does not expose compression output downloads before verified success", () => {
+    render(
+      <ToolPanels
+        {...props}
+        active="compress"
+        compressionStatus="processing"
+        compressionResult={{
+          message: "Compressing...",
+          downloadUrl: "blob:stale-output",
+          filename: "old.png",
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("link", { name: "Download old.png" })).not.toBeInTheDocument();
+  });
+
+  it("only exposes conversion downloads after successful conversion", () => {
+    const { rerender } = render(<ToolPanels {...props} active="converter" />);
+    expect(screen.queryByRole("link", { name: "Download conversion report" })).not.toBeInTheDocument();
+
+    rerender(
+      <ToolPanels
+        {...props}
+        active="converter"
+        conversionStatus="success"
+        conversionResult="1000 MB"
+        conversionDownload={{ url: "blob:conversion", filename: "unit-conversion.csv" }}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Download conversion report" })).toHaveAttribute(
+      "download",
+      "unit-conversion.csv",
+    );
+  });
+
+  it("hides stale comparison downloads during processing and on failure", () => {
+    const downloads = [{ url: "blob:report", filename: "comparison-report.csv" }];
+    const { rerender } = render(
+      <ToolPanels {...props} comparisonStatus="processing" comparisonDownloads={downloads} />,
+    );
+    expect(screen.queryByRole("link", { name: "Download comparison-report.csv" })).not.toBeInTheDocument();
+
+    rerender(
+      <ToolPanels
+        {...props}
+        comparisonStatus="error"
+        comparisonResult="Comparison failed."
+        comparisonDownloads={downloads}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: "Download comparison-report.csv" })).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Comparison failed.");
   });
 });
