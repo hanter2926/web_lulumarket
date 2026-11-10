@@ -243,8 +243,36 @@ def _compression_result(data, result):
     return result, output
 
 
-def compress_image(data):
-    result, _ = _run("compress-image", data, output_file=True)
+def compress_image(data, options=None):
+    options = options or {}
+    target_bytes = options.get("target_bytes") or 0
+    quality = options.get("quality", 90)
+    output_format = options.get("output_format", "original")
+    width = options.get("width") or 0
+    height = options.get("height") or 0
+    maintain_aspect_ratio = options.get("maintain_aspect_ratio", True)
+    engine_format = {
+        "original": "original",
+        "jpeg": "jpeg",
+        "png": "png",
+        "webp": "webp",
+        "gif": "gif",
+    }.get(output_format)
+    if engine_format is None:
+        raise ProcessingInputError("Choose a supported image output format.")
+    result, _ = _run(
+        "compress-image",
+        data,
+        output_file=True,
+        engine_args=(
+            str(target_bytes),
+            str(quality),
+            engine_format,
+            str(width),
+            str(height),
+            "true" if maintain_aspect_ratio else "false",
+        ),
+    )
     return _compression_result(data, result)
 
 

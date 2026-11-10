@@ -119,6 +119,12 @@ function App() {
     outputBytes?: number;
     downloadUrl?: string;
     filename?: string;
+    contentType?: string;
+    targetBytes?: number | null;
+    targetReached?: boolean | null;
+    width?: number | null;
+    height?: number | null;
+    quality?: number | null;
   } | null>(null);
   const [compressionStatus, setCompressionStatus] = useState<ToolStatus>("idle");
   const [pdfComparison, setPdfComparison] = useState<PdfComparisonResult | null>(null);
@@ -781,7 +787,17 @@ function App() {
         body: formData,
       });
       const accepted = await readJson(response);
-      if (run !== compressionRun.current) return;
+      if (run !== compressionRun.current) {
+        if (response.ok && accepted.status_url && accepted.cancel_url && accepted.job_token) {
+          void postCompressionCancellation({
+            cancelUrl: accepted.cancel_url,
+            token: accepted.job_token,
+          }).catch((error: unknown) => {
+            console.error("Could not cancel an obsolete compression job.", error);
+          });
+        }
+        return;
+      }
       if (!response.ok || !accepted.success || !accepted.status_url || !accepted.cancel_url || !accepted.job_token) {
         setCompressionStatus("error");
         setCompressionResult({
@@ -873,12 +889,26 @@ function App() {
         : actualReduction < 0
           ? ` Output is ${((Math.abs(actualReduction) / compression.input_bytes) * 100).toFixed(1)}% larger than the input.`
           : " Output size is unchanged.";
+      const targetReached = compression.target_bytes == null
+        ? null
+        : blob.size <= compression.target_bytes;
+      const targetMessage = compression.target_bytes == null
+        ? ""
+        : targetReached
+          ? " Requested output size reached."
+          : " The target is below the smallest valid output under the selected format and quality limits; the closest valid output is provided.";
       setCompressionResult({
-        message: `Compression complete.${sizeChange}`,
+        message: `Compression complete.${sizeChange}${targetMessage}`,
         inputBytes: compression.input_bytes,
         outputBytes: blob.size,
         downloadUrl: URL.createObjectURL(blob),
         filename: compression.filename,
+        contentType: compression.content_type,
+        targetBytes: compression.target_bytes,
+        targetReached,
+        width: compression.width,
+        height: compression.height,
+        quality: compression.quality,
       });
       setCompressionStatus("success");
     } catch (error: unknown) {
@@ -896,6 +926,11 @@ function App() {
   }
 
   function handleCompressionInputChange() {
+    if (activeCompressionJob) {
+      void postCompressionCancellation(activeCompressionJob).catch((error: unknown) => {
+        console.error("Could not cancel an obsolete compression job.", error);
+      });
+    }
     compressionRun.current += 1;
     compressionInFlight.current = false;
     setLoading(false);
@@ -904,29 +939,40 @@ function App() {
     setActiveCompressionJob(null);
   }
 
+  async function postCompressionCancellation(job: {
+    cancelUrl: string;
+    token: string;
+  }) {
+    const response = await fetch(job.cancelUrl, {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrfToken,
+        "X-Job-Token": job.token,
+      },
+      credentials: "include",
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      throw new Error(data.message ?? "Unable to cancel compression.");
+    }
+    return data;
+  }
+
   async function cancelCompression() {
     if (!activeCompressionJob) return;
+    const run = compressionRun.current;
     try {
-      const response = await fetch(activeCompressionJob.cancelUrl, {
-        method: "POST",
-        headers: {
-          "X-CSRFToken": csrfToken,
-          "X-Job-Token": activeCompressionJob.token,
-        },
-        credentials: "include",
+      const data = await postCompressionCancellation(activeCompressionJob);
+      if (run !== compressionRun.current) return;
+      setCompressionResult({
+        message: data.status === "cancelled"
+          ? "Compression cancelled."
+          : "Cancellation requested. The worker is stopping safely.",
       });
-      const data = await readJson(response);
-      if (!response.ok) {
-        setCompressionResult({ message: data.message ?? "Unable to cancel compression." });
-      } else {
-        setCompressionResult({
-          message: data.status === "cancelled"
-            ? "Compression cancelled."
-            : "Cancellation requested. The worker is stopping safely.",
-        });
-      }
     } catch (error: unknown) {
-      setCompressionResult({ message: errorMessage(error) });
+      if (run === compressionRun.current) {
+        setCompressionResult({ message: errorMessage(error) });
+      }
     }
   }
 

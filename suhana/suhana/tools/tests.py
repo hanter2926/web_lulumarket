@@ -171,10 +171,14 @@ class ToolsApiTests(TransactionTestCase):
             1,
         )
 
-    def run_compression(self, data, name, content_type):
+    def run_compression(self, data, name, content_type, options=None):
+        form_data = {
+            "file": SimpleUploadedFile(name, data, content_type=content_type),
+            **(options or {}),
+        }
         response = self.client.post(
             "/api/tools/compress/",
-            {"file": SimpleUploadedFile(name, data, content_type=content_type)},
+            form_data,
             HTTP_X_CSRFTOKEN=self.csrf_token,
         )
         self.assertEqual(response.status_code, 202, response.content)
@@ -214,6 +218,163 @@ class ToolsApiTests(TransactionTestCase):
         with Image.open(io.BytesIO(output)) as compressed:
             self.assertEqual(compressed.size, image.size)
             self.assertEqual(compressed.convert("RGB").getpixel((0, 0)), image.getpixel((0, 0)))
+
+    def test_custom_target_size_resizes_image_and_reports_actual_output(self):
+        pixels = os.urandom(640 * 480 * 3)
+        image = Image.frombytes("RGB", (640, 480), pixels)
+        source = io.BytesIO()
+        image.save(source, format="PNG", compress_level=0)
+        original = source.getvalue()
+        target_bytes = 40 * 1024
+
+        accepted, status = self.run_compression(
+            original,
+            "target.png",
+            "image/png",
+            {
+                "target_size": "40",
+                "target_unit": "KB",
+                "quality": "85",
+                "output_format": "original",
+                "maintain_aspect_ratio": "true",
+            },
+        )
+
+        self.assertEqual(status.json()["state"], "completed")
+        compression = status.json()["compression"]
+        self.assertEqual(compression["target_bytes"], target_bytes)
+        self.assertTrue(compression["target_reached"])
+        self.assertLessEqual(compression["output_bytes"], target_bytes)
+        download = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        output = b"".join(download.streaming_content)
+        with Image.open(io.BytesIO(output)) as compressed:
+            self.assertEqual(compressed.format, "PNG")
+            self.assertLess(compressed.width, image.width)
+            self.assertLess(compressed.height, image.height)
+            self.assertAlmostEqual(compressed.width / compressed.height, 4 / 3, delta=0.02)
+
+    def test_target_compression_converts_format_and_preserves_supported_alpha(self):
+        image = Image.new("RGBA", (320, 160), (250, 20, 10, 0))
+        for x in range(160, 320):
+            for y in range(160):
+                image.putpixel((x, y), (250, 20, 10, 255))
+        source = io.BytesIO()
+        image.save(source, format="PNG")
+
+        accepted, status = self.run_compression(
+            source.getvalue(),
+            "transparent.png",
+            "image/png",
+            {
+                "target_size": "1",
+                "target_unit": "MB",
+                "quality": "85",
+                "output_format": "webp",
+                "width": "100",
+                "maintain_aspect_ratio": "true",
+            },
+        )
+
+        self.assertEqual(status.json()["state"], "completed")
+        compression = status.json()["compression"]
+        self.assertEqual(compression["content_type"], "image/webp")
+        self.assertEqual(compression["width"], 100)
+        self.assertEqual(compression["height"], 50)
+        download = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        with Image.open(io.BytesIO(b"".join(download.streaming_content))) as compressed:
+            self.assertEqual(compressed.format, "WEBP")
+            self.assertEqual(compressed.size, (100, 50))
+            self.assertEqual(compressed.convert("RGBA").getpixel((0, 0))[3], 0)
+
+    def test_jpeg_target_uses_iterative_quality_before_reducing_dimensions(self):
+        image = Image.frombytes("RGB", (512, 512), os.urandom(512 * 512 * 3))
+        source = io.BytesIO()
+        image.save(source, format="JPEG", quality=95)
+        target_bytes = 160 * 1024
+
+        accepted, status = self.run_compression(
+            source.getvalue(),
+            "quality.jpg",
+            "image/jpeg",
+            {
+                "target_size": "160",
+                "target_unit": "KB",
+                "quality": "90",
+                "output_format": "jpeg",
+                "maintain_aspect_ratio": "true",
+            },
+        )
+
+        self.assertEqual(status.json()["state"], "completed")
+        compression = status.json()["compression"]
+        self.assertTrue(compression["target_reached"])
+        self.assertLessEqual(compression["output_bytes"], target_bytes)
+        self.assertLess(compression["quality"], 90)
+        download = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        with Image.open(io.BytesIO(b"".join(download.streaming_content))) as compressed:
+            self.assertEqual(compressed.format, "JPEG")
+            self.assertEqual(compressed.size, (512, 512))
+
+    def test_unreachable_target_is_reported_without_invalid_output(self):
+        original = _image_bytes("PNG", (10, 20, 30, 255), size=(64, 64))
+        accepted, status = self.run_compression(
+            original,
+            "tiny-target.png",
+            "image/png",
+            {
+                "target_size": "0.001",
+                "target_unit": "KB",
+                "quality": "85",
+                "output_format": "original",
+                "maintain_aspect_ratio": "true",
+            },
+        )
+
+        self.assertEqual(status.json()["state"], "completed")
+        compression = status.json()["compression"]
+        self.assertEqual(compression["target_bytes"], 1)
+        self.assertGreater(compression["output_bytes"], compression["target_bytes"])
+        self.assertFalse(compression["target_reached"])
+        download = self.client.get(
+            status.json()["download_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        with Image.open(io.BytesIO(b"".join(download.streaming_content))) as output:
+            output.verify()
+
+    def test_invalid_target_settings_are_rejected_before_job_submission(self):
+        image = _image_bytes("PNG", (10, 20, 30, 255), size=(4, 4))
+        invalid_options = [
+            {"target_size": "0", "target_unit": "KB"},
+            {"target_size": "26000", "target_unit": "KB"},
+            {"target_size": "10", "target_unit": "TB"},
+            {"target_size": "10", "target_unit": "KB", "width": "9000"},
+            {"target_size": "10", "target_unit": "KB", "output_format": "gif"},
+        ]
+        for options in invalid_options:
+            with self.subTest(options=options):
+                response = self.client.post(
+                    "/api/tools/compress/",
+                    {
+                        "file": SimpleUploadedFile(
+                            "invalid-options.png",
+                            image,
+                            content_type="image/png",
+                        ),
+                        **options,
+                    },
+                    HTTP_X_CSRFTOKEN=self.csrf_token,
+                )
+                self.assertEqual(response.status_code, 400, response.content)
 
     def test_large_image_compression_stays_within_resource_and_output_limits(self):
         pixels = os.urandom(2048 * 2048 * 3)

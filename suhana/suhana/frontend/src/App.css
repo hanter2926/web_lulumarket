@@ -439,6 +439,96 @@ form > a:hover {
   text-align: center;
 }
 
+.compression-options {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 8px 0 16px;
+  padding: clamp(12px, 3vw, 18px);
+  border: 1px solid #dce5f5;
+  border-radius: 10px;
+}
+
+.compression-options legend {
+  padding-inline: 6px;
+  color: #173a8a;
+  font-weight: 750;
+}
+
+.compression-options > input,
+.compression-target input,
+.compression-target select {
+  margin-bottom: 10px;
+}
+
+.compression-target {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(5rem, 0.3fr);
+  min-width: 0;
+  gap: 8px;
+}
+
+.compression-target input,
+.compression-target select {
+  min-width: 0;
+}
+
+.compression-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.compression-presets button {
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.compression-aspect-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.compression-aspect-option input[type="checkbox"] {
+  flex: 0 0 18px;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+.compression-preview {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid #dce5f5;
+  border-radius: 9px;
+  background: #f8fbff;
+  text-align: center;
+}
+
+.compression-preview p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.compression-preview img {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  max-height: 360px;
+  margin-inline: auto;
+  object-fit: contain;
+  background: #fff;
+}
+
 .workspace-panel {
   display: flex;
   flex-direction: column;

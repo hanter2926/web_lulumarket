@@ -118,7 +118,7 @@ def compress_file(request):
         )
 
     try:
-        job, token = enqueue_compression(request, upload)
+        job, token = enqueue_compression(request, upload, request.POST)
     except ComparisonQueueFull as error:
         return JsonResponse({"success": False, "message": str(error)}, status=429)
     except ProcessingEngineError as error:

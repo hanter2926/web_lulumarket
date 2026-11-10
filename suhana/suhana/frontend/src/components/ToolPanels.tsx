@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import type { ImageComparisonResult, PdfComparisonResult } from "../types";
 import type { DownloadArtifact } from "../downloadUtils";
 
@@ -21,6 +21,12 @@ type Props = {
     outputBytes?: number;
     downloadUrl?: string;
     filename?: string;
+    contentType?: string;
+    targetBytes?: number | null;
+    targetReached?: boolean | null;
+    width?: number | null;
+    height?: number | null;
+    quality?: number | null;
   } | null;
   comparisonResult: string;
   imageComparison: ImageComparisonResult | null;
@@ -77,6 +83,76 @@ function UnitSelect({ id, value, onChange }: { id: string; value: string; onChan
 }
 
 export default function ToolPanels(props: Props) {
+  const [compressionFile, setCompressionFile] = useState<File | null>(null);
+  const [compressionKind, setCompressionKind] = useState<"image" | "pdf" | "unknown">("unknown");
+  const [compressionFormat, setCompressionFormat] = useState("");
+  const [compressionPreview, setCompressionPreview] = useState("");
+  const [compressionSelectionError, setCompressionSelectionError] = useState("");
+  const [targetSize, setTargetSize] = useState("100");
+  const [targetUnit, setTargetUnit] = useState<"KB" | "MB">("KB");
+  const [gifWithoutTarget, setGifWithoutTarget] = useState(false);
+  const [detectingCompressionFile, setDetectingCompressionFile] = useState(false);
+  const compressionSelectionRun = useRef(0);
+
+  useEffect(() => {
+    if (compressionPreview) return () => URL.revokeObjectURL(compressionPreview);
+  }, [compressionPreview]);
+
+  async function selectCompressionFile(event: ChangeEvent<HTMLInputElement>) {
+    const run = ++compressionSelectionRun.current;
+    const file = event.currentTarget.files?.[0] ?? null;
+    setCompressionFile(file);
+    setCompressionKind("unknown");
+    setCompressionFormat("");
+    setCompressionPreview("");
+    setCompressionSelectionError("");
+    setGifWithoutTarget(false);
+    setDetectingCompressionFile(Boolean(file));
+    props.onCompressionInputChange?.();
+    if (!file) return;
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    } catch {
+      if (run === compressionSelectionRun.current) {
+        setDetectingCompressionFile(false);
+        setCompressionSelectionError("The selected file could not be read. Choose it again.");
+      }
+      return;
+    }
+    if (run !== compressionSelectionRun.current) return;
+    const starts = (signature: number[]) =>
+      signature.every((byte, index) => bytes[index] === byte);
+    const isWebp = bytes.length >= 12 &&
+      String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+      String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
+    const isImage = starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) ||
+      starts([0xff, 0xd8, 0xff]) ||
+      starts([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) ||
+      starts([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]) ||
+      isWebp;
+    if (isImage) {
+      setCompressionKind("image");
+      setCompressionFormat(starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+        ? "PNG"
+        : starts([0xff, 0xd8, 0xff])
+          ? "JPEG"
+          : starts([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) ||
+            starts([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])
+            ? "GIF"
+            : "WEBP");
+      setCompressionPreview(URL.createObjectURL(file));
+    } else if (String.fromCharCode(...bytes.slice(0, 5)) === "%PDF-") {
+      setCompressionKind("pdf");
+    }
+    setDetectingCompressionFile(false);
+  }
+
+  function invalidateCompressionResult(update?: () => void) {
+    update?.();
+    props.onCompressionInputChange?.();
+  }
+
   if (props.active === "reset") return (
     <form onSubmit={props.resetRequested ? props.onResetConfirm : props.onResetRequest}>
       <label htmlFor="reset-email">Email</label>
@@ -109,15 +185,95 @@ export default function ToolPanels(props: Props) {
   </form>;
   if (props.active === "compress") return <form onSubmit={props.onCompression}>
       <p className="helper-text">
-        Compress PDF, PNG, JPEG, GIF, or WEBP files. Maximum 25 MB per file.
-        Images are re-encoded with format-appropriate settings; PDF streams are optimized.
-        Animated PNG and animated WEBP files are not supported.
+        Upload an image or PDF (maximum 25 MB). Image targets use 1 KB = 1,024 bytes.
+        Compression tries to reach your requested
+        size and verifies the actual output. Animated PNG and WEBP are not supported.
       </p>
-      <label htmlFor="compression-file">File</label>
+      <label htmlFor="compression-file">Upload a file</label>
       <input id="compression-file" name="file" type="file"
         accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" required
-        onChange={props.onCompressionInputChange} />
-      <button type="submit" disabled={props.loading || !props.csrfReady}>
+        onChange={(event) => void selectCompressionFile(event)} />
+      {compressionSelectionError && <p className="result-panel" role="alert">{compressionSelectionError}</p>}
+      {compressionPreview && <div className="compression-preview">
+        <p>Image preview: {compressionFile?.name}</p>
+        <img src={compressionPreview} alt="Selected image preview" />
+        {compressionFile && <p>Original size: {formatBytes(compressionFile.size)}</p>}
+      </div>}
+      {compressionKind === "image" && compressionFormat === "GIF" && <label className="compression-aspect-option">
+        <input type="checkbox" checked={gifWithoutTarget}
+          onChange={(event) => invalidateCompressionResult(() => setGifWithoutTarget(event.target.checked))} />
+        Compress GIF without target-size controls (preserves animation)
+      </label>}
+      {compressionKind === "image" && gifWithoutTarget &&
+        <p className="helper-text">
+          The GIF will be re-encoded with its animation preserved. A custom target or resizing
+          cannot be applied to animated GIFs; the output size will be reported honestly.
+        </p>}
+      {compressionKind === "image" && !gifWithoutTarget && <>
+        <fieldset className="compression-options" disabled={props.loading}>
+          <legend>Image compression settings</legend>
+          <label htmlFor="compression-target">Desired output size</label>
+          <div className="compression-target">
+            <input id="compression-target" name="target_size" type="number" min="0.001"
+              step="any" value={targetSize}
+              onChange={(event) => invalidateCompressionResult(() => setTargetSize(event.target.value))}
+              required />
+            <select id="compression-target-unit" name="target_unit" value={targetUnit}
+              onChange={(event) => invalidateCompressionResult(() => setTargetUnit(event.target.value as "KB" | "MB"))}>
+              <option value="KB">KB</option>
+              <option value="MB">MB</option>
+            </select>
+          </div>
+          <div className="compression-presets" aria-label="Quick target sizes">
+            {[
+              ["50", "KB"], ["100", "KB"], ["200", "KB"], ["500", "KB"],
+              ["1", "MB"], ["2", "MB"],
+            ].map(([size, unit]) => <button key={`${size}-${unit}`} type="button"
+              className="secondary-button"
+              onClick={() => invalidateCompressionResult(() => {
+                setTargetSize(size);
+                setTargetUnit(unit as "KB" | "MB");
+              })}>
+              {size} {unit}
+            </button>)}
+          </div>
+          <label htmlFor="compression-format">Output format</label>
+          <select id="compression-format" name="output_format" defaultValue="original"
+            onChange={() => props.onCompressionInputChange?.()}>
+            <option value="original">Keep original format</option>
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+            <option value="webp">WEBP</option>
+            {compressionFormat === "GIF" && <option value="gif">GIF</option>}
+          </select>
+          <label htmlFor="compression-quality">JPEG output quality</label>
+          <input id="compression-quality" name="quality" type="range" min="20" max="100"
+            defaultValue="85" onChange={() => props.onCompressionInputChange?.()} />
+          <label htmlFor="compression-width">Maximum width in pixels (optional)</label>
+          <input id="compression-width" name="width" type="number" min="1" max="8192"
+            onChange={() => props.onCompressionInputChange?.()} />
+          <label htmlFor="compression-height">Maximum height in pixels (optional)</label>
+          <input id="compression-height" name="height" type="number" min="1" max="8192"
+            onChange={() => props.onCompressionInputChange?.()} />
+          <input type="hidden" name="maintain_aspect_ratio" value="false" />
+          <label className="compression-aspect-option">
+            <input type="checkbox" name="maintain_aspect_ratio" value="true" defaultChecked
+              onChange={() => props.onCompressionInputChange?.()} />
+            Maintain aspect ratio
+          </label>
+          <p className="helper-text">
+            JPEG quality is adjustable. PNG and WEBP use lossless encoding. Transparency is
+            preserved for PNG and WEBP; JPEG uses a white background.
+          </p>
+        </fieldset>
+      </>}
+      {compressionKind === "pdf" && <p className="helper-text">
+        PDF optimization preserves the page count. Image-only target and quality settings do not apply.
+      </p>}
+      {props.compressionStatus === "processing" && <p className="result-panel" role="status">
+        Processing your file in the isolated worker...
+      </p>}
+      <button type="submit" disabled={props.loading || !props.csrfReady || !compressionFile || detectingCompressionFile}>
         {props.loading ? "Compressing..." : "Compress file"}
       </button>
       {props.canCancelCompression && <button type="button" onClick={props.onCancelCompression}>
@@ -139,10 +295,28 @@ export default function ToolPanels(props: Props) {
               props.compressionResult.outputBytes,
             )}
           </p>}
+        {props.compressionResult.targetBytes != null &&
+          <p>
+            Requested target: {formatBytes(props.compressionResult.targetBytes)} ·
+            {" "}{props.compressionResult.targetReached
+              ? "Target reached."
+              : "Target could not be reached; this is the closest valid output."}
+          </p>}
+        {props.compressionResult.width && props.compressionResult.height &&
+          <p>Output dimensions: {props.compressionResult.width} × {props.compressionResult.height} px</p>}
+        {props.compressionResult.quality != null &&
+          <p>JPEG quality used: {props.compressionResult.quality}%</p>}
+        {props.compressionStatus === "success" && props.compressionResult.contentType?.startsWith("image/") &&
+          props.compressionResult.downloadUrl && <div className="compression-preview">
+            <p>Compressed image preview</p>
+            <img src={props.compressionResult.downloadUrl} alt="Compressed image preview" />
+          </div>}
         {props.compressionStatus === "success" &&
           props.compressionResult.downloadUrl && props.compressionResult.filename &&
           <a href={props.compressionResult.downloadUrl} download={props.compressionResult.filename}>
-            Download {props.compressionResult.filename}
+            {props.compressionResult.contentType === "application/pdf"
+              ? "Download compressed PDF"
+              : "Download compressed image"}
           </a>}
       </div>}
   </form>;

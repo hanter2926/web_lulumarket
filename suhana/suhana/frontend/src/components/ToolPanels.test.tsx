@@ -138,13 +138,14 @@ describe("ToolPanels", () => {
           outputBytes: 300,
           downloadUrl: "blob:compressed-output",
           filename: "image_compressed.png",
+          contentType: "image/png",
         }}
         compressionStatus="success"
       />,
     );
 
-    expect(screen.getByLabelText("File")).toHaveAttribute("accept", expect.stringContaining("application/pdf"));
-    expect(screen.getByRole("link", { name: "Download image_compressed.png" })).toHaveAttribute(
+    expect(screen.getByLabelText("Upload a file")).toHaveAttribute("accept", expect.stringContaining("application/pdf"));
+    expect(screen.getByRole("link", { name: "Download compressed image" })).toHaveAttribute(
       "download",
       "image_compressed.png",
     );
@@ -189,7 +190,50 @@ describe("ToolPanels", () => {
       />,
     );
 
-    expect(screen.queryByRole("link", { name: "Download old.png" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Download compressed image" })).not.toBeInTheDocument();
+  });
+
+  it("offers custom target presets and settings for verified image input", async () => {
+    const onCompressionInputChange = vi.fn();
+    render(
+      <ToolPanels
+        {...props}
+        active="compress"
+        onCompressionInputChange={onCompressionInputChange}
+      />,
+    );
+    const png = new File([
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    ], "photo.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("Upload a file"), { target: { files: [png] } });
+
+    expect(await screen.findByLabelText("Desired output size")).toBeInTheDocument();
+    expect(screen.getByLabelText("JPEG output quality")).toBeInTheDocument();
+    expect(screen.getByLabelText("Maximum width in pixels (optional)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "1 MB" }));
+    expect(screen.getByLabelText("Desired output size")).toHaveValue(1);
+    expect(screen.getByDisplayValue("MB")).toBeInTheDocument();
+    expect(onCompressionInputChange).toHaveBeenCalled();
+  });
+
+  it("labels PDF compression downloads separately", () => {
+    render(
+      <ToolPanels
+        {...props}
+        active="compress"
+        compressionStatus="success"
+        compressionResult={{
+          message: "Compression complete.",
+          downloadUrl: "blob:compressed-pdf",
+          filename: "report_compressed.pdf",
+          contentType: "application/pdf",
+        }}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Download compressed PDF" })).toHaveAttribute(
+      "download",
+      "report_compressed.pdf",
+    );
   });
 
   it("only exposes conversion downloads after successful conversion", () => {

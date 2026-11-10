@@ -99,6 +99,12 @@ export type ApiResponse = {
     filename: string;
     content_type: string;
     page_count?: number | null;
+    target_bytes?: number | null;
+    target_reached?: boolean | null;
+    width?: number | null;
+    height?: number | null;
+    output_format?: string | null;
+    quality?: number | null;
   };
 };
 

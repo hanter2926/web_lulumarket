@@ -1,6 +1,8 @@
 import hashlib
 import hmac
+import json
 import logging
+import math
 import os
 import secrets
 import shutil
@@ -151,13 +153,89 @@ def _requester_fingerprint(request):
     ).hexdigest()
 
 
-def _enqueue_job(request, first, second, job_type):
+def _validate_compression_options(content_type, form_data):
+    if content_type == SUPPORTED_PDF_TYPE:
+        return None
+    fields = (
+        "target_size",
+        "target_unit",
+        "quality",
+        "output_format",
+        "width",
+        "height",
+        "maintain_aspect_ratio",
+    )
+    if not any(field in form_data for field in fields):
+        return None
+
+    raw_target = form_data.get("target_size", "").strip()
+    if not raw_target:
+        raise ValueError("Enter a target size for image compression.")
+    try:
+        target_value = float(raw_target)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Enter a valid target size.") from error
+    if not math.isfinite(target_value) or target_value <= 0:
+        raise ValueError("Target size must be a positive number.")
+    unit = form_data.get("target_unit", "KB").upper()
+    multiplier = {"KB": 1024, "MB": 1024 * 1024}.get(unit)
+    if multiplier is None:
+        raise ValueError("Choose KB or MB for the target size.")
+    target_bytes = int(target_value * multiplier + 0.5)
+    if target_bytes < 1 or target_bytes > MAX_COMPARISON_FILE_SIZE:
+        raise ValueError("The target size must be between 1 byte and 25 MB.")
+
+    try:
+        quality = int(form_data.get("quality", "85"))
+    except (TypeError, ValueError) as error:
+        raise ValueError("Image quality must be a whole number from 1 to 100.") from error
+    if not 1 <= quality <= 100:
+        raise ValueError("Image quality must be between 1 and 100.")
+
+    output_format = form_data.get("output_format", "original").lower()
+    if output_format not in {"original", "jpeg", "png", "gif", "webp"}:
+        raise ValueError("Choose a supported image output format.")
+    if output_format == "gif" and content_type != "image/gif":
+        raise ValueError("GIF output is available only for GIF input images.")
+
+    dimensions = {}
+    for field in ("width", "height"):
+        raw_value = form_data.get(field, "").strip()
+        if not raw_value:
+            dimensions[field] = None
+            continue
+        try:
+            dimension = int(raw_value)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"Image {field} must be a whole number.") from error
+        if not 1 <= dimension <= 8192:
+            raise ValueError(f"Image {field} must be between 1 and 8192 pixels.")
+        dimensions[field] = dimension
+
+    maintain_aspect_ratio = form_data.get("maintain_aspect_ratio", "true").lower()
+    if maintain_aspect_ratio not in {"true", "false", "on", "off", "1", "0"}:
+        raise ValueError("Choose whether to maintain the image aspect ratio.")
+    return {
+        "target_bytes": target_bytes,
+        "quality": quality,
+        "output_format": output_format,
+        "width": dimensions["width"],
+        "height": dimensions["height"],
+        "maintain_aspect_ratio": maintain_aspect_ratio in {"true", "on", "1"},
+    }
+
+
+def _enqueue_job(request, first, second, job_type, compression_form=None):
     if job_type == ComparisonJob.Type.COMPRESSION:
         first_content_type = _validate_compression_upload(first)
         second_content_type = ""
+        compression_options = _validate_compression_options(
+            first_content_type, compression_form or {}
+        )
     else:
         first_content_type = _validate_upload(first)
         second_content_type = _validate_upload(second)
+        compression_options = None
     first.content_type = first_content_type
     if second is not None:
         second.content_type = second_content_type
@@ -171,6 +249,12 @@ def _enqueue_job(request, first, second, job_type):
         _write_private_upload(first, job_directory / "first")
         if second is not None:
             _write_private_upload(second, job_directory / "second")
+        if compression_options is not None:
+            options_path = job_directory / "compression-options.json"
+            with options_path.open("x", encoding="utf-8") as options_file:
+                json.dump(compression_options, options_file)
+                options_file.flush()
+                os.fsync(options_file.fileno())
 
         owner_id = request.user.pk if request.user.is_authenticated else None
         requester_key = _requester_fingerprint(request)
@@ -218,8 +302,14 @@ def enqueue_comparison(request, first, second):
     return _enqueue_job(request, first, second, ComparisonJob.Type.COMPARISON)
 
 
-def enqueue_compression(request, upload):
-    return _enqueue_job(request, upload, None, ComparisonJob.Type.COMPRESSION)
+def enqueue_compression(request, upload, form_data=None):
+    return _enqueue_job(
+        request,
+        upload,
+        None,
+        ComparisonJob.Type.COMPRESSION,
+        compression_form=form_data,
+    )
 
 
 def authorized_job(request, job_id):
@@ -365,11 +455,17 @@ def process_comparison_job(job_id):
         first_path = directory / "first"
         first_data = first_path.read_bytes()
         if job.job_type == ComparisonJob.Type.COMPRESSION:
+            options_path = directory / "compression-options.json"
+            compression_options = (
+                json.loads(options_path.read_text(encoding="utf-8"))
+                if options_path.is_file()
+                else None
+            )
             with cancellation_check(lambda: _check_cancelled(job_id)):
                 engine_result, output_data = (
                     compress_pdf(first_data)
                     if job.first_content_type == SUPPORTED_PDF_TYPE
-                    else compress_image(first_data)
+                    else compress_image(first_data, compression_options)
                 )
             if (
                 engine_result.get("input_bytes") != len(first_data)
@@ -380,19 +476,31 @@ def process_comparison_job(job_id):
                 raise ProcessingEngineError(
                     "The Rust processing engine returned invalid compression output."
                 )
+            output_content_type = job.first_content_type
+            if job.first_content_type != SUPPORTED_PDF_TYPE:
+                output_content_type = {
+                    "PNG": "image/png",
+                    "JPEG": "image/jpeg",
+                    "GIF": "image/gif",
+                    "WEBP": "image/webp",
+                }.get(engine_result.get("output_format"), "")
+                if not output_content_type:
+                    raise ProcessingEngineError(
+                        "The Rust processing engine returned an unsupported image format."
+                    )
             output_upload = SimpleUploadedFile(
                 job.first_name,
                 output_data,
-                content_type=job.first_content_type,
+                content_type=output_content_type,
             )
-            _validate_signature(output_upload, job.first_content_type)
+            _validate_signature(output_upload, output_content_type)
             suffix = {
                 "image/png": ".png",
                 "image/jpeg": ".jpg",
                 "image/gif": ".gif",
                 "image/webp": ".webp",
                 SUPPORTED_PDF_TYPE: ".pdf",
-            }[job.first_content_type]
+            }[output_content_type]
             stem = Path(job.first_name).stem
             safe_stem = "".join(
                 character if character.isalnum() or character in "._-" else "_"
@@ -410,8 +518,19 @@ def process_comparison_job(job_id):
                 "saved_bytes": max(0, len(first_data) - len(output_data)),
                 "reduced": len(output_data) < len(first_data),
                 "filename": output_name,
-                "content_type": job.first_content_type,
+                "content_type": output_content_type,
                 "page_count": engine_result.get("page_count"),
+                "target_bytes": engine_result.get("target_bytes"),
+                "target_reached": (
+                    len(output_data) <= engine_result["target_bytes"]
+                    if type(engine_result.get("target_bytes")) is int
+                    else None
+                ),
+                "width": engine_result.get("width"),
+                "height": engine_result.get("height"),
+                "output_format": engine_result.get("output_format"),
+                "quality": engine_result.get("quality"),
+                "quality": engine_result.get("quality"),
             }
             completed = _finish_job(
                 job_id,
