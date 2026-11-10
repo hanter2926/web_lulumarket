@@ -50,6 +50,8 @@ export type ApiResponse = {
   job_id?: string;
   job_token?: string;
   status?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  state?: "queued" | "processing" | "completed" | "failed" | "cancelled";
+  stage?: string;
   status_url?: string;
   cancel_url?: string;
   cancel_requested?: boolean;

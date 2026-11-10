@@ -451,16 +451,29 @@ function App() {
           setComparisonResult(statusData.message ?? "Unable to check comparison status.");
           return;
         }
-        if (statusData.status === "queued" || statusData.status === "running") {
-          setComparisonResult(statusData.status === "running" ? "Comparing files..." : "Comparison queued...");
+        const state = statusData.state ?? (
+          statusData.status === "running"
+            ? "processing"
+            : statusData.status === "succeeded"
+              ? "completed"
+              : statusData.status
+        );
+        if (state === "queued" || state === "processing") {
+          setComparisonResult(statusData.stage ?? (
+            state === "processing" ? "Comparing files..." : "Comparison queued..."
+          ));
           continue;
         }
-        if (statusData.status === "cancelled") {
-          setComparisonResult("Comparison cancelled.");
+        if (state === "cancelled") {
+          setComparisonResult(statusData.stage ?? "Comparison cancelled.");
           return;
         }
-        if (statusData.status === "failed" || !statusData.comparison) {
-          setComparisonResult(statusData.message ?? "Comparison failed.");
+        if (state === "failed" || !statusData.comparison) {
+          setComparisonResult(statusData.message ?? statusData.stage ?? "Comparison failed.");
+          return;
+        }
+        if (state !== "completed") {
+          setComparisonResult("The worker returned an unknown comparison state.");
           return;
         }
         completed = statusData;

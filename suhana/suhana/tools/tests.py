@@ -15,7 +15,7 @@ from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from .models import ComparisonJob, ComparisonQueueControl
-from .processing_jobs import cleanup_expired_jobs
+from .processing_jobs import claim_next_job, cleanup_expired_jobs
 from .image_comparison import compare_images, image_metadata
 from .pdf_rendering import IsolatedPdfRendererClient, PdfRenderingError, PdfiumRenderer
 from .process_runner import (
@@ -83,6 +83,8 @@ class ToolsApiTests(TransactionTestCase):
         accepted = response.json()
         job_id = accepted["job_id"]
         self.assertEqual(accepted["status"], ComparisonJob.Status.QUEUED)
+        self.assertEqual(accepted["state"], "queued")
+        self.assertEqual(accepted["stage"], "Waiting for a worker.")
         self.assertTrue((self.private_root / job_id).is_dir())
         call_command("run_comparison_worker", once=True, stdout=io.StringIO())
         status = self.client.get(
@@ -91,10 +93,65 @@ class ToolsApiTests(TransactionTestCase):
         )
         self.assertEqual(status.status_code, 200)
         self.assertIn("no-store", status["Cache-Control"])
+        self.assertEqual(status.json()["state"], "completed")
         comparison = status.json()["comparison"]
         self.assertTrue(comparison["same_content"])
         self.assertEqual(comparison["first"]["dimensions"], [1, 1])
         self.assertTrue(comparison["image_comparison"]["same_visual"])
+
+    def test_large_image_pair_runs_through_background_worker(self):
+        pixels = os.urandom(2048 * 2048 * 3)
+        image = Image.frombytes("RGB", (2048, 2048), pixels)
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        png = output.getvalue()
+        self.assertGreaterEqual(len(png), 10 * 1024 * 1024)
+        self.assertLessEqual(len(png), 25 * 1024 * 1024)
+
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("large-first.png", png, content_type="image/png"),
+                "second": SimpleUploadedFile("large-second.png", png, content_type="image/png"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 202)
+        accepted = response.json()
+        call_command("run_comparison_worker", once=True, stdout=io.StringIO())
+
+        status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["state"], "completed")
+        self.assertEqual(status.json()["comparison"]["first"]["dimensions"], [2048, 2048])
+
+    def test_pdf_comparison_runs_through_background_worker(self):
+        pdf = _pdf_with_text("worker")
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.pdf", pdf, content_type="application/pdf"),
+                "second": SimpleUploadedFile("second.pdf", pdf, content_type="application/pdf"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 202)
+        accepted = response.json()
+        call_command("run_comparison_worker", once=True, stdout=io.StringIO())
+
+        status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["state"], "completed")
+        self.assertEqual(
+            status.json()["comparison"]["pdf_comparison"]["first"]["page_count"],
+            1,
+        )
 
     def test_compare_requires_both_supported_files(self):
         first = SimpleUploadedFile("first.txt", b"one", content_type="text/plain")
@@ -192,7 +249,77 @@ class ToolsApiTests(TransactionTestCase):
 
         self.assertEqual(cancelled.status_code, 200)
         self.assertEqual(cancelled.json()["status"], ComparisonJob.Status.CANCELLED)
+        self.assertEqual(cancelled.json()["state"], "cancelled")
         self.assertFalse((self.private_root / accepted["job_id"]).exists())
+
+    def test_running_comparison_reports_processing_state(self):
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.png", png, content_type="image/png"),
+                "second": SimpleUploadedFile("second.png", png, content_type="image/png"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        accepted = response.json()
+
+        self.assertEqual(str(claim_next_job()), accepted["job_id"])
+        self.assertIsNone(claim_next_job())
+        status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(status.json()["state"], "processing")
+        self.assertEqual(status.json()["stage"], "Comparing files.")
+
+    @patch(
+        "tools.comparison.compare_image_pair_with_metadata",
+        return_value=(
+            {"same_visual": True},
+            {
+                "dimensions": [1, 1],
+                "format": "PNG",
+                "animated": False,
+                "frame_count": 1,
+                "has_alpha": True,
+            },
+            {
+                "dimensions": [1, 1],
+                "format": "PNG",
+                "animated": False,
+                "frame_count": 1,
+                "has_alpha": True,
+            },
+        ),
+    )
+    def test_invalid_engine_result_is_not_stored(self, compare_pair):
+        png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))
+        response = self.client.post(
+            "/api/tools/compare/",
+            {
+                "first": SimpleUploadedFile("first.png", png, content_type="image/png"),
+                "second": SimpleUploadedFile("second.png", png, content_type="image/png"),
+            },
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        accepted = response.json()
+
+        with self.assertLogs("tools.processing_jobs", level="ERROR") as logs:
+            call_command("run_comparison_worker", once=True, stdout=io.StringIO())
+
+        status = self.client.get(
+            accepted["status_url"],
+            HTTP_X_JOB_TOKEN=accepted["job_token"],
+        )
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["state"], "failed")
+        self.assertIsNone(status.json().get("comparison"))
+        self.assertEqual(
+            status.json()["message"],
+            "The comparison could not be completed.",
+        )
+        self.assertIn("invalid structured result", "\n".join(logs.output))
 
     def test_expired_queued_job_is_cancelled_and_removed(self):
         png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))
@@ -416,6 +543,15 @@ class ProcessIsolationTests(TestCase):
                 timeout_seconds=5,
                 cancel_check=lambda: time.monotonic() >= cancel_at,
             )
+
+    def test_child_cannot_exceed_os_cpu_time_limit(self):
+        command = [self.python_child_executable(), "-c", "while True: pass"]
+        started = time.monotonic()
+        with patch("tools.process_runner.WORKER_CPU_LIMIT_SECONDS", 1):
+            result = run_limited_process(command, Path.cwd(), timeout_seconds=15)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(time.monotonic() - started, 15)
 
     def test_crashed_child_does_not_affect_later_worker(self):
         crashed = run_limited_process(

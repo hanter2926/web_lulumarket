@@ -84,24 +84,32 @@ def compare_files(request):
         return JsonResponse({"success": False, "message": str(error)}, status=400)
 
     status_url = f"/api/tools/jobs/{job.id}/"
-    return JsonResponse(
+    response = _job_response(job)
+    response.update(
         {
-            "success": True,
-            "job_id": str(job.id),
             "job_token": token,
-            "status": job.status,
             "status_url": status_url,
             "cancel_url": f"{status_url}cancel/",
-        },
-        status=202,
+        }
     )
+    return JsonResponse(response, status=202)
 
 
 def _job_response(job):
+    lifecycle = {
+        ComparisonJob.Status.QUEUED: ("queued", "Waiting for a worker."),
+        ComparisonJob.Status.RUNNING: ("processing", "Comparing files."),
+        ComparisonJob.Status.SUCCEEDED: ("completed", "Comparison completed."),
+        ComparisonJob.Status.FAILED: ("failed", "Comparison failed."),
+        ComparisonJob.Status.CANCELLED: ("cancelled", "Comparison cancelled."),
+    }
+    state, stage = lifecycle[job.status]
     response = {
         "success": job.status not in {ComparisonJob.Status.FAILED},
         "job_id": str(job.id),
         "status": job.status,
+        "state": state,
+        "stage": stage,
         "cancel_requested": job.cancel_requested,
         "created_at": job.created_at.isoformat(),
         "started_at": job.started_at.isoformat() if job.started_at else None,
