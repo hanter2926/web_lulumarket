@@ -35,7 +35,15 @@ class ShopkeeperAdmin(admin.ModelAdmin):
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "shopkeeper", "city", "is_active")
+    list_display = (
+        "id",
+        "name",
+        "shopkeeper",
+        "city",
+        "latitude",
+        "longitude",
+        "is_active",
+    )
     list_filter = ("is_active", "shopkeeper")
     search_fields = ("name", "slug", "city")
 
