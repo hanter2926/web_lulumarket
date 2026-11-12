@@ -145,13 +145,14 @@
 .auth-primary-button {
     width: 55%;
     min-width: 160px;
+    margin-right: auto;
     min-height: 46px;
-    margin-left: auto;
     border: 1px solid #111827;
     background: #111827;
     color: #fff;
     cursor: pointer;
 }
+
 
 .auth-primary-button:hover {
     border-color: #1f2937;
