@@ -5,13 +5,19 @@ from accounts.models import Address
 
 class CheckoutAddressForm(forms.ModelForm):
     """Form for entering/selecting shipping address during checkout"""
+
+    label = forms.ChoiceField(
+        choices=Address.LABEL_CHOICES,
+        widget=forms.Select(attrs={"class": "form-control"}),
+    )
     
     class Meta:
         model = Address
         fields = [
             'label', 'full_name', 'phone', 
             'address_line_1', 'address_line_2',
-            'city', 'state', 'country', 'pincode', 'landmark'
+            'city', 'state', 'country', 'pincode', 'landmark',
+            'latitude', 'longitude',
         ]
         widgets = {
             'label': forms.TextInput(attrs={
@@ -56,6 +62,20 @@ class CheckoutAddressForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Landmark (Optional)'
             }),
+            'latitude': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': 'any',
+                'inputmode': 'decimal',
+                'min': '-90',
+                'max': '90',
+            }),
+            'longitude': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': 'any',
+                'inputmode': 'decimal',
+                'min': '-180',
+                'max': '180',
+            }),
         }
     
     def clean_phone(self):
@@ -73,6 +93,16 @@ class CheckoutAddressForm(forms.ModelForm):
         if pincode and len(pincode) != 6:
             raise forms.ValidationError('Pincode must be 6 digits.')
         return pincode
+
+    def clean(self):
+        cleaned_data = super().clean()
+        latitude = cleaned_data.get('latitude')
+        longitude = cleaned_data.get('longitude')
+        if (latitude is None) != (longitude is None):
+            message = 'Enter both coordinates, or leave both blank.'
+            self.add_error('latitude', message)
+            self.add_error('longitude', message)
+        return cleaned_data
 
 
 class DeliveryMethodForm(forms.Form):

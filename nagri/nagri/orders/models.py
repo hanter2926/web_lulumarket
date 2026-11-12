@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from products.models import Product
@@ -73,6 +74,20 @@ class Order(models.Model):
     shipping_address_state = models.CharField(max_length=100, blank=True)
     shipping_address_postal_code = models.CharField(max_length=20, blank=True)
     shipping_address_country = models.CharField(max_length=100, blank=True, default="India")
+    shipping_address_latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(-90), MaxValueValidator(90)],
+    )
+    shipping_address_longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(-180), MaxValueValidator(180)],
+    )
     
     # Delivery & Payment
     delivery_method = models.CharField(max_length=20, choices=DELIVERY_CHOICES, default="standard")
@@ -104,6 +119,37 @@ class Order(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(shipping_address_latitude__isnull=True)
+                | models.Q(
+                    shipping_address_latitude__gte=-90,
+                    shipping_address_latitude__lte=90,
+                ),
+                name="order_shipping_latitude_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(shipping_address_longitude__isnull=True)
+                | models.Q(
+                    shipping_address_longitude__gte=-180,
+                    shipping_address_longitude__lte=180,
+                ),
+                name="order_shipping_longitude_range",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        shipping_address_latitude__isnull=True,
+                        shipping_address_longitude__isnull=True,
+                    )
+                    | models.Q(
+                        shipping_address_latitude__isnull=False,
+                        shipping_address_longitude__isnull=False,
+                    )
+                ),
+                name="order_shipping_coordinates_paired",
+            ),
+        ]
         
     def __str__(self):
         return self.order_number

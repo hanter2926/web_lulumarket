@@ -428,6 +428,8 @@ def checkout_review_view(request):
                 shipping_address_state=address.state,
                 shipping_address_postal_code=address.pincode,
                 shipping_address_country=address.country,
+                shipping_address_latitude=address.latitude,
+                shipping_address_longitude=address.longitude,
                 delivery_method=delivery_method,
                 payment_method=payment_method,
                 coupon_code=coupon_code,

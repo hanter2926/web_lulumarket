@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 import json
 import os
 import smtplib
@@ -296,6 +297,174 @@ class AccountTests(TestCase):
         self.assertFalse(profile.otp)
         self.assertIsNone(profile.otp_expires_at)
         send_otp.assert_called_once()
+
+
+class CustomerAddressLocationTests(TestCase):
+    def setUp(self):
+        self.user = CustomUser.objects.create_user(
+            email="address-owner@example.com",
+            username="address-owner",
+            password="pass",
+        )
+        self.other_user = CustomUser.objects.create_user(
+            email="address-other@example.com",
+            username="address-other",
+            password="pass",
+        )
+        self.client.force_login(self.user)
+
+    def address_data(self, **overrides):
+        data = {
+            "label": "Home",
+            "full_name": "Address Owner",
+            "phone": "1234567890",
+            "address_line_1": "1 Market Road",
+            "address_line_2": "",
+            "city": "Bengaluru",
+            "state": "Karnataka",
+            "country": "India",
+            "pincode": "560001",
+            "landmark": "",
+            "latitude": "",
+            "longitude": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_account_address_creation_accepts_optional_coordinates_and_labels(self):
+        data = self.address_data(
+            label="Office",
+            latitude="12.971600",
+            longitude="77.594600",
+            is_default="on",
+        )
+        response = self.client.post(
+            reverse("accounts:account_settings"),
+            {**data, "address_submit": "1"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        address = Address.objects.get(user=self.user)
+        self.assertEqual(address.label, "Office")
+        self.assertEqual(address.latitude, Decimal("12.971600"))
+        self.assertEqual(address.longitude, Decimal("77.594600"))
+        self.assertTrue(address.is_default)
+
+    def test_address_forms_reject_out_of_range_or_partial_coordinates(self):
+        from .forms_account_settings import AddressForm
+
+        for overrides in (
+            {"latitude": "90.000001", "longitude": "10"},
+            {"latitude": "10", "longitude": "-180.000001"},
+            {"latitude": "10", "longitude": ""},
+        ):
+            with self.subTest(overrides=overrides):
+                form = AddressForm(data=self.address_data(**overrides))
+                self.assertFalse(form.is_valid())
+
+    def test_legacy_custom_label_can_be_edited_without_changing_label(self):
+        address = Address.objects.create(
+            user=self.user,
+            label="Grandparents",
+            full_name="Address Owner",
+            phone="1234567890",
+            address_line_1="Old Road",
+            city="Bengaluru",
+            state="Karnataka",
+            pincode="560001",
+        )
+        from .forms_account_settings import AddressForm
+
+        form = AddressForm(
+            data=self.address_data(label="Grandparents", address_line_1="New Road"),
+            instance=address,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        updated = form.save()
+        self.assertEqual(updated.label, "Grandparents")
+        self.assertEqual(updated.address_line_1, "New Road")
+
+    def test_other_customer_addresses_are_not_listed_or_modifiable(self):
+        own_address = Address.objects.create(
+            user=self.user,
+            full_name="Address Owner",
+            phone="1234567890",
+            address_line_1="Own Road",
+            city="Bengaluru",
+            state="Karnataka",
+            pincode="560001",
+        )
+        other_address = Address.objects.create(
+            user=self.other_user,
+            full_name="Other Customer",
+            phone="1234567890",
+            address_line_1="Private Road",
+            city="Mysuru",
+            state="Karnataka",
+            pincode="570001",
+        )
+
+        response = self.client.get(reverse("accounts:account_settings"))
+        self.assertContains(response, "Own Road")
+        self.assertNotContains(response, "Private Road")
+
+        edit_response = self.client.post(
+            reverse("accounts:address_edit", args=[other_address.pk]),
+            self.address_data(address_line_1="Changed by another customer"),
+        )
+        self.assertEqual(edit_response.status_code, 302)
+        other_address.refresh_from_db()
+        self.assertEqual(other_address.address_line_1, "Private Road")
+
+        delete_response = self.client.post(
+            reverse("accounts:address_delete", args=[other_address.pk])
+        )
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertTrue(Address.objects.filter(pk=other_address.pk).exists())
+        self.assertTrue(Address.objects.filter(pk=own_address.pk).exists())
+
+    def test_address_api_scopes_customers_and_validates_coordinates(self):
+        from rest_framework.test import APIClient
+
+        own_address = Address.objects.create(
+            user=self.user,
+            full_name="Address Owner",
+            phone="1234567890",
+            address_line_1="Own Road",
+            city="Bengaluru",
+            state="Karnataka",
+            pincode="560001",
+        )
+        other_address = Address.objects.create(
+            user=self.other_user,
+            full_name="Other Customer",
+            phone="1234567890",
+            address_line_1="Private Road",
+            city="Mysuru",
+            state="Karnataka",
+            pincode="570001",
+        )
+        api = APIClient()
+        api.force_authenticate(user=self.user)
+        address_count = Address.objects.filter(user=self.user).count()
+
+        list_response = api.get(reverse("accounts:addresses-list"))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual([item["id"] for item in list_response.data], [own_address.pk])
+
+        detail_response = api.get(
+            reverse("accounts:addresses-detail", args=[other_address.pk])
+        )
+        self.assertEqual(detail_response.status_code, 404)
+
+        payload = self.address_data(latitude="91", longitude="10")
+        create_response = api.post(
+            reverse("accounts:addresses-list"),
+            payload,
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 400)
+        self.assertEqual(Address.objects.filter(user=self.user).count(), address_count)
 
 
 class AccountStatusAdminTests(TestCase):

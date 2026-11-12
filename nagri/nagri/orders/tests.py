@@ -313,6 +313,8 @@ class OrderTests(TestCase):
             city="Test City",
             state="Test State",
             pincode="12345",
+            latitude=Decimal("12.345600"),
+            longitude=Decimal("67.890100"),
         )
         self.client.force_login(self.user)
         session = self.client.session
@@ -323,6 +325,11 @@ class OrderTests(TestCase):
 
         response = self.client.post(reverse("checkout_review"))
         order = Order.objects.get(user=self.user)
+        address.latitude = Decimal("20.000000")
+        address.longitude = Decimal("30.000000")
+        address.address_line_1 = "Updated Road"
+        address.save()
+        order.refresh_from_db()
         self.assertRedirects(
             response,
             reverse("payment_success", args=[order.pk]),
@@ -332,10 +339,79 @@ class OrderTests(TestCase):
         self.assertEqual(order.subtotal, Decimal("30.00"))
         self.assertEqual(order.items.get().price, Decimal("12.50"))
         self.assertEqual(order.items.get().quantity, 2)
+        self.assertEqual(order.shipping_address_latitude, Decimal("12.345600"))
+        self.assertEqual(order.shipping_address_longitude, Decimal("67.890100"))
+        self.assertEqual(order.shipping_address_line1, "1 Test Road")
         self.assertTrue(order.inventory_reserved)
         self.assertFalse(cart.items.exists())
         inventory.refresh_from_db()
         self.assertEqual(inventory.stock_quantity, 1)
+
+    def test_checkout_address_accepts_optional_location_and_rejects_foreign_saved_address(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-checkout-user",
+            email="other-checkout@example.com",
+            password="pass",
+        )
+        foreign_address = Address.objects.create(
+            user=other_user,
+            full_name="Other Customer",
+            phone="1234567890",
+            address_line_1="Private Road",
+            city="Private City",
+            state="Test State",
+            pincode="123456",
+        )
+        self.client.force_login(self.user)
+
+        page = self.client.get(reverse("checkout_address"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Use My Current Location")
+        self.assertContains(page, 'name="latitude"')
+        self.assertContains(page, 'name="longitude"')
+
+        response = self.client.post(
+            reverse("checkout_address"),
+            {"action": "select_saved", "address_id": foreign_address.pk},
+        )
+        self.assertRedirects(
+            response,
+            reverse("checkout_address"),
+            fetch_redirect_response=False,
+        )
+        self.assertNotIn("checkout_address_id", self.client.session)
+
+        data = {
+            "action": "new_address",
+            "label": "Office",
+            "full_name": "Test Customer",
+            "phone": "1234567890",
+            "address_line_1": "1 Checkout Road",
+            "address_line_2": "",
+            "city": "Test City",
+            "state": "Test State",
+            "country": "India",
+            "pincode": "123456",
+            "landmark": "",
+            "latitude": "12.5",
+            "longitude": "",
+        }
+        invalid_response = self.client.post(reverse("checkout_address"), data)
+        self.assertEqual(invalid_response.status_code, 200)
+        self.assertContains(invalid_response, "Enter both coordinates")
+        self.assertFalse(Address.objects.filter(user=self.user).exists())
+
+        data.update(latitude="", longitude="")
+        valid_response = self.client.post(reverse("checkout_address"), data)
+        self.assertRedirects(
+            valid_response,
+            reverse("checkout_delivery"),
+            fetch_redirect_response=False,
+        )
+        address = Address.objects.get(user=self.user)
+        self.assertEqual(address.label, "Office")
+        self.assertIsNone(address.latitude)
+        self.assertIsNone(address.longitude)
 
     def test_online_order_starts_unpaid_and_payment_page_does_not_mark_paid(self):
         order = Order.objects.create(user=self.user, order_number='ORD-TEST-1', total_amount=Decimal('100.00'), status='pending', payment_method='razorpay', is_paid=False)

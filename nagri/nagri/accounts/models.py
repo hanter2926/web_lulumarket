@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -181,6 +182,12 @@ class EmailOTPThrottle(models.Model):
 
 
 class Address(models.Model):
+    LABEL_CHOICES = (
+        ("Home", "Home"),
+        ("Office", "Office"),
+        ("Other", "Other"),
+    )
+
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="addresses")
     profile = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name="addresses", null=True, blank=True)
     label = models.CharField(max_length=50, default="Home")
@@ -193,12 +200,53 @@ class Address(models.Model):
     country = models.CharField(max_length=100, default="India")
     pincode = models.CharField(max_length=20)
     landmark = models.CharField(max_length=200, blank=True, null=True)
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(-90), MaxValueValidator(90)],
+    )
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(-180), MaxValueValidator(180)],
+    )
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-is_default", "-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(latitude__isnull=True)
+                | models.Q(latitude__gte=-90, latitude__lte=90),
+                name="address_latitude_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(longitude__isnull=True)
+                | models.Q(longitude__gte=-180, longitude__lte=180),
+                name="address_longitude_range",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(latitude__isnull=True, longitude__isnull=True)
+                    | models.Q(latitude__isnull=False, longitude__isnull=False)
+                ),
+                name="address_coordinates_paired",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValidationError({
+                "latitude": "Enter both coordinates, or leave both blank.",
+                "longitude": "Enter both coordinates, or leave both blank.",
+            })
 
     def __str__(self):
         return f"{self.label}: {self.city}"

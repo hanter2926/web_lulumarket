@@ -104,9 +104,13 @@
 
                 <div class="collapse mt-3" id="editAddr{{ addr.id }}">
                   <div class="card card-body">
-                    <form method="post" action="{% url 'accounts:address_edit' addr.id %}">
+                    <form method="post" action="{% url 'accounts:address_edit' addr.id %}" class="customer-address-form">
                       {% csrf_token %}
                       {{ form.as_p }}
+                      <button type="button" class="btn btn-outline-secondary btn-sm use-current-location">
+                        Use My Current Location
+                      </button>
+                      <div class="small mt-2 customer-location-status" role="status" aria-live="polite"></div>
                       <div class="d-flex gap-2">
                         <button class="btn btn-primary btn-sm">Save</button>
                         <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#editAddr{{ addr.id }}">Cancel</button>
@@ -121,8 +125,12 @@
 
             <hr>
             <h6>Add new address</h6>
-            <form method="post">{% csrf_token %}
+            <form method="post" class="customer-address-form">{% csrf_token %}
               {{ addr_form.as_p }}
+              <button type="button" class="btn btn-outline-secondary btn-sm use-current-location">
+                Use My Current Location
+              </button>
+              <div class="small mt-2 customer-location-status" role="status" aria-live="polite"></div>
               <button class="btn btn-primary" name="address_submit">Add Address</button>
             </form>
           </div>
@@ -173,7 +181,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-// Minimal client enhancements are intentionally small; server-side saves are authoritative.
-</script>
+<script src="{% static 'js/accounts/address-location.js' %}" defer></script>
 {% endblock %}

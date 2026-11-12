@@ -815,7 +815,7 @@ def account_settings(request):
                 if addr.is_default:
                     Address.objects.filter(user=request.user).exclude(id=addr.id).update(is_default=False)
                 messages.success(request, 'Address added.')
-                return redirect('account_settings')
+                return redirect('accounts:account_settings')
     else:
         pform = ProfileForm(instance=profile)
         nform = NotificationForm(instance=profile)
@@ -843,7 +843,7 @@ def edit_address(request, pk):
     addr = get_object_or_404(Address, pk=pk)
     if addr.user != request.user and not request.user.is_staff:
         messages.error(request, 'You do not have permission to edit this address.')
-        return redirect('account_settings')
+        return redirect('accounts:account_settings')
 
     if request.method == 'POST':
         form = AddressForm(request.POST, instance=addr)
@@ -855,18 +855,18 @@ def edit_address(request, pk):
         else:
             messages.error(request, 'Please correct the errors in the form.')
 
-    return redirect('account_settings')
+    return redirect('accounts:account_settings')
 
 
 @login_required
 def delete_address(request, pk):
     if request.method != 'POST':
-        return redirect('account_settings')
+        return redirect('accounts:account_settings')
 
     addr = get_object_or_404(Address, pk=pk)
     if addr.user != request.user and not request.user.is_staff:
         messages.error(request, 'You do not have permission to delete this address.')
-        return redirect('account_settings')
+        return redirect('accounts:account_settings')
 
     was_default = addr.is_default
     addr.delete()
@@ -879,24 +879,24 @@ def delete_address(request, pk):
             other.is_default = True
             other.save(update_fields=['is_default', 'updated_at'])
 
-    return redirect('account_settings')
+    return redirect('accounts:account_settings')
 
 
 @login_required
 def set_default_address(request, pk):
     if request.method != 'POST':
-        return redirect('account_settings')
+        return redirect('accounts:account_settings')
 
     addr = get_object_or_404(Address, pk=pk)
     if addr.user != request.user and not request.user.is_staff:
         messages.error(request, 'You do not have permission to update this address.')
-        return redirect('account_settings')
+        return redirect('accounts:account_settings')
 
     Address.objects.filter(user=request.user).exclude(id=addr.id).update(is_default=False)
     addr.is_default = True
     addr.save(update_fields=['is_default', 'updated_at'])
     messages.success(request, 'Default address updated.')
-    return redirect('account_settings')
+    return redirect('accounts:account_settings')
 
 
 class AddressViewSet(viewsets.ModelViewSet):
@@ -910,6 +910,11 @@ class AddressViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         address = serializer.save(user=self.request.user)
+        if address.is_default:
+            Address.objects.filter(user=self.request.user).exclude(id=address.id).update(is_default=False)
+
+    def perform_update(self, serializer):
+        address = serializer.save()
         if address.is_default:
             Address.objects.filter(user=self.request.user).exclude(id=address.id).update(is_default=False)
 

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import Address, CustomUser, PaymentMethod, UserProfile
@@ -43,11 +45,43 @@ class AddressSerializer(serializers.ModelSerializer):
             "country",
             "pincode",
             "landmark",
+            "latitude",
+            "longitude",
             "is_default",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["user", "profile", "created_at", "updated_at"]
+
+    def validate_label(self, value):
+        if value in dict(Address.LABEL_CHOICES):
+            return value
+        if self.instance and value == self.instance.label:
+            return value
+        raise serializers.ValidationError("Choose Home, Office, or Other.")
+
+    def validate(self, attrs):
+        latitude = attrs.get(
+            "latitude",
+            getattr(self.instance, "latitude", None),
+        )
+        longitude = attrs.get(
+            "longitude",
+            getattr(self.instance, "longitude", None),
+        )
+        if (latitude is None) != (longitude is None):
+            raise serializers.ValidationError(
+                "Enter both coordinates, or leave both blank."
+            )
+        if latitude is not None and not Decimal("-90") <= latitude <= Decimal("90"):
+            raise serializers.ValidationError(
+                {"latitude": "Latitude must be between -90 and 90."}
+            )
+        if longitude is not None and not Decimal("-180") <= longitude <= Decimal("180"):
+            raise serializers.ValidationError(
+                {"longitude": "Longitude must be between -180 and 180."}
+            )
+        return attrs
 
 
 class PaymentMethodSerializer(serializers.ModelSerializer):
