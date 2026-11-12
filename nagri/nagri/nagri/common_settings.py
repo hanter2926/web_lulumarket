@@ -305,27 +305,27 @@ def build_common_settings(
         has_cloudinary_config = (
             all(cloudinary_storage_config.values()) and cloudinary_available
         )
+        base_storage_backend = (
+            "cloudinary_storage.storage.MediaCloudinaryStorage"
+            if has_cloudinary_config
+            else "django.core.files.storage.FileSystemStorage"
+        )
         settings.update(
             {
                 "CLOUDINARY_STORAGE": cloudinary_storage_config,
                 "CLOUDINARY_AVAILABLE": cloudinary_available,
                 "HAS_CLOUDINARY_CONFIG": has_cloudinary_config,
+                "IMAGE_OPTIMIZATION_BASE_STORAGE": base_storage_backend,
                 "STORAGES": {
                     "default": {
-                        "BACKEND": (
-                            "cloudinary_storage.storage.MediaCloudinaryStorage"
-                            if has_cloudinary_config
-                            else "django.core.files.storage.FileSystemStorage"
-                        ),
+                        "BACKEND": "nagri.optimized_storage.OptimizedImageStorage",
                     },
                     "staticfiles": {
                         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
                     },
                 },
                 "DEFAULT_FILE_STORAGE": (
-                    "cloudinary_storage.storage.MediaCloudinaryStorage"
-                    if has_cloudinary_config
-                    else "django.core.files.storage.FileSystemStorage"
+                    "nagri.optimized_storage.OptimizedImageStorage"
                 ),
             }
         )
@@ -386,15 +386,20 @@ def build_common_settings(
                 },
                 "CLOUDINARY_AVAILABLE": False,
                 "HAS_CLOUDINARY_CONFIG": False,
+                "IMAGE_OPTIMIZATION_BASE_STORAGE": (
+                    "django.core.files.storage.FileSystemStorage"
+                ),
                 "STORAGES": {
                     "default": {
-                        "BACKEND": "django.core.files.storage.FileSystemStorage",
+                        "BACKEND": "nagri.optimized_storage.OptimizedImageStorage",
                     },
                     "staticfiles": {
                         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
                     },
                 },
-                "DEFAULT_FILE_STORAGE": "django.core.files.storage.FileSystemStorage",
+                "DEFAULT_FILE_STORAGE": (
+                    "nagri.optimized_storage.OptimizedImageStorage"
+                ),
             }
         )
 
@@ -406,10 +411,7 @@ def build_common_settings(
             "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         }
         if include_external_services and settings["HAS_CLOUDINARY_CONFIG"]:
-            settings["STORAGES"]["default"] = {
-                "BACKEND": "django.core.files.storage.FileSystemStorage",
-            }
-            settings["DEFAULT_FILE_STORAGE"] = (
+            settings["IMAGE_OPTIMIZATION_BASE_STORAGE"] = (
                 "django.core.files.storage.FileSystemStorage"
             )
 
