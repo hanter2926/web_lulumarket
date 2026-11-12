@@ -21,14 +21,8 @@ from .rust_engine import ProcessingEngineError
 
 logger = logging.getLogger(__name__)
 
-UNIT_FACTORS = {
-    "bit": 1,
-    "byte": 8,
-    "kb": 8 * 1000,
-    "mb": 8 * 1000**2,
-    "gb": 8 * 1000**3,
-    "tb": 8 * 1000**4,
-}
+UNIT_EXPONENTS = {"byte": 0, "kb": 1, "mb": 2, "gb": 3, "tb": 4}
+UNIT_NAMES = {"bit", *UNIT_EXPONENTS}
 
 
 def _json_body(request):
@@ -49,6 +43,7 @@ def convert_units(request):
         value = float(data.get("value"))
         source = str(data.get("from", "")).lower()
         target = str(data.get("to", "")).lower()
+        standard = str(data.get("standard", "decimal")).lower()
     except (TypeError, ValueError):
         return JsonResponse(
             {"success": False, "message": "Enter a valid numeric value."}, status=400
@@ -57,16 +52,37 @@ def convert_units(request):
     if (
         not math.isfinite(value)
         or value < 0
-        or source not in UNIT_FACTORS
-        or target not in UNIT_FACTORS
+        or source not in UNIT_NAMES
+        or target not in UNIT_NAMES
+        or standard not in {"decimal", "binary"}
     ):
         return JsonResponse(
             {"success": False, "message": "Invalid unit or value."}, status=400
         )
 
-    result = value * UNIT_FACTORS[source] / UNIT_FACTORS[target]
+    base = 1000 if standard == "decimal" else 1024
+    factors = {
+        "bit": 1,
+        **{
+            unit: 8 * base**exponent
+            for unit, exponent in UNIT_EXPONENTS.items()
+        },
+    }
+    result = value * factors[source] / factors[target]
+    if not math.isfinite(result):
+        return JsonResponse(
+            {"success": False, "message": "The converted value is outside the supported range."},
+            status=400,
+        )
     return JsonResponse(
-        {"success": True, "value": value, "from": source, "to": target, "result": result}
+        {
+            "success": True,
+            "value": value,
+            "from": source,
+            "to": target,
+            "standard": standard,
+            "result": result,
+        }
     )
 
 
@@ -250,4 +266,11 @@ def reports(request):
         "reports": list(ComparisonReport.objects.filter(owner=request.user).values(
             "id", "first_name", "second_name", "comparison_type", "result", "created_at"
         )),
+        "compressions": list(
+            ComparisonJob.objects.filter(
+                owner=request.user,
+                job_type=ComparisonJob.Type.COMPRESSION,
+                status=ComparisonJob.Status.SUCCEEDED,
+            ).order_by("-created_at").values("id", "first_name", "result", "created_at")
+        ),
     })

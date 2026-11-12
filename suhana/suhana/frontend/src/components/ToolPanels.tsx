@@ -3,12 +3,20 @@ import type { ImageComparisonResult, PdfComparisonResult } from "../types";
 import type { DownloadArtifact } from "../downloadUtils";
 
 type ToolStatus = "idle" | "file_selected" | "processing" | "success" | "error";
+type ComparisonSelection = {
+  filename: string;
+  size: number;
+  mimeType: string;
+  previewUrl: string;
+  error: string;
+};
+const MAX_TOOL_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 
 type Props = {
   active: "reset" | "converter" | "compare" | "compress";
   loading: boolean;
   csrfReady: boolean;
-  conversion: { value: string; from: string; to: string };
+  conversion: { value: string; from: string; to: string; standard: "decimal" | "binary" };
   conversionResult: string;
   conversionStatus: ToolStatus;
   conversionDownload: DownloadArtifact | null;
@@ -44,7 +52,10 @@ type Props = {
   onCancelCompression: () => void;
   onResetRequest: (event: FormEvent<HTMLFormElement>) => void;
   onResetConfirm: (event: FormEvent<HTMLFormElement>) => void;
-  onConversionChange: (field: "value" | "from" | "to", value: string) => void;
+  onConversionChange: (
+    field: "value" | "from" | "to" | "standard",
+    value: string,
+  ) => void;
   onResetChange: (field: "email" | "otp" | "password", value: string) => void;
 };
 
@@ -93,10 +104,97 @@ export default function ToolPanels(props: Props) {
   const [gifWithoutTarget, setGifWithoutTarget] = useState(false);
   const [detectingCompressionFile, setDetectingCompressionFile] = useState(false);
   const compressionSelectionRun = useRef(0);
+  const [comparisonSelections, setComparisonSelections] = useState<
+    [ComparisonSelection | null, ComparisonSelection | null]
+  >([null, null]);
+  const comparisonSelectionRuns = useRef([0, 0]);
+  const comparisonPreviewUrls = useRef<[string, string]>(["", ""]);
 
   useEffect(() => {
     if (compressionPreview) return () => URL.revokeObjectURL(compressionPreview);
   }, [compressionPreview]);
+
+  useEffect(() => () => {
+    comparisonPreviewUrls.current.forEach((url) => {
+      if (url) URL.revokeObjectURL(url);
+    });
+  }, []);
+
+  async function selectComparisonFile(index: 0 | 1, event: ChangeEvent<HTMLInputElement>) {
+    const run = ++comparisonSelectionRuns.current[index];
+    const file = event.currentTarget.files?.[0] ?? null;
+    props.onComparisonInputChange?.();
+    if (!file) {
+      const previousUrl = comparisonPreviewUrls.current[index];
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
+      comparisonPreviewUrls.current[index] = "";
+      setComparisonSelections((current) => {
+        const next = [...current] as typeof current;
+        next[index] = null;
+        return next;
+      });
+      return;
+    }
+
+    let selection: ComparisonSelection;
+    if (file.size > MAX_TOOL_FILE_SIZE_BYTES) {
+      selection = {
+        filename: file.name,
+        size: file.size,
+        mimeType: "",
+        previewUrl: "",
+        error: "Each comparison file must be 25 MB or smaller.",
+      };
+    } else {
+      try {
+        const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+        if (run !== comparisonSelectionRuns.current[index]) return;
+        const starts = (prefix: number[]) =>
+          prefix.every((byte, position) => bytes[position] === byte);
+        const type = starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+          ? "image/png"
+          : bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+            ? "image/jpeg"
+            : starts([0x47, 0x49, 0x46, 0x38]) &&
+              (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+              bytes[5] === 0x61
+              ? "image/gif"
+              : String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+                String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+                ? "image/webp"
+                : String.fromCharCode(...bytes.slice(0, 5)) === "%PDF-"
+                  ? "application/pdf"
+                  : "";
+        selection = {
+          filename: file.name,
+          size: file.size,
+          mimeType: type,
+          previewUrl: "",
+          error: type ? "" : "This file is not a supported PNG, JPEG, GIF, WEBP, or PDF.",
+        };
+      } catch {
+        selection = {
+          filename: file.name,
+          size: file.size,
+          mimeType: "",
+          previewUrl: "",
+          error: "The selected file could not be read. Choose it again.",
+        };
+      }
+    }
+    if (run !== comparisonSelectionRuns.current[index]) return;
+    if (selection.mimeType.startsWith("image/")) {
+      selection.previewUrl = URL.createObjectURL(file);
+    }
+    const previousUrl = comparisonPreviewUrls.current[index];
+    if (previousUrl) URL.revokeObjectURL(previousUrl);
+    comparisonPreviewUrls.current[index] = selection.previewUrl;
+    setComparisonSelections((current) => {
+      const next = [...current] as typeof current;
+      next[index] = selection;
+      return next;
+    });
+  }
 
   async function selectCompressionFile(event: ChangeEvent<HTMLInputElement>) {
     const run = ++compressionSelectionRun.current;
@@ -110,6 +208,11 @@ export default function ToolPanels(props: Props) {
     setDetectingCompressionFile(Boolean(file));
     props.onCompressionInputChange?.();
     if (!file) return;
+    if (file.size > MAX_TOOL_FILE_SIZE_BYTES) {
+      setDetectingCompressionFile(false);
+      setCompressionSelectionError("Choose a file that is 25 MB or smaller.");
+      return;
+    }
     let bytes: Uint8Array;
     try {
       bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
@@ -168,6 +271,11 @@ export default function ToolPanels(props: Props) {
     </form>
   );
   if (props.active === "converter") return <form onSubmit={props.onConversion}>
+      <p className="helper-text">
+        Convert bit, byte, KB, MB, GB, or TB. Enter a value, choose the source and result units,
+        then select decimal (base 1,000) or binary (base 1,024). Zero is allowed; negative and
+        non-numeric values are rejected.
+      </p>
       <label htmlFor="conversion-value">Value</label>
       <input id="conversion-value" type="number" min="0" step="any" value={props.conversion.value}
         onChange={(event) => props.onConversionChange("value", event.target.value)} required />
@@ -175,6 +283,19 @@ export default function ToolPanels(props: Props) {
       <UnitSelect id="conversion-from" value={props.conversion.from} onChange={(value) => props.onConversionChange("from", value)} />
       <label htmlFor="conversion-to">To</label>
       <UnitSelect id="conversion-to" value={props.conversion.to} onChange={(value) => props.onConversionChange("to", value)} />
+      <fieldset className="analyzer-options conversion-standards">
+        <legend>Conversion standard</legend>
+        <label>
+          <input type="radio" name="conversion-standard" checked={props.conversion.standard === "decimal"}
+            onChange={() => props.onConversionChange("standard", "decimal")} />
+          Decimal (1 KB = 1,000 bytes)
+        </label>
+        <label>
+          <input type="radio" name="conversion-standard" checked={props.conversion.standard === "binary"}
+            onChange={() => props.onConversionChange("standard", "binary")} />
+          Binary (1 KB = 1,024 bytes)
+        </label>
+      </fieldset>
       <button type="submit" disabled={props.loading || !props.csrfReady}>{props.loading ? "Converting..." : "Convert"}</button>
       {props.conversionStatus === "processing" && <p className="result-panel" role="status">Converting...</p>}
       {props.conversionResult && <p className="result-panel" role={props.conversionStatus === "error" ? "alert" : "status"}>{props.conversionResult}</p>}
@@ -185,9 +306,11 @@ export default function ToolPanels(props: Props) {
   </form>;
   if (props.active === "compress") return <form onSubmit={props.onCompression}>
       <p className="helper-text">
-        Upload an image or PDF (maximum 25 MB). Image targets use 1 KB = 1,024 bytes.
-        Compression tries to reach your requested
-        size and verifies the actual output. Animated PNG and WEBP are not supported.
+        Upload a PNG, JPEG, GIF, WEBP, or PDF (maximum 25 MB). For still images, choose an output
+        target in KB or MB, quality, output format, and optional maximum dimensions. The result
+        shows actual size and savings, then provides the verified output download. PDF settings
+        preserve page count; image-only target and quality controls do not apply. Animated PNG and
+        WEBP are not supported.
       </p>
       <label htmlFor="compression-file">Upload a file</label>
       <input id="compression-file" name="file" type="file"
@@ -273,7 +396,8 @@ export default function ToolPanels(props: Props) {
       {props.compressionStatus === "processing" && <p className="result-panel" role="status">
         Processing your file in the isolated worker...
       </p>}
-      <button type="submit" disabled={props.loading || !props.csrfReady || !compressionFile || detectingCompressionFile}>
+      <button type="submit" disabled={props.loading || !props.csrfReady || !compressionFile ||
+        detectingCompressionFile || Boolean(compressionSelectionError)}>
         {props.loading ? "Compressing..." : "Compress file"}
       </button>
       {props.canCancelCompression && <button type="button" onClick={props.onCancelCompression}>
@@ -321,14 +445,24 @@ export default function ToolPanels(props: Props) {
       </div>}
   </form>;
   return <form onSubmit={props.onComparison}>
-      <p className="helper-text">Supported formats: PNG, JPEG, GIF, WEBP, and PDF. Maximum 25 MB per file.</p>
+      <p className="helper-text">
+        Compare two PNG, JPEG, GIF, WEBP, or PDF files (maximum 25 MB each). Choose one file in
+        each field, then compare: images are checked pixel by pixel and PDFs by page text and
+        rendered appearance. The results include previews and a downloadable report; generated
+        image or page-difference overlays can also be downloaded.
+      </p>
       <label htmlFor="first-file">First file</label>
       <input id="first-file" name="first" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" required
-        onChange={props.onComparisonInputChange} />
+        onChange={(event) => void selectComparisonFile(0, event)} />
+      {comparisonSelections[0] && <ComparisonFilePreview selection={comparisonSelections[0]} />}
       <label htmlFor="second-file">Second file</label>
       <input id="second-file" name="second" type="file" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" required
-        onChange={props.onComparisonInputChange} />
-      <button type="submit" disabled={props.loading || !props.csrfReady}>{props.loading ? "Comparing..." : "Compare files"}</button>
+        onChange={(event) => void selectComparisonFile(1, event)} />
+      {comparisonSelections[1] && <ComparisonFilePreview selection={comparisonSelections[1]} />}
+      <button type="submit" disabled={props.loading || !props.csrfReady ||
+        !comparisonSelections[0]?.mimeType || !comparisonSelections[1]?.mimeType}>
+        {props.loading ? "Comparing..." : "Compare files"}
+      </button>
       {props.canCancelComparison && <button type="button" onClick={props.onCancelComparison}>Cancel comparison</button>}
       {props.comparisonResult && <p className="result-panel" role={props.comparisonStatus === "error" ? "alert" : "status"}>{props.comparisonResult}</p>}
       {props.comparisonStatus === "success" && props.comparisonDownloads.length > 0 &&
@@ -363,6 +497,14 @@ export default function ToolPanels(props: Props) {
         </article>)}
       </section>}
       {props.comparisonStatus === "success" && props.pdfComparison && <section className="pdf-results" aria-label="PDF comparison details">
+        <p>
+          First PDF: {props.pdfComparison.first.page_count} pages;
+          {" "}{props.pdfComparison.first.has_text_layer ? "text layer detected" : "no text layer detected"}.
+          {" "}Second PDF: {props.pdfComparison.second.page_count} pages;
+          {" "}{props.pdfComparison.second.has_text_layer ? "text layer detected" : "no text layer detected"}.
+          {" "}Text differences: {props.pdfComparison.text_differences};
+          {" "}visual differences: {props.pdfComparison.visual_differences}.
+        </p>
         {props.pdfComparison.page_results.map((page) => <article className="pdf-page-result" key={page.page}>
           <strong>Page {page.page}</strong>
           <span>{page.status ?? (page.text_same ? "Text identical" : "Text differs")}</span>
@@ -371,4 +513,14 @@ export default function ToolPanels(props: Props) {
         </article>)}
       </section>}
   </form>;
+}
+
+function ComparisonFilePreview({ selection }: { selection: ComparisonSelection }) {
+  if (selection.error) {
+    return <p className="result-panel" role="alert">{selection.error}</p>;
+  }
+  return <div className="compression-preview">
+    <p>{selection.filename} · {selection.mimeType} · {formatBytes(selection.size)}</p>
+    {selection.previewUrl && <img src={selection.previewUrl} alt={`Preview of ${selection.filename}`} />}
+  </div>;
 }

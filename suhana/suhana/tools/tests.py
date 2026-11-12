@@ -76,6 +76,50 @@ class ToolsApiTests(TransactionTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["result"], 1000)
 
+    def test_unit_conversion_supports_binary_standard(self):
+        response = self.client.post(
+            "/api/tools/convert/",
+            data=json.dumps(
+                {"value": 1, "from": "gb", "to": "mb", "standard": "binary"}
+            ),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["result"], 1024)
+        self.assertEqual(response.json()["standard"], "binary")
+
+    def test_unit_conversion_rejects_unknown_standard(self):
+        response = self.client.post(
+            "/api/tools/convert/",
+            data=json.dumps(
+                {"value": 1, "from": "gb", "to": "mb", "standard": "unknown"}
+            ),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_unit_conversion_rejects_overflow_and_accepts_zero(self):
+        zero = self.client.post(
+            "/api/tools/convert/",
+            data=json.dumps({"value": 0, "from": "tb", "to": "bit"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        overflow = self.client.post(
+            "/api/tools/convert/",
+            data=json.dumps({"value": "1e308", "from": "tb", "to": "bit"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        self.assertEqual(zero.status_code, 200)
+        self.assertEqual(zero.json()["result"], 0)
+        self.assertEqual(overflow.status_code, 400)
+
     def test_unit_conversion_rejects_negative_values(self):
         response = self.client.post(
             "/api/tools/convert/",
@@ -727,6 +771,14 @@ class ToolsApiTests(TransactionTestCase):
         response = self.client.get("/api/tools/reports/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["reports"]), 1)
+
+        png = _image_bytes("PNG", (30, 60, 90, 255), size=(4, 4))
+        self.run_compression(png, "history.png", "image/png")
+        response = self.client.get("/api/tools/reports/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["compressions"]), 1)
+        self.assertEqual(response.json()["compressions"][0]["first_name"], "history.png")
+        self.assertEqual(response.json()["compressions"][0]["result"]["input_bytes"], len(png))
 
     def test_comparison_job_requires_its_capability_token(self):
         png = _image_bytes("PNG", (10, 20, 30, 255), size=(1, 1))

@@ -29,6 +29,27 @@ class StorageApiTests(TestCase):
         response = self.client.get("/api/storage/dashboard/")
         self.assertEqual(response.status_code, 401)
 
+    def test_dashboard_returns_storage_balance_and_recent_file_data(self):
+        self.client.force_login(self.user)
+        stored = StoredFile.objects.create(
+            owner=self.user,
+            name="dashboard.txt",
+            file=SimpleUploadedFile("dashboard.txt", b"stored"),
+            size_bytes=6,
+            content_type="text/plain",
+        )
+        storage = UserStorage.objects.get(user=self.user)
+        storage.used_bytes = 6
+        storage.save(update_fields=["used_bytes"])
+
+        response = self.client.get("/api/storage/dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["storage"]["used_bytes"], 6)
+        self.assertEqual(response.json()["storage"]["available_bytes"], 9_994)
+        self.assertEqual(response.json()["recent_files"][0]["id"], stored.id)
+        self.assertEqual(response.json()["recent_activities"], [])
+
     def test_upload_and_list_are_owner_scoped(self):
         self.client.force_login(self.user)
         uploaded = SimpleUploadedFile("note.txt", b"private content", content_type="text/plain")
@@ -84,3 +105,80 @@ class StorageApiTests(TestCase):
             HTTP_X_CSRFTOKEN=self.csrf_token,
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_file_rename_and_move_preserve_storage_usage(self):
+        self.client.force_login(self.user)
+        first_folder = Folder.objects.create(owner=self.user, name="First")
+        second_folder = Folder.objects.create(owner=self.user, name="Second")
+        stored = StoredFile.objects.create(
+            owner=self.user,
+            folder=first_folder,
+            name="note.txt",
+            file=SimpleUploadedFile("note.txt", b"private content"),
+            size_bytes=15,
+            content_type="text/plain",
+        )
+        storage = UserStorage.objects.get(user=self.user)
+        storage.used_bytes = 15
+        storage.save(update_fields=["used_bytes"])
+
+        renamed = self.client.post(
+            f"/api/storage/files/{stored.id}/rename/",
+            {"name": "renamed.txt"},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        moved = self.client.post(
+            f"/api/storage/files/{stored.id}/move/",
+            {"folder": second_folder.id},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(moved.status_code, 200)
+        stored.refresh_from_db()
+        storage.refresh_from_db()
+        self.assertEqual(stored.name, "renamed.txt")
+        self.assertEqual(stored.folder_id, second_folder.id)
+        self.assertEqual(storage.used_bytes, 15)
+
+        moved_to_root = self.client.post(
+            f"/api/storage/files/{stored.id}/move/",
+            {"folder": ""},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(moved_to_root.status_code, 200)
+        stored.refresh_from_db()
+        self.assertIsNone(stored.folder_id)
+
+    def test_file_rename_and_move_reject_other_users_and_name_collisions(self):
+        self.client.force_login(self.user)
+        folder = Folder.objects.create(owner=self.user, name="Reports")
+        other_folder = Folder.objects.create(owner=self.other_user, name="Private")
+        first = StoredFile.objects.create(
+            owner=self.user, folder=folder, name="first.txt",
+            file=SimpleUploadedFile("first.txt", b"one"), size_bytes=3,
+        )
+        StoredFile.objects.create(
+            owner=self.user, folder=folder, name="taken.txt",
+            file=SimpleUploadedFile("taken.txt", b"two"), size_bytes=3,
+        )
+
+        rename_collision = self.client.post(
+            f"/api/storage/files/{first.id}/rename/",
+            {"name": "taken.txt"},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        move_to_other_owner = self.client.post(
+            f"/api/storage/files/{first.id}/move/",
+            {"folder": other_folder.id},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        invalid_name = self.client.post(
+            f"/api/storage/files/{first.id}/rename/",
+            {"name": "..\\private.txt"},
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        self.assertEqual(rename_collision.status_code, 409)
+        self.assertEqual(move_to_other_owner.status_code, 404)
+        self.assertEqual(invalid_name.status_code, 400)

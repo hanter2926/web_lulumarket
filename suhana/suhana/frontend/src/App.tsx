@@ -18,6 +18,7 @@ import type {
   ActiveView,
   ApiResponse,
   ComparisonResponse,
+  CompressionHistoryItem,
   ImageComparisonResult,
   PdfComparisonResult,
   RegistrationStep,
@@ -35,6 +36,19 @@ const initialForm = {
 const initialLoginForm = {
   identifier: "",
   password: "",
+};
+
+const pageTitles: Record<ActiveView, string> = {
+  auth: "Account",
+  dashboard: "Dashboard",
+  storage: "Files",
+  history: "History",
+  converter: "Unit Converter",
+  "image-size": "Image Size Analyzer",
+  compare: "Compare Files",
+  compress: "Compress Files",
+  plans: "Plans",
+  reset: "Password Reset",
 };
 
 function csvRow(values: Array<string | number | boolean | null>) {
@@ -106,6 +120,7 @@ function App() {
     value: "1",
     from: "gb",
     to: "mb",
+    standard: "decimal" as "decimal" | "binary",
   });
   const [conversionResult, setConversionResult] = useState("");
   const [conversionStatus, setConversionStatus] = useState<ToolStatus>("idle");
@@ -144,6 +159,7 @@ function App() {
   const [folders, setFolders] = useState<ApiResponse["folders"]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [reports, setReports] = useState<ApiResponse["reports"]>([]);
+  const [compressions, setCompressions] = useState<CompressionHistoryItem[]>([]);
   const [resetForm, setResetForm] = useState({ email: "", otp: "", password: "" });
   const [resetRequested, setResetRequested] = useState(false);
   const registrationInFlight = useRef(false);
@@ -364,6 +380,7 @@ function App() {
       setFiles([]);
       setFolders([]);
       setReports([]);
+      setCompressions([]);
       setSelectedFolderId(null);
       setPdfComparison(null);
       setImageComparison(null);
@@ -401,10 +418,11 @@ function App() {
       }
       setConversionResult(`${data.result} ${conversion.to.toUpperCase()}`);
       const report = createTextDownload(
-        `value,from,to,result\r\n${csvRow([
+        `value,from,to,standard,result\r\n${csvRow([
           conversion.value,
           conversion.from,
           conversion.to,
+          conversion.standard,
           data.result ?? "",
         ])}\r\n`,
         "text/csv;charset=utf-8",
@@ -464,7 +482,10 @@ function App() {
       try {
         const response = await fetch("/api/tools/reports/", { credentials: "include" });
         const data = await readJson(response);
-        if (response.ok) setReports(data.reports ?? []);
+        if (response.ok) {
+          setReports(data.reports ?? []);
+          setCompressions(data.compressions ?? []);
+        }
         else setMessage(data.message ?? "Unable to load comparison history.");
       } catch (error: unknown) {
         setMessage(errorMessage(error));
@@ -502,6 +523,40 @@ function App() {
       } catch (error: unknown) {
         setMessage(errorMessage(error));
       }
+  }
+
+  async function handleRenameFile(id: number, currentName: string) {
+    const name = window.prompt("New file name", currentName);
+    if (!name?.trim()) return;
+    try {
+      const response = await fetch(`/api/storage/files/${id}/rename/`, {
+        method: "POST",
+        headers: { "X-CSRFToken": csrfToken },
+        credentials: "include",
+        body: new URLSearchParams({ name: name.trim() }),
+      });
+      const data = await readJson(response);
+      setMessage(data.message ?? (response.ok ? "File renamed." : "Unable to rename file."));
+      if (response.ok) await loadFiles();
+    } catch (error: unknown) {
+      setMessage(errorMessage(error));
+    }
+  }
+
+  async function handleMoveFile(id: number, folderId: number | null) {
+    try {
+      const response = await fetch(`/api/storage/files/${id}/move/`, {
+        method: "POST",
+        headers: { "X-CSRFToken": csrfToken },
+        credentials: "include",
+        body: new URLSearchParams({ folder: folderId === null ? "" : String(folderId) }),
+      });
+      const data = await readJson(response);
+      setMessage(data.message ?? (response.ok ? "File moved." : "Unable to move file."));
+      if (response.ok) await loadFiles();
+    } catch (error: unknown) {
+      setMessage(errorMessage(error));
+    }
   }
 
   async function handleResetRequest(event: React.FormEvent<HTMLFormElement>) {
@@ -1024,8 +1079,8 @@ function App() {
           <button type="button" className={activeView === "plans" ? "nav-active" : "nav-button"}
             onClick={() => setActiveView("plans")}>Plans</button>
         </nav>
-        <p className="eyebrow">WELCOME TO</p>
-        <h1 id="page-title">Suhana</h1>
+        <p className="eyebrow">SUHANA FILE WORKSPACE</p>
+        <h1 id="page-title">{pageTitles[activeView]}</h1>
         <p className="subtitle">
           {activeView === "converter" && "Convert digital storage units"}
           {activeView === "image-size" && "Inspect image size and dimensions"}
@@ -1055,8 +1110,10 @@ function App() {
             selectedFolderId={selectedFolderId} folders={folders ?? []} files={files ?? []}
             onSelectFolder={(id) => { setSelectedFolderId(id); void loadFiles(id); }}
             onCreateFolder={createFolder} onRenameFolder={renameFolder} onDeleteFolder={deleteFolder}
-            onUpload={handleUpload} onDeleteFile={handleDeleteFile} />}
-          {activeView === "history" && <HistoryPanel reports={reports ?? []} />}
+            onUpload={handleUpload} onDeleteFile={handleDeleteFile}
+            onRenameFile={handleRenameFile} onMoveFile={handleMoveFile} />}
+          {activeView === "history" && <HistoryPanel reports={reports ?? []}
+            compressions={compressions} />}
           {activeView === "plans" && <PlansPanel />}
 
           {activeView === "reset" && <ToolPanels active="reset" loading={loading} csrfReady={Boolean(csrfToken)}

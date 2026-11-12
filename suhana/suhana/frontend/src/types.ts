@@ -11,6 +11,12 @@ export type ReportItem = {
   result: { same_content: boolean };
   created_at: string;
 };
+export type CompressionHistoryItem = {
+  id: string;
+  first_name: string;
+  result: { input_bytes: number; output_bytes: number; content_type: string };
+  created_at: string;
+};
 
 export type PdfPageResult = {
   page: number;
@@ -76,11 +82,18 @@ export type ApiResponse = {
   wait_seconds?: number;
   result?: number;
   username?: string;
-  storage?: { used_bytes: number; quota_bytes: number; plan: string } | null;
+  storage?: {
+    used_bytes: number;
+    quota_bytes: number;
+    available_bytes: number;
+    plan: string;
+  } | null;
   file_count?: number;
   recent_files?: Array<{ id: number; name: string; size_bytes: number; content_type: string }>;
+  recent_activities?: Array<{ type: string; description: string; created_at: string }>;
   files?: FileItem[];
   reports?: ReportItem[];
+  compressions?: CompressionHistoryItem[];
   folders?: FolderItem[];
   job_id?: string;
   job_token?: string;

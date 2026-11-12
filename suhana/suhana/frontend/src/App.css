@@ -36,9 +36,12 @@ body {
 }
 
 .register-card-auth,
-.register-card-reset,
-.register-card-converter {
+.register-card-reset {
   max-width: 440px;
+}
+
+.register-card-converter {
+  max-width: 640px;
 }
 
 .register-card-image-size {
@@ -334,6 +337,23 @@ button:disabled {
   padding-inline: 6px;
   color: #173a8a;
   font-weight: 750;
+}
+
+.conversion-standards label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 500;
+}
+
+.conversion-standards input[type="radio"] {
+  flex: 0 0 18px;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
 }
 
 .analyzer-option-group {
@@ -670,6 +690,21 @@ form > a:hover {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+.file-list li > span:last-child select {
+  width: auto;
+  min-width: 7rem;
+  max-width: 12rem;
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.file-move-label {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
 }
 
 .danger-button {

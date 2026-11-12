@@ -13,5 +13,7 @@ urlpatterns = [
     path("folders/<int:folder_id>/delete/", views.delete_folder, name="delete_folder"),
     path("files/upload/", views.upload_file, name="upload_file"),
     path("files/<int:file_id>/download/", views.download_file, name="download_file"),
+    path("files/<int:file_id>/rename/", views.rename_file, name="rename_file"),
+    path("files/<int:file_id>/move/", views.move_file, name="move_file"),
     path("files/<int:file_id>/delete/", views.delete_file, name="delete_file"),
 ]

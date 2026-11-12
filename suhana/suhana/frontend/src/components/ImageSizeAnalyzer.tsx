@@ -18,7 +18,8 @@ type AnalyzerOptions = {
   mimeType: boolean;
 };
 
-type AnalyzerStatus = "idle" | "file_selected" | "processing" | "success" | "error";
+type AnalyzerStatus = "idle" | "processing" | "success" | "error";
+const MAX_IMAGE_SIZE_BYTES = 25 * 1024 * 1024;
 
 const initialOptions: AnalyzerOptions = {
   units: ["Bytes", "KB", "MB"],
@@ -106,12 +107,19 @@ export default function ImageSizeAnalyzer() {
     setError("");
     setReportDownload(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(selectedFile ? URL.createObjectURL(selectedFile) : "");
     if (!selectedFile) {
+      setPreviewUrl("");
       setStatus("idle");
       return;
     }
+    if (selectedFile.size > MAX_IMAGE_SIZE_BYTES) {
+      setPreviewUrl("");
+      setError("Choose an image that is 25 MB or smaller.");
+      setStatus("error");
+      return;
+    }
 
+    setPreviewUrl(URL.createObjectURL(selectedFile));
     setStatus("processing");
     try {
       const header = new Uint8Array(await selectedFile.slice(0, 12).arrayBuffer());
@@ -156,16 +164,11 @@ export default function ImageSizeAnalyzer() {
 
   function updateOptions(nextOptions: AnalyzerOptions) {
     setOptions(nextOptions);
-    setReportDownload(null);
-    if (details) setStatus("file_selected");
-  }
-
-  function applyOptions() {
-    if (!file || !details) return;
-    const report = createReport(file, details, options);
-    setReportDownload(report);
-    setError("");
-    setStatus("success");
+    if (file && details) {
+      setReportDownload(createReport(file, details, nextOptions));
+      setError("");
+      setStatus("success");
+    }
   }
 
   function resetOptions() {
@@ -186,8 +189,10 @@ export default function ImageSizeAnalyzer() {
       <div>
         <h2 id="image-analyzer-title">Image Size Analyzer</h2>
         <p className="helper-text">
-          Image data stays in your browser. Decimal units use 1,000; binary units use 1,024.
-          A compressed-size estimate is unavailable unless an actual compression is run.
+          Inspect PNG, JPEG, GIF, or WEBP images up to 25 MB. Choose an image to see its preview,
+          exact byte count, dimensions, aspect ratio, detected format, and MIME type. Then adjust
+          the display options; the results and optional CSV report update immediately. Image data
+          stays in your browser. Decimal uses 1,000 and binary uses 1,024 bytes per KB.
         </p>
       </div>
       <label htmlFor="analyzer-image">Image file</label>
@@ -248,8 +253,6 @@ export default function ImageSizeAnalyzer() {
         </div>
         <div className="analyzer-option-actions">
           <button type="button" className="secondary-button" onClick={resetOptions}>Reset Options</button>
-          {status === "file_selected" &&
-            <button type="button" onClick={applyOptions}>Apply display options</button>}
         </div>
       </fieldset>
 

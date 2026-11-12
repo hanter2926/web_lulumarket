@@ -1,12 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import ToolPanels from "./ToolPanels";
 
 const props = {
   active: "compare" as const,
   loading: false,
   csrfReady: true,
-  conversion: { value: "1", from: "gb", to: "mb" },
+  conversion: { value: "1", from: "gb", to: "mb", standard: "decimal" as const },
   conversionResult: "",
   conversionStatus: "idle" as const,
   conversionDownload: null,
@@ -33,6 +33,18 @@ const props = {
 };
 
 describe("ToolPanels", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("offers decimal and binary standards for unit conversion", () => {
+    render(<ToolPanels {...props} active="converter" />);
+
+    expect(screen.getByLabelText("Decimal (1 KB = 1,000 bytes)")).toBeChecked();
+    fireEvent.click(screen.getByLabelText("Binary (1 KB = 1,024 bytes)"));
+    expect(props.onConversionChange).toHaveBeenCalledWith("standard", "binary");
+  });
+
   it("requires and exposes both comparison uploads", () => {
     render(<ToolPanels {...props} />);
 
@@ -40,6 +52,37 @@ describe("ToolPanels", () => {
     expect(screen.getByLabelText("Second file")).toBeRequired();
     fireEvent.submit(screen.getByRole("button", { name: "Compare files" }).closest("form")!);
     expect(props.onComparison).toHaveBeenCalled();
+  });
+
+  it("previews supported image files and validates each comparison input independently", async () => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn((file: File) => `blob:${file.name}`),
+      revokeObjectURL: vi.fn(),
+    });
+    render(<ToolPanels {...props} />);
+
+    fireEvent.change(screen.getByLabelText("First file"), {
+      target: { files: [new File([
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      ], "first.png")] },
+    });
+    fireEvent.change(screen.getByLabelText("Second file"), {
+      target: { files: [new File([
+        new Uint8Array([0xff, 0xd8, 0xff, 0x00]),
+      ], "second.jpg")] },
+    });
+
+    expect(await screen.findByText("first.png · image/png · 8 bytes")).toBeInTheDocument();
+    expect(screen.getByText("second.jpg · image/jpeg · 4 bytes")).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: /Preview of/ })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Compare files" })).toBeEnabled();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith("blob:first.png");
+
+    fireEvent.change(screen.getByLabelText("Second file"), {
+      target: { files: [new File(["not an image"], "invalid.txt")] },
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("not a supported");
+    expect(screen.getByRole("button", { name: "Compare files" })).toBeDisabled();
   });
 
   it("renders PDF page visual results and overlays", () => {

@@ -5,6 +5,8 @@ from django.db import IntegrityError, transaction
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
+from tools.models import ComparisonJob, ComparisonReport
+
 from .models import Folder, StoredFile, UserStorage
 
 MAX_STORAGE_FILE_SIZE = 25 * 1024 * 1024
@@ -23,6 +25,30 @@ def dashboard(request):
         return error
     storage = UserStorage.objects.select_related("plan").filter(user=request.user).first()
     files = StoredFile.objects.filter(owner=request.user)
+    comparisons = ComparisonReport.objects.filter(owner=request.user).order_by("-created_at").values(
+        "first_name", "second_name", "created_at"
+    )[:10]
+    compressions = ComparisonJob.objects.filter(
+        owner=request.user,
+        job_type=ComparisonJob.Type.COMPRESSION,
+        status=ComparisonJob.Status.SUCCEEDED,
+    ).order_by("-created_at").values("first_name", "created_at")[:10]
+    activities = [
+        {
+            "type": "comparison",
+            "description": f"{item['first_name']} compared with {item['second_name']}",
+            "created_at": item["created_at"].isoformat(),
+        }
+        for item in comparisons
+    ] + [
+        {
+            "type": "compression",
+            "description": f"Compressed {item['first_name']}",
+            "created_at": item["created_at"].isoformat(),
+        }
+        for item in compressions
+    ]
+    activities.sort(key=lambda activity: activity["created_at"], reverse=True)
     return JsonResponse(
         {
             "success": True,
@@ -33,11 +59,13 @@ def dashboard(request):
             else {
                 "used_bytes": storage.used_bytes,
                 "quota_bytes": storage.plan.quota_bytes,
+                "available_bytes": storage.available_bytes,
                 "plan": storage.plan.name,
             },
             "recent_files": list(
                 files.values("id", "name", "size_bytes", "content_type", "updated_at")[:10]
             ),
+            "recent_activities": activities[:10],
         }
     )
 
@@ -203,6 +231,56 @@ def download_file(request, file_id):
         response["Content-Type"] = stored.content_type
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+@require_POST
+def rename_file(request, file_id):
+    error = _auth_error(request)
+    if error:
+        return error
+    stored = StoredFile.objects.filter(id=file_id, owner=request.user).first()
+    if stored is None:
+        return JsonResponse({"success": False, "message": "File not found."}, status=404)
+    name = str(request.POST.get("name", "")).strip()
+    if (
+        not name
+        or len(name) > 255
+        or name in {".", ".."}
+        or "/" in name
+        or "\\" in name
+        or any(ord(character) < 32 or ord(character) == 127 for character in name)
+    ):
+        return JsonResponse({"success": False, "message": "A valid file name is required."}, status=400)
+    stored.name = name
+    try:
+        with transaction.atomic():
+            stored.save(update_fields=["name", "updated_at"])
+    except IntegrityError:
+        return JsonResponse({"success": False, "message": "A file with that name already exists in this folder."}, status=409)
+    return JsonResponse({"success": True, "message": "File renamed."})
+
+
+@require_POST
+def move_file(request, file_id):
+    error = _auth_error(request)
+    if error:
+        return error
+    stored = StoredFile.objects.filter(id=file_id, owner=request.user).first()
+    if stored is None:
+        return JsonResponse({"success": False, "message": "File not found."}, status=404)
+    folder_id = request.POST.get("folder", "").strip()
+    folder = None
+    if folder_id:
+        folder = Folder.objects.filter(id=folder_id, owner=request.user).first()
+        if folder is None:
+            return JsonResponse({"success": False, "message": "Destination folder not found."}, status=404)
+    stored.folder = folder
+    try:
+        with transaction.atomic():
+            stored.save(update_fields=["folder", "updated_at"])
+    except IntegrityError:
+        return JsonResponse({"success": False, "message": "A file with that name already exists in the destination folder."}, status=409)
+    return JsonResponse({"success": True, "message": "File moved."})
 
 
 @require_POST
