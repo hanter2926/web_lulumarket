@@ -45,9 +45,6 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 this.disabled = true;
                 await addToCart(productId, quantity);
-                if (typeof updateNavbarCounts === 'function') {
-                    await updateNavbarCounts();
-                }
             } catch (error) {
                 console.error(error);
                 alert(error.message || 'Unable to add to cart.');

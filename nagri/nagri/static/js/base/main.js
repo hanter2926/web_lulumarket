@@ -62,7 +62,9 @@ async function addToCart(productId, quantity = 1) {
     });
 
     if (payload && payload.success) {
-        await updateNavbarCounts();
+        if (!updateNavbarCount('.cart-count', payload.count)) {
+            await updateNavbarCounts();
+        }
         return payload;
     }
 
@@ -93,7 +95,9 @@ async function toggleWishlist(productId) {
     });
 
     if (payload && payload.success) {
-        await updateNavbarCounts();
+        if (!updateNavbarCount('.wishlist-count', payload.count)) {
+            await updateNavbarCounts();
+        }
         return payload;
     }
 
@@ -109,18 +113,17 @@ async function toggleWishlist(productId) {
 
 async function updateNavbarCounts() {
     try {
-        const cartPayload = await fetchJson('/cart/count/', { method: 'GET' });
-        const wishlistPayload = await fetchJson('/wishlist/count/', { method: 'GET' });
+        const [cartPayload, wishlistPayload] = await Promise.all([
+            fetchJson('/cart/count/', { method: 'GET' }),
+            fetchJson('/wishlist/count/', { method: 'GET' }),
+        ]);
 
-        document.querySelectorAll('.cart-count').forEach((countNode) => {
-            countNode.textContent = cartPayload.count || 0;
-            countNode.style.display = Number(cartPayload.count || 0) > 0 ? 'inline-flex' : 'none';
-        });
-
-        document.querySelectorAll('.wishlist-count').forEach((countNode) => {
-            countNode.textContent = wishlistPayload.count || 0;
-            countNode.style.display = Number(wishlistPayload.count || 0) > 0 ? 'inline-flex' : 'none';
-        });
+        if (!updateNavbarCount('.cart-count', cartPayload.count)) {
+            updateNavbarCount('.cart-count', 0);
+        }
+        if (!updateNavbarCount('.wishlist-count', wishlistPayload.count)) {
+            updateNavbarCount('.wishlist-count', 0);
+        }
     } catch (error) {
         document.querySelectorAll('.cart-count').forEach((countNode) => {
             countNode.textContent = '0';
@@ -131,6 +134,16 @@ async function updateNavbarCounts() {
             countNode.style.display = 'none';
         });
     }
+}
+
+function updateNavbarCount(selector, count) {
+    if (!Number.isInteger(count) || count < 0) return false;
+
+    document.querySelectorAll(selector).forEach((countNode) => {
+        countNode.textContent = count;
+        countNode.style.display = count > 0 ? 'inline-flex' : 'none';
+    });
+    return true;
 }
 
 function formatCountdownValue(value) {
@@ -303,7 +316,7 @@ function initializeMysteryRewardWidget() {
 }
 
 function bindGenericActionButtons() {
-    document.querySelectorAll('.add-to-cart, .add-to-cart-btn').forEach((button) => {
+    document.querySelectorAll('.add-to-cart').forEach((button) => {
         if (button.dataset.bound === 'true') return;
         button.dataset.bound = 'true';
         button.addEventListener('click', async function (event) {
@@ -342,7 +355,7 @@ function bindGenericActionButtons() {
         });
     });
 
-    document.querySelectorAll('.add-to-wishlist, .add-to-wishlist-btn').forEach((button) => {
+    document.querySelectorAll('.add-to-wishlist').forEach((button) => {
         if (button.dataset.bound === 'true') return;
         button.dataset.bound = 'true';
         button.addEventListener('click', async function (event) {
