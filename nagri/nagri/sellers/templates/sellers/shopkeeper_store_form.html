@@ -1,4 +1,5 @@
 {% extends 'base/base.html' %}
+{% load static %}
 {% block title %}{% if is_edit %}Edit Store{% else %}Add Store{% endif %}{% endblock %}
 
 {% block content %}
@@ -14,36 +15,62 @@
 
     <form method="post" class="card p-4">
         {% csrf_token %}
+        {{ form.non_field_errors }}
         <div class="row g-3">
             <div class="col-md-6">
-                <label class="form-label">Store Name</label>
-                <input type="text" name="name" class="form-control" value="{% if store %}{{ store.name }}{% endif %}" required>
+                <label class="form-label" for="{{ form.name.id_for_label }}">Store Name</label>
+                {{ form.name }}
+                {{ form.name.errors }}
             </div>
             <div class="col-md-6">
-                <label class="form-label">Phone</label>
-                <input type="text" name="phone" class="form-control" value="{% if store %}{{ store.phone }}{% endif %}">
+                <label class="form-label" for="{{ form.phone.id_for_label }}">Phone</label>
+                {{ form.phone }}
+                {{ form.phone.errors }}
             </div>
             <div class="col-md-12">
-                <label class="form-label">Address</label>
-                <textarea name="address" class="form-control" rows="3">{% if store %}{{ store.address }}{% endif %}</textarea>
+                <label class="form-label" for="{{ form.address.id_for_label }}">Address</label>
+                {{ form.address }}
+                {{ form.address.errors }}
             </div>
             <div class="col-md-4">
-                <label class="form-label">City</label>
-                <input type="text" name="city" class="form-control" value="{% if store %}{{ store.city }}{% endif %}">
+                <label class="form-label" for="{{ form.city.id_for_label }}">City</label>
+                {{ form.city }}
+                {{ form.city.errors }}
             </div>
             <div class="col-md-4">
-                <label class="form-label">State</label>
-                <input type="text" name="state" class="form-control" value="{% if store %}{{ store.state }}{% endif %}">
+                <label class="form-label" for="{{ form.state.id_for_label }}">State</label>
+                {{ form.state }}
+                {{ form.state.errors }}
             </div>
             <div class="col-md-4">
-                <label class="form-label">Pincode</label>
-                <input type="text" name="pincode" class="form-control" value="{% if store %}{{ store.pincode }}{% endif %}">
+                <label class="form-label" for="{{ form.pincode.id_for_label }}">Pincode</label>
+                {{ form.pincode }}
+                {{ form.pincode.errors }}
+            </div>
+            <div class="col-12">
+                <h5 class="mb-1">Shop Location</h5>
+                <p class="text-muted mb-2">Location is optional. Detect it only when you are at the shop, or enter coordinates manually.</p>
+                <button type="button" class="btn btn-outline-primary" id="detect-shop-location">
+                    Detect My Shop Location
+                </button>
+                <div id="shop-location-status" class="small mt-2" role="status" aria-live="polite"></div>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="{{ form.latitude.id_for_label }}">Latitude (optional)</label>
+                {{ form.latitude }}
+                {{ form.latitude.errors }}
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="{{ form.longitude.id_for_label }}">Longitude (optional)</label>
+                {{ form.longitude }}
+                {{ form.longitude.errors }}
             </div>
             {% if is_edit %}
             <div class="col-12">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="is_active" id="is_active" {% if store.is_active %}checked{% endif %}>
-                    <label class="form-check-label" for="is_active">Active</label>
+                    {{ form.is_active }}
+                    <label class="form-check-label" for="{{ form.is_active.id_for_label }}">Active</label>
+                    {{ form.is_active.errors }}
                 </div>
             </div>
             {% endif %}
@@ -54,4 +81,5 @@
         </div>
     </form>
 </div>
+<script src="{% static 'js/sellers/shopkeeper-store-location.js' %}" defer></script>
 {% endblock %}

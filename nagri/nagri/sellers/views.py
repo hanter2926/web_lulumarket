@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -29,7 +30,7 @@ from .serializers import (
     ShopkeeperSerializer,
     StoreSerializer,
 )
-from .forms import OTPVerifyForm, SellerDocumentsForm, CategorySelectionForm, SellerProductForm
+from .forms import OTPVerifyForm, SellerDocumentsForm, CategorySelectionForm, SellerProductForm, ShopkeeperStoreForm
 from .forms import TestEmailForm
 from accounts.models import CustomUser
 from products.models import Category, Product
@@ -1017,22 +1018,28 @@ def shopkeeper_store_add(request):
     shopkeeper = _get_shopkeeper_for_user(request.user)
     if shopkeeper is None:
         return HttpResponseForbidden()
+    store = Store(shopkeeper=shopkeeper)
+    form = ShopkeeperStoreForm(
+        request.POST if request.method == "POST" else None,
+        instance=store,
+        include_is_active=False,
+    )
     if request.method == "POST":
-        name = (request.POST.get("name") or "").strip()
-        address = (request.POST.get("address") or "").strip()
-        city = (request.POST.get("city") or "").strip()
-        state = (request.POST.get("state") or "").strip()
-        pincode = (request.POST.get("pincode") or "").strip()
-        phone = (request.POST.get("phone") or "").strip()
-        if not name:
-            messages.error(request, "Store name is required.")
-        else:
-            slug = name.lower().replace("&", "and").replace(" ", "-")
+        if form.is_valid():
+            store = form.save(commit=False)
+            slug = store.name.lower().replace("&", "and").replace(" ", "-")
             slug = re.sub(r"[^a-z0-9-]+", "-", slug).strip("-") or "store"
-            store = Store.objects.create(shopkeeper=shopkeeper, name=name, slug=slug, address=address, city=city, state=state, pincode=pincode, phone=phone)
+            store.shopkeeper = shopkeeper
+            store.slug = slug
+            store.save()
             messages.success(request, "Store created successfully.")
             return redirect("sellers:shopkeeper_store_detail", pk=store.pk)
-    return render(request, "sellers/shopkeeper_store_form.html", {"shopkeeper": shopkeeper, "is_edit": False})
+    return render(request, "sellers/shopkeeper_store_form.html", {
+        "shopkeeper": shopkeeper,
+        "store": store,
+        "form": form,
+        "is_edit": False,
+    })
 
 
 @login_required
@@ -1057,18 +1064,21 @@ def shopkeeper_store_edit(request, pk):
     store, forbidden = _get_owned_store_or_403(request.user, pk)
     if forbidden is not None:
         return forbidden
+    form = ShopkeeperStoreForm(
+        request.POST if request.method == "POST" else None,
+        instance=store,
+    )
     if request.method == "POST":
-        store.name = (request.POST.get("name") or store.name).strip()
-        store.address = (request.POST.get("address") or "").strip()
-        store.city = (request.POST.get("city") or "").strip()
-        store.state = (request.POST.get("state") or "").strip()
-        store.pincode = (request.POST.get("pincode") or "").strip()
-        store.phone = (request.POST.get("phone") or "").strip()
-        store.is_active = request.POST.get("is_active") == "on"
-        store.save(update_fields=["name", "address", "city", "state", "pincode", "phone", "is_active", "updated_at"])
-        messages.success(request, "Store updated successfully.")
-        return redirect("sellers:shopkeeper_store_detail", pk=store.pk)
-    return render(request, "sellers/shopkeeper_store_form.html", {"shopkeeper": shopkeeper, "store": store, "is_edit": True})
+        if form.is_valid():
+            store = form.save()
+            messages.success(request, "Store updated successfully.")
+            return redirect("sellers:shopkeeper_store_detail", pk=store.pk)
+    return render(request, "sellers/shopkeeper_store_form.html", {
+        "shopkeeper": shopkeeper,
+        "store": store,
+        "form": form,
+        "is_edit": True,
+    })
 
 
 @login_required

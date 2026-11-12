@@ -1,9 +1,53 @@
 import re
 from django import forms
-from .models import SellerApplication
+from .models import SellerApplication, Store
 from products.models import Category, Product, SubCategory
 
 from PIL import Image, UnidentifiedImageError
+
+
+class ShopkeeperStoreForm(forms.ModelForm):
+    class Meta:
+        model = Store
+        fields = (
+            "name",
+            "phone",
+            "address",
+            "city",
+            "state",
+            "pincode",
+            "latitude",
+            "longitude",
+            "is_active",
+        )
+        widgets = {
+            "name": forms.TextInput(attrs={"class": "form-control"}),
+            "phone": forms.TextInput(attrs={"class": "form-control"}),
+            "address": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "city": forms.TextInput(attrs={"class": "form-control"}),
+            "state": forms.TextInput(attrs={"class": "form-control"}),
+            "pincode": forms.TextInput(attrs={"class": "form-control"}),
+            "latitude": forms.NumberInput(attrs={
+                "class": "form-control",
+                "step": "any",
+                "inputmode": "decimal",
+                "min": "-90",
+                "max": "90",
+            }),
+            "longitude": forms.NumberInput(attrs={
+                "class": "form-control",
+                "step": "any",
+                "inputmode": "decimal",
+                "min": "-180",
+                "max": "180",
+            }),
+            "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+    def __init__(self, *args, include_is_active=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not include_is_active:
+            self.fields.pop("is_active")
 
 
 class OTPRequestForm(forms.Form):

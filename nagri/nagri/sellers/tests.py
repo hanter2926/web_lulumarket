@@ -1104,3 +1104,186 @@ class ShopkeeperStoreDeliveryBackendTests(TestCase):
         api.force_authenticate(user=self.user)
         response = api.post('/sellers/api/local/incidents/', {'title': 'No access'}, format='json')
         self.assertEqual(response.status_code, 403)
+
+
+class ShopkeeperStoreLocationTests(TestCase):
+    def setUp(self):
+        from sellers.models import Shopkeeper
+
+        self.shopkeeper_user = CustomUser.objects.create_user(
+            email="location-shop@example.com",
+            username="location-shop",
+            password="pass",
+        )
+        self.other_user = CustomUser.objects.create_user(
+            email="other-location-shop@example.com",
+            username="other-location-shop",
+            password="pass",
+        )
+        self.shopkeeper = Shopkeeper.objects.create(
+            user=self.shopkeeper_user,
+            status="active",
+        )
+        self.other_shopkeeper = Shopkeeper.objects.create(
+            user=self.other_user,
+            status="active",
+        )
+
+    def test_store_form_shows_optional_coordinates_and_click_to_detect_control(self):
+        self.client.force_login(self.shopkeeper_user)
+        response = self.client.get(reverse("sellers:shopkeeper_store_add"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Detect My Shop Location")
+        self.assertContains(response, 'name="latitude"')
+        self.assertContains(response, 'name="longitude"')
+        self.assertContains(response, 'id="shop-location-status"')
+        self.assertContains(
+            response,
+            "js/sellers/shopkeeper-store-location.js",
+        )
+
+    def test_store_can_be_created_without_gps_coordinates(self):
+        from sellers.models import Store
+
+        self.client.force_login(self.shopkeeper_user)
+        response = self.client.post(
+            reverse("sellers:shopkeeper_store_add"),
+            {
+                "name": "Manual Address Shop",
+                "phone": "1234567890",
+                "address": "12 Market Road",
+                "city": "Bengaluru",
+                "state": "Karnataka",
+                "pincode": "560001",
+                "latitude": "",
+                "longitude": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        store = Store.objects.get(shopkeeper=self.shopkeeper)
+        self.assertIsNone(store.latitude)
+        self.assertIsNone(store.longitude)
+        self.assertEqual(store.address, "12 Market Road")
+
+    def test_invalid_or_partial_coordinates_are_rejected(self):
+        from sellers.models import Store
+
+        self.client.force_login(self.shopkeeper_user)
+        url = reverse("sellers:shopkeeper_store_add")
+        data = {
+            "name": "Invalid Coordinates Shop",
+            "address": "Keep this address",
+            "latitude": "91",
+            "longitude": "181",
+        }
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "less than or equal to 90")
+        self.assertFalse(Store.objects.filter(shopkeeper=self.shopkeeper).exists())
+
+        data.update(latitude="12.5", longitude="")
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Enter both coordinates")
+        self.assertFalse(Store.objects.filter(shopkeeper=self.shopkeeper).exists())
+
+    def test_shopkeeper_can_edit_coordinates_without_changing_address(self):
+        from sellers.models import Store
+
+        store = Store.objects.create(
+            shopkeeper=self.shopkeeper,
+            name="Existing Location Shop",
+            slug="existing-location-shop",
+            address="Manually entered address",
+        )
+        self.client.force_login(self.shopkeeper_user)
+        response = self.client.post(
+            reverse("sellers:shopkeeper_store_edit", args=[store.pk]),
+            {
+                "name": store.name,
+                "phone": "",
+                "address": "Manually entered address",
+                "city": "",
+                "state": "",
+                "pincode": "",
+                "latitude": "12.971600",
+                "longitude": "77.594600",
+                "is_active": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        store.refresh_from_db()
+        self.assertEqual(store.latitude, Decimal("12.971600"))
+        self.assertEqual(store.longitude, Decimal("77.594600"))
+        self.assertEqual(store.address, "Manually entered address")
+
+    def test_shopkeeper_cannot_edit_another_shopkeepers_store_location(self):
+        from sellers.models import Store
+
+        store = Store.objects.create(
+            shopkeeper=self.other_shopkeeper,
+            name="Other Shop",
+            slug="other-location-shop",
+            latitude=Decimal("10"),
+            longitude=Decimal("20"),
+        )
+        self.client.force_login(self.shopkeeper_user)
+        response = self.client.post(
+            reverse("sellers:shopkeeper_store_edit", args=[store.pk]),
+            {
+                "name": store.name,
+                "latitude": "30",
+                "longitude": "40",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        store.refresh_from_db()
+        self.assertEqual(store.latitude, Decimal("10"))
+        self.assertEqual(store.longitude, Decimal("20"))
+
+    def test_admin_can_view_and_update_store_coordinates(self):
+        from sellers.models import Store
+
+        admin_user = CustomUser.objects.create_superuser(
+            email="location-admin@example.com",
+            username="location-admin",
+            password="adminpass",
+        )
+        store = Store.objects.create(
+            shopkeeper=self.shopkeeper,
+            name="Admin Location Shop",
+            slug="admin-location-shop",
+        )
+        self.client.force_login(admin_user)
+        change_url = reverse("admin:sellers_store_change", args=[store.pk])
+
+        response = self.client.get(change_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="latitude"')
+        self.assertContains(response, 'name="longitude"')
+
+        response = self.client.post(
+            change_url,
+            {
+                "shopkeeper": self.shopkeeper.pk,
+                "area": "",
+                "name": store.name,
+                "slug": store.slug,
+                "address": "",
+                "city": "",
+                "latitude": "34.5",
+                "longitude": "-117.25",
+                "state": "",
+                "pincode": "",
+                "phone": "",
+                "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        store.refresh_from_db()
+        self.assertEqual(store.latitude, Decimal("34.5"))
+        self.assertEqual(store.longitude, Decimal("-117.25"))

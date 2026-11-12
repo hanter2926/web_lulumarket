@@ -10,6 +10,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
 from uuid import uuid4
@@ -104,16 +105,18 @@ class Store(models.Model):
     address = models.TextField(blank=True, null=True)
     city = models.CharField(max_length=100, blank=True, null=True)
     latitude = models.DecimalField(
-    max_digits=9,
-    decimal_places=6,
-    blank=True,
-    null=True
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(-90), MaxValueValidator(90)],
     )
     longitude = models.DecimalField(
-    max_digits=9,
-    decimal_places=6,
-    blank=True,
-    null=True
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(-180), MaxValueValidator(180)],
     )
     state = models.CharField(max_length=100, blank=True, null=True)
     pincode = models.CharField(max_length=20, blank=True, null=True)
@@ -124,6 +127,33 @@ class Store(models.Model):
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(latitude__isnull=True)
+                | models.Q(latitude__gte=-90, latitude__lte=90),
+                name="store_latitude_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(longitude__isnull=True)
+                | models.Q(longitude__gte=-180, longitude__lte=180),
+                name="store_longitude_range",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(latitude__isnull=True, longitude__isnull=True)
+                    | models.Q(latitude__isnull=False, longitude__isnull=False)
+                ),
+                name="store_coordinates_paired",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValidationError({
+                "latitude": "Enter both coordinates, or leave both blank.",
+                "longitude": "Enter both coordinates, or leave both blank.",
+            })
 
     def __str__(self):
         return self.name
