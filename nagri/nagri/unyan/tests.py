@@ -3,6 +3,7 @@ from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import ValidationError
+from products.models import Category
 from .models import HomeSlider
 from PIL import Image
 import io
@@ -352,6 +353,30 @@ class HomepageSliderDisplayTests(TestCase):
         response = self.client.get(reverse('home'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Welcome to Nagri')
+
+    def test_homepage_categories_render_in_duplicate_marquee_groups(self):
+        category = Category.objects.create(
+            name='Fresh Produce',
+            slug='fresh-produce',
+        )
+
+        response = self.client.get(reverse('home'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="category-marquee__group" role="list"', count=2)
+        self.assertContains(
+            response,
+            'class="category-marquee__group" role="list" aria-hidden="true"',
+            count=1,
+        )
+        self.assertContains(
+            response,
+            f'?category={category.pk}',
+            count=2,
+        )
+        self.assertContains(response, 'Fresh Produce', count=2)
+        self.assertContains(response, 'fas fa-leaf', count=2)
+        self.assertContains(response, 'tabindex="-1"', count=1)
     
     def test_homepage_with_active_sliders(self):
         """Test homepage displays active sliders."""
@@ -411,4 +436,3 @@ class HomepageSliderDisplayTests(TestCase):
         first_pos = content.find('First Slider')
         second_pos = content.find('Second Slider')
         self.assertLess(first_pos, second_pos)
-
