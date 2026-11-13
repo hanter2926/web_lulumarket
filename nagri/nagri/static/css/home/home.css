@@ -1330,7 +1330,7 @@
     #homeSlider,
     #homeSlider .carousel-inner,
     #homeSlider .carousel-item {
-        width: 100%;
+        width: auto;
         overflow: hidden;
     }
 
