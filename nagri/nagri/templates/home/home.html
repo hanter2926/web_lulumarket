@@ -40,6 +40,21 @@
             #homeSlider .carousel-item {
                 min-height: 0;
                 aspect-ratio: 3 / 1;
+                height: auto;
+                overflow: hidden;
+                background-color: #243c65;
+            }
+
+            #homeSlider .carousel-item::before {
+                content: "";
+                position: absolute;
+                inset: -5%;
+                background-image: var(--slider-background-image);
+                background-position: center;
+                background-size: cover;
+                filter: blur(18px);
+                transform: scale(1.05);
+                opacity: 0.85;
             }
 
             #homeSlider .carousel-item img {
@@ -49,6 +64,7 @@
                 height: 100%;
                 object-fit: contain;
                 object-position: center;
+                z-index: 1;
             }
         }
         
@@ -57,7 +73,7 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+            background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.35), transparent);
             padding: 30px;
             color: white;
             text-align: left;
@@ -68,13 +84,15 @@
             font-size: 36px;
             font-weight: 700;
             margin: 0 0 10px 0;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            color: #fff;
+            text-shadow: 2px 2px 5px rgba(0,0,0,0.85);
         }
         
         .carousel-caption p {
             font-size: 18px;
             margin: 0 0 20px 0;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+            color: #fff;
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.9);
         }
         
         .carousel-caption .btn {
@@ -193,7 +211,7 @@
             <div id="homeSlider" class="carousel slide" data-bs-ride="carousel" data-bs-interval="5000">
                 <div class="carousel-inner">
                     {% for slide in sliders %}
-                    <div class="carousel-item {% if forloop.first %}active{% endif %}">
+                    <div class="carousel-item {% if forloop.first %}active{% endif %}" style="--slider-background-image: url('{{ slide.image.url }}');">
                         <!-- Use mobile image on mobile, desktop on larger screens -->
                         {% if slide.mobile_image %}
                             <img src="{{ slide.mobile_image.url }}" class="d-block w-100 d-md-none" alt="{{ slide.title }}">
