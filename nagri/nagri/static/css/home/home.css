@@ -1498,16 +1498,17 @@
     }
 
     #homeSlider,
-    #homeSlider .carousel-inner,
-    #homeSlider .carousel-item {
-        width: auto;
+    #homeSlider .carousel-inner {
+        width: 100%;
         overflow: hidden;
     }
 
     #homeSlider .carousel-item {
+        width: 100%;
         min-height: 0 !important;
         height: clamp(220px, 68vw, 280px);
         position: relative;
+        overflow: hidden;
     }
 
     #homeSlider .carousel-item img {
