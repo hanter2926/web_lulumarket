@@ -31,6 +31,15 @@
                 <div class="col-md-6">
                     <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
                     {{ field }}
+                    {% if field.name == "image" %}
+                        <div class="seller-product-image-preview" id="product-image-preview" {% if not product or not product.image %}hidden{% endif %}>
+                            <img
+                                id="product-image-preview-image"
+                                alt="{% if product %}{{ product.name }} image preview{% else %}Product image preview{% endif %}"
+                                {% if product and product.image %}src="{{ product.image.url }}"{% endif %}
+                            >
+                        </div>
+                    {% endif %}
                     {% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}
                     {% if field.errors %}<div class="text-danger">{{ field.errors }}</div>{% endif %}
                 </div>
@@ -55,4 +64,5 @@
 {% endblock %}
 {% block extra_js %}
 <script src="{% static 'sellers/js/product_attributes.js' %}"></script>
+<script src="{% static 'sellers/js/product_image_preview.js' %}"></script>
 {% endblock %}

@@ -370,6 +370,28 @@ class SellerFlowTests(TestCase):
         response = self.client.get(reverse('sellers:product_list'))
         self.assertIn(response.status_code, (302, 403))
 
+    def test_seller_product_form_renders_image_preview(self):
+        seller = CustomUser.objects.create_user(
+            email="image-preview-seller@example.com",
+            username="image-preview-seller",
+            password="pass",
+            is_vendor=True,
+        )
+        SellerApplication.objects.create(
+            user=seller,
+            email=seller.email,
+            status="approved",
+        )
+        self.client.force_login(seller)
+
+        response = self.client.get(reverse("sellers:product_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="id_image"')
+        self.assertContains(response, 'id="product-image-preview" hidden')
+        self.assertContains(response, 'id="product-image-preview-image"')
+        self.assertContains(response, "sellers/js/product_image_preview.js")
+
     def test_approved_vendor_can_view_and_create_own_products(self):
         seller = CustomUser.objects.create_user(email='seller@example.com', username='seller', password='pass', is_vendor=True)
         allowed_category = Category.objects.create(name='Allowed Cat', slug='allowed-cat')

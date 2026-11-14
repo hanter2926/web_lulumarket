@@ -23,3 +23,34 @@
     margin-top: 0.35rem;
     font-size: 0.9rem;
 }
+
+.seller-product-image-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 180px;
+    max-height: 280px;
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f9fafb;
+}
+
+.seller-product-image-preview[hidden] {
+    display: none;
+}
+
+.seller-product-image-preview img {
+    display: block;
+    flex: 0 1 auto;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 250px;
+    margin: 0;
+    object-fit: contain;
+    object-position: center;
+}
