@@ -11,8 +11,8 @@
                 <div class="placeholder-image" aria-label="No product image"><i class="fas fa-image"></i></div>
             {% endif %}
         {% endwith %}
-        {% if product.compare_price and product.compare_price > product.price %}
-            <span class="product-strip-discount">{{ product.price|discount_percent:product.compare_price }}% OFF</span>
+        {% if product.get_regular_price > product.get_current_price %}
+            <span class="product-strip-discount">{{ product.get_discount_percentage }}% OFF</span>
         {% endif %}
         <button class="product-strip-wishlist add-to-wishlist" type="button" data-product-id="{{ product.id }}" aria-label="Add {{ product.name }} to wishlist" onclick="event.stopPropagation();">
             <i class="far fa-heart" aria-hidden="true"></i>
@@ -25,13 +25,17 @@
             <span class="stars">{% for i in "12345" %}{% if forloop.counter <= product.rating %}<i class="fas fa-star"></i>{% else %}<i class="far fa-star"></i>{% endif %}{% endfor %}</span>
             <span class="rating-value">{{ product.rating }}</span>
         </div>
-        <div class="product-prices"><strong class="price">₹{{ product.price }}</strong>{% if product.compare_price and product.compare_price > product.price %}<del class="original-price">₹{{ product.compare_price }}</del>{% endif %}</div>
-        {% if product.inventory.stock_quantity > 0 %}
+        <div class="product-prices"><strong class="price">₹{{ product.get_current_price }}</strong>{% if product.get_regular_price > product.get_current_price %}<del class="original-price">₹{{ product.get_regular_price }}</del>{% endif %}</div>
+        {% if product.in_stock %}
             <span class="product-stock stock-in">In stock</span>
         {% else %}
             <span class="product-stock stock-out">Out of stock</span>
         {% endif %}
-        <button class="btn btn-primary btn-sm add-to-cart" type="button" data-product-id="{{ product.id }}" onclick="event.stopPropagation();" {% if product.inventory.stock_quantity <= 0 %}disabled{% endif %}><i class="fas fa-shopping-bag" aria-hidden="true"></i> Add to cart</button>
+        {% if product.has_variants %}
+            <a class="btn btn-primary btn-sm" href="{% url 'product_detail' product.id %}" onclick="event.stopPropagation();">Choose options</a>
+        {% else %}
+            <button class="btn btn-primary btn-sm add-to-cart" type="button" data-product-id="{{ product.id }}" onclick="event.stopPropagation();" {% if not product.in_stock %}disabled{% endif %}><i class="fas fa-shopping-bag" aria-hidden="true"></i> Add to cart</button>
+        {% endif %}
     </div>
 </article>
 {% empty %}

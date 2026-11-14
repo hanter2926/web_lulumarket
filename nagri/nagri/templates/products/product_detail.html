@@ -91,17 +91,42 @@
             <!-- Pricing -->
             <div class="product-pricing">
                 <div class="price-display">
-                    <span class="current-price">₹{{ product.price }}</span>
-                    {% if product.compare_price and product.compare_price > product.price %}
-                        <span class="original-price">₹{{ product.compare_price }}</span>
-                        <span class="discount-badge">{{ product.price|discount_percent:product.compare_price }}% OFF</span>
-                    {% endif %}
+                    <span class="current-price" id="currentProductPrice">₹{{ product.get_current_price }}</span>
+                    <span class="original-price" id="originalProductPrice">
+                        {% if product.get_regular_price > product.get_current_price %}₹{{ product.get_regular_price }}{% endif %}
+                    </span>
+                    <span class="discount-badge" id="productDiscount">
+                        {% if product.get_discount_percentage %}{{ product.get_discount_percentage }}% OFF{% endif %}
+                    </span>
                 </div>
             </div>
 
+            {% if variants %}
+                <div class="variant-selector mb-3">
+                    <label for="productVariantSelect" class="form-label">Choose an option</label>
+                    <select id="productVariantSelect" class="form-select">
+                        <option value="">Select a variant</option>
+                        {% for variant in variants %}
+                            <option
+                                value="{{ variant.id }}"
+                                data-price="{{ variant.get_current_price }}"
+                                data-regular-price="{{ variant.get_regular_price }}"
+                                data-stock="{{ variant.inventory.stock_quantity }}"
+                                data-sku="{{ variant.sku }}"
+                                {% if variant.image %}data-image="{{ variant.image.url }}"{% endif %}
+                            >
+                                {% for key, value in variant.attributes.items %}{% if not forloop.first %} / {% endif %}{{ key|title }}: {{ value }}{% endfor %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% endif %}
+
             <!-- Stock Status -->
-            <div class="stock-status">
-                {% if product.inventory.stock_quantity > 0 %}
+            <div class="stock-status" id="productStockStatus">
+                {% if product.has_variants %}
+                    <span class="out-of-stock">Select a variant to check availability.</span>
+                {% elif product.inventory.stock_quantity > 0 %}
                     <span class="in-stock">
                         <i class="fas fa-check-circle"></i> In Stock
                         ({{ product.inventory.stock_quantity }} available)
@@ -113,6 +138,40 @@
                 {% endif %}
             </div>
 
+            {% if measurement %}
+                <div class="product-measurements">
+                    <h5>Size &amp; Weight</h5>
+                    {% if measurement.length_mm or measurement.width_mm or measurement.height_mm %}
+                        <p>
+                            Dimensions:
+                            {% if measurement.length_mm %}{{ measurement_values.length }}{% endif %}
+                            {% if measurement.width_mm %} × {{ measurement_values.width }}{% endif %}
+                            {% if measurement.height_mm %} × {{ measurement_values.height }}{% endif %}
+                            {{ measurement.dimension_unit }}
+                        </p>
+                    {% endif %}
+                    {% if measurement.product_weight_g %}<p>Weight: {{ measurement_values.product_weight }} {{ measurement.weight_unit }}</p>{% endif %}
+                    {% if measurement.packaging_weight_g %}<p>Packaging weight: {{ measurement_values.packaging_weight }} {{ measurement.weight_unit }}</p>{% endif %}
+                    {% if measurement.shipping_weight_g %}<p>Shipping weight: {{ measurement_values.shipping_weight }} {{ measurement.weight_unit }}</p>{% endif %}
+                    {% if measurement.custom_size %}<p>Custom size: {{ measurement.custom_size }}</p>{% endif %}
+                </div>
+            {% endif %}
+
+            {% if attributes %}
+                <div class="product-attributes">
+                    <h5>Specifications</h5>
+                    <dl>
+                        {% for attribute in attributes %}
+                            <dt>{{ attribute.definition.label }}</dt>
+                            <dd>
+                                {{ attribute.value }}
+                                {% if attribute.definition.unit %} {{ attribute.definition.unit }}{% endif %}
+                            </dd>
+                        {% endfor %}
+                    </dl>
+                </div>
+            {% endif %}
+
             <!-- Description -->
             {% if product.short_description %}
             <div class="product-short-description">
@@ -121,7 +180,7 @@
             {% endif %}
 
             <!-- Add to Cart Section -->
-            {% if product.inventory.stock_quantity > 0 %}
+            {% if product.in_stock or product.has_variants %}
             <div class="product-actions">
                 <div class="quantity-selector">
                     <label for="quantity">Quantity:</label>
@@ -129,7 +188,7 @@
                         <button type="button" class="qty-btn qty-minus">
                             <i class="fas fa-minus"></i>
                         </button>
-                        <input type="number" id="quantity" class="qty-value" value="1" min="1" max="{{ product.inventory.stock_quantity }}">
+                        <input type="number" id="quantity" class="qty-value" value="1" min="1" max="{% if product.has_variants %}1{% else %}{{ product.inventory.stock_quantity }}{% endif %}">
                         <button type="button" class="qty-btn qty-plus">
                             <i class="fas fa-plus"></i>
                         </button>
@@ -139,6 +198,7 @@
                 <button
                     class="btn btn-primary btn-lg add-to-cart-btn"
                     data-product-id="{{ product.id }}"
+                    data-variant-required="{{ product.has_variants|yesno:'true,false' }}"
                     data-cart-add-url="{% url 'cart_add' %}"
                     data-checkout-url="{% url 'checkout' %}"
                     data-login-url="{% url 'accounts:email_login' %}"
@@ -149,6 +209,7 @@
                 <button
                     class="btn btn-outline-primary btn-lg add-to-wishlist-btn"
                     data-product-id="{{ product.id }}"
+                    data-variant-required="{{ product.has_variants|yesno:'true,false' }}"
                     data-wishlist-toggle-url="{% url 'wishlist_toggle' %}"
                     data-login-url="{% url 'accounts:email_login' %}"
                     title="Add to Wishlist"
@@ -242,9 +303,11 @@
                 <div class="product-info">
                     <h5><a href="{% url 'product_detail' product_id=related.id %}" onclick="event.stopPropagation();">{{ related.name }}</a></h5>
                     <div class="product-price">₹{{ related.price }}</div>
-                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); addToCart({{ related.id }})">
-                        Add to Cart
-                    </button>
+                    {% if related.has_variants %}
+                        <a class="btn btn-sm btn-primary" href="{% url 'product_detail' related.id %}" onclick="event.stopPropagation();">Choose options</a>
+                    {% elif related.in_stock %}
+                        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); addToCart({{ related.id }})">Add to Cart</button>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}

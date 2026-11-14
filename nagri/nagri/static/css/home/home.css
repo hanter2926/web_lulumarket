@@ -284,56 +284,59 @@
     margin-bottom: 1.5rem;
 }
 
-.category-marquee {
-    --category-item-width: 136px;
-    --category-image-size: 96px;
-    --category-gap: 22px;
+.category-carousel {
     width: 100%;
     overflow: hidden;
+    container-type: inline-size;
 }
 
-.category-marquee__track {
+.category-carousel__track {
     display: flex;
     width: max-content;
-    animation: category-marquee-scroll 36s linear infinite;
+    animation: category-carousel-left-to-right 48s linear infinite;
     will-change: transform;
 }
 
-.category-marquee__group {
+.category-carousel__group {
+    --category-item-width: 136px;
+    --category-gap: 22px;
     display: flex;
-    flex: 0 0 auto;
+    flex: 0 0 max-content;
     min-width: 100vw;
+    min-width: 100cqi;
     align-items: flex-start;
     justify-content: space-around;
     gap: var(--category-gap);
-    padding-right: var(--category-gap);
+    padding-inline-end: var(--category-gap);
 }
 
-.category-marquee__item {
+.category-carousel__item {
     display: flex;
     flex: 0 0 var(--category-item-width);
     flex-direction: column;
     align-items: center;
     min-width: 0;
+    padding: 0.75rem 0.5rem;
+    border-radius: 12px;
     color: #333;
     text-decoration: none;
     text-align: center;
     transition: transform 0.2s ease;
 }
 
-.category-marquee__item:hover,
-.category-marquee__item:focus-visible {
+.category-carousel__item:hover,
+.category-carousel__item:focus-visible {
     color: #174e9c;
     transform: translateY(-4px);
 }
 
-.category-marquee__image {
+.category-carousel__image {
     display: flex;
-    flex: 0 0 var(--category-image-size);
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    width: var(--category-image-size);
-    height: var(--category-image-size);
+    width: 96px;
+    aspect-ratio: 1;
     overflow: hidden;
     border: 3px solid #fff;
     border-radius: 50%;
@@ -343,7 +346,7 @@
     font-size: 2rem;
 }
 
-.category-marquee__image img {
+.category-carousel__image img {
     display: block;
     width: 100%;
     height: 100%;
@@ -351,7 +354,7 @@
     object-fit: cover;
 }
 
-.category-marquee__name {
+.category-carousel__name {
     display: -webkit-box;
     max-width: 100%;
     margin-top: 0.7rem;
@@ -365,7 +368,7 @@
     -webkit-line-clamp: 2;
 }
 
-.category-marquee__count {
+.category-carousel__count {
     max-width: 100%;
     margin-top: 0.25rem;
     color: #6c757d;
@@ -373,59 +376,80 @@
     line-height: 1.2;
 }
 
-.category-marquee:hover .category-marquee__track,
-.category-marquee:focus-within .category-marquee__track,
-.category-marquee:active .category-marquee__track {
-    animation-play-state: paused;
-}
-
-@keyframes category-marquee-scroll {
-    to {
+@keyframes category-carousel-left-to-right {
+    from {
         transform: translateX(-50%);
+    }
+    to {
+        transform: translateX(0);
     }
 }
 
+.categories-section:hover .category-carousel__track,
+.categories-section:focus-within .category-carousel__track,
+.category-carousel:active .category-carousel__track {
+    animation-play-state: paused;
+}
+
 @media (max-width: 767px) {
-    .category-marquee {
+    .category-carousel__group {
         --category-item-width: 112px;
-        --category-image-size: 82px;
         --category-gap: 18px;
+    }
+
+    .category-carousel__image {
+        width: 82px;
     }
 }
 
 @media (max-width: 480px) {
-    .category-marquee {
+    .category-carousel {
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+        touch-action: pan-x;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .category-carousel::-webkit-scrollbar {
+        display: none;
+    }
+
+    .category-carousel__group {
         --category-item-width: 94px;
-        --category-image-size: 68px;
         --category-gap: 14px;
     }
 
-    .category-marquee__name {
+    .category-carousel__image {
+        width: 68px;
+    }
+
+    .category-carousel__name {
         margin-top: 0.55rem;
         font-size: 0.82rem;
     }
 
-    .category-marquee__count {
+    .category-carousel__count {
         font-size: 0.68rem;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .category-marquee {
+    .category-carousel {
         overflow-x: auto;
         overscroll-behavior-x: contain;
         scrollbar-width: thin;
         -webkit-overflow-scrolling: touch;
     }
 
-    .category-marquee__track {
+    .category-carousel__track {
         width: max-content;
         animation: none;
         transform: none;
         will-change: auto;
     }
 
-    .category-marquee__group[aria-hidden="true"] {
+    .category-carousel__group[aria-hidden="true"] {
         display: none;
     }
 }

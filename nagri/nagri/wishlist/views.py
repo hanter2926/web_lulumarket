@@ -42,7 +42,11 @@ def toggle_wishlist(request):
         return JsonResponse({"error": "Product ID is required."}, status=400)
 
     try:
-        product = Product.objects.get(id=product_id, is_active=True)
+        product = Product.objects.get(
+            id=product_id,
+            is_active=True,
+            review_status="approved",
+        )
     except Product.DoesNotExist:
         return JsonResponse({"error": "Product not found."}, status=404)
 

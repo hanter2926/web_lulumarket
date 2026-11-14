@@ -396,7 +396,48 @@ class SellerFlowTests(TestCase):
             follow=True,
         )
         self.assertEqual(create_response.status_code, 200)
-        self.assertTrue(Product.objects.filter(name='Approved Product', seller=seller).exists())
+        created_product = Product.objects.get(name='Approved Product', seller=seller)
+        self.assertEqual(created_product.review_status, "draft")
+        self.assertFalse(created_product.is_active)
+
+    def test_seller_submission_requires_admin_approval_before_public_listing(self):
+        seller = CustomUser.objects.create_user(
+            email="review-seller@example.com",
+            username="review-seller",
+            password="pass",
+            is_vendor=True,
+        )
+        category = Category.objects.create(
+            name="Review Category",
+            slug="review-category",
+        )
+        SellerApplication.objects.create(
+            user=seller,
+            email=seller.email,
+            status="approved",
+        ).selected_categories.add(category)
+        self.client.force_login(seller)
+
+        response = self.client.post(
+            reverse("sellers:product_create"),
+            {
+                "name": "Needs Review Product",
+                "slug": "needs-review-product",
+                "category": str(category.pk),
+                "price": "49.00",
+                "compare_price": "0.00",
+                "action": "submit_review",
+                "review_status": "approved",
+                "is_active": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(slug="needs-review-product")
+        self.assertEqual(product.review_status, "pending_review")
+        self.assertFalse(product.is_active)
+        public_response = self.client.get("/products/")
+        self.assertNotContains(public_response, "Needs Review Product")
 
     def test_seller_cannot_edit_or_create_in_unapproved_categories(self):
         seller = CustomUser.objects.create_user(email='restricted@example.com', username='restricted', password='pass', is_vendor=True)

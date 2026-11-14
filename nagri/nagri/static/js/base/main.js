@@ -45,7 +45,7 @@ async function fetchJson(url, options = {}) {
     return payload;
 }
 
-async function addToCart(productId, quantity = 1) {
+async function addToCart(productId, quantity = 1, variantId = null) {
     if (!productId) {
         throw new Error('No product selected.');
     }
@@ -58,6 +58,7 @@ async function addToCart(productId, quantity = 1) {
         body: JSON.stringify({
             product_id: Number(productId),
             quantity: Number(quantity) || 1,
+            ...(variantId ? { variant_id: Number(variantId) } : {}),
         }),
     });
 

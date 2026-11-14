@@ -9,7 +9,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from products.models import Product
+from products.models import Product, ProductVariant
 
 from .models import Cart, CartItem
 from .serializers import CartItemSerializer, CartSerializer
@@ -20,7 +20,7 @@ class CartViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Cart.objects.filter(user=self.request.user).prefetch_related("items__product")
+        return Cart.objects.filter(user=self.request.user).prefetch_related("items__product", "items__variant")
 
     def create(self, request, *args, **kwargs):
         cart, _ = Cart.objects.get_or_create(user=request.user)
@@ -31,13 +31,30 @@ class CartViewSet(viewsets.ModelViewSet):
     def add_item(self, request, pk=None):
         cart = self.get_object()
         product_id = request.data.get("product")
-        quantity = int(request.data.get("quantity", 1))
+        try:
+            quantity = int(request.data.get("quantity", 1))
+        except (TypeError, ValueError):
+            return Response({"detail": "Quantity must be a positive whole number."}, status=status.HTTP_400_BAD_REQUEST)
+        if quantity <= 0:
+            return Response({"detail": "Quantity must be a positive whole number."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not product_id:
             return Response({"detail": "Product ID is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        product = Product.objects.get(id=product_id)
-        item, created = CartItem.objects.get_or_create(cart=cart, product=product)
+        try:
+            product = Product.objects.get(id=product_id, is_active=True, review_status="approved")
+        except (Product.DoesNotExist, TypeError, ValueError):
+            return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+        variant_id = request.data.get("variant")
+        variant = None
+        if variant_id:
+            try:
+                variant = product.variants.get(pk=variant_id, is_active=True)
+            except (ProductVariant.DoesNotExist, TypeError, ValueError):
+                return Response({"detail": "Product variant not found."}, status=status.HTTP_404_NOT_FOUND)
+        elif product.variants.exists():
+            return Response({"detail": "Select an available variant."}, status=status.HTTP_400_BAD_REQUEST)
+        item, created = CartItem.objects.get_or_create(cart=cart, product=product, variant=variant)
         if not created:
             item.quantity += quantity
         else:
@@ -51,7 +68,7 @@ class CartItemViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return CartItem.objects.filter(cart__user=self.request.user).select_related("cart", "product")
+        return CartItem.objects.filter(cart__user=self.request.user).select_related("cart", "product", "variant")
 
     def perform_create(self, serializer):
         cart, _ = Cart.objects.get_or_create(user=self.request.user)
@@ -67,7 +84,10 @@ def add_to_cart(request):
         payload = {}
 
     product_id = payload.get("product_id") or payload.get("product")
-    quantity = int(payload.get("quantity", 1) or 1)
+    try:
+        quantity = int(payload.get("quantity", 1) or 1)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Quantity must be a positive whole number."}, status=400)
 
     if not product_id:
         return JsonResponse({"error": "Product ID is required."}, status=400)
@@ -75,12 +95,21 @@ def add_to_cart(request):
         return JsonResponse({"error": "Quantity must be greater than zero."}, status=400)
 
     try:
-        product = Product.objects.get(id=product_id, is_active=True)
+        product = Product.objects.get(id=product_id, is_active=True, review_status="approved")
     except Product.DoesNotExist:
         return JsonResponse({"error": "Product not found."}, status=404)
+    variant_id = payload.get("variant_id") or payload.get("variant")
+    variant = None
+    if variant_id:
+        try:
+            variant = product.variants.get(pk=variant_id, is_active=True)
+        except (ProductVariant.DoesNotExist, ValueError, TypeError):
+            return JsonResponse({"error": "Product variant not found."}, status=404)
+    elif product.variants.exists():
+        return JsonResponse({"error": "Select an available variant."}, status=400)
 
     cart, _ = Cart.objects.get_or_create(user=request.user)
-    item, created = CartItem.objects.get_or_create(cart=cart, product=product)
+    item, created = CartItem.objects.get_or_create(cart=cart, product=product, variant=variant)
     if created:
         item.quantity = quantity
     else:
@@ -147,9 +176,9 @@ def update_cart_item(request, item_id):
 def cart_detail_view(request):
     """Display shopping cart for the user"""
     cart, _ = Cart.objects.get_or_create(user=request.user)
-    items = cart.items.all().select_related('product')
+    items = cart.items.all().select_related("product", "variant")
 
-    total = sum(item.product.price * item.quantity for item in items)
+    total = sum(item.current_price * item.quantity for item in items)
 
     context = {
         'items': items,

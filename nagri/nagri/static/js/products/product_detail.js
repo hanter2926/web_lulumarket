@@ -5,6 +5,54 @@ document.addEventListener('DOMContentLoaded', function () {
     const addToCartButton = document.querySelector('.add-to-cart-btn');
     const buyNowButton = document.querySelector('.buy-now-btn');
     const wishlistButton = document.querySelector('.add-to-wishlist-btn');
+    const variantSelect = document.getElementById('productVariantSelect');
+    const stockStatus = document.getElementById('productStockStatus');
+    const currentPrice = document.getElementById('currentProductPrice');
+    const originalPrice = document.getElementById('originalProductPrice');
+    const discountBadge = document.getElementById('productDiscount');
+    const mainImage = document.getElementById('mainProductImage');
+
+    const selectedVariant = () => variantSelect && variantSelect.value
+        ? variantSelect.options[variantSelect.selectedIndex]
+        : null;
+
+    const updateVariantState = () => {
+        if (!variantSelect) return;
+        const option = selectedVariant();
+        const stock = option ? Number(option.dataset.stock || 0) : 0;
+        const available = Boolean(option && stock > 0);
+
+        [addToCartButton, buyNowButton].forEach((button) => {
+            if (button) button.disabled = !available;
+        });
+        if (quantityInput) {
+            quantityInput.max = String(Math.max(stock, 1));
+            updateQuantity(Number(quantityInput.value || 1));
+        }
+        if (stockStatus) {
+            stockStatus.textContent = !option
+                ? 'Select a variant to check availability.'
+                : available
+                    ? `${stock} available`
+                    : 'Out of stock';
+        }
+        if (option) {
+            const price = Number(option.dataset.price);
+            const regular = Number(option.dataset.regularPrice);
+            if (currentPrice && Number.isFinite(price)) currentPrice.textContent = `₹${price.toFixed(2)}`;
+            if (originalPrice) {
+                originalPrice.textContent = Number.isFinite(regular) && regular > price
+                    ? `₹${regular.toFixed(2)}`
+                    : '';
+            }
+            if (discountBadge) {
+                discountBadge.textContent = Number.isFinite(regular) && regular > price
+                    ? `${Math.round(((regular - price) / regular) * 100)}% OFF`
+                    : '';
+            }
+            if (option.dataset.image && mainImage) mainImage.src = option.dataset.image;
+        }
+    };
 
     const getMaxQuantity = () => {
         const maxValue = Number(quantityInput?.max || 1);
@@ -37,19 +85,30 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    if (variantSelect) {
+        variantSelect.addEventListener('change', updateVariantState);
+        updateVariantState();
+    }
+
     if (addToCartButton) {
         addToCartButton.addEventListener('click', async function (event) {
             event.preventDefault();
             const productId = this.dataset.productId;
             const quantity = Number(quantityInput?.value || 1);
+            const variant = selectedVariant();
+            if (this.dataset.variantRequired === 'true' && !variant) {
+                alert('Please select a product option.');
+                return;
+            }
             try {
                 this.disabled = true;
-                await addToCart(productId, quantity);
+                await addToCart(productId, quantity, variant ? variant.value : null);
             } catch (error) {
                 console.error(error);
                 alert(error.message || 'Unable to add to cart.');
             } finally {
-                this.disabled = false;
+                if (variantSelect) updateVariantState();
+                else this.disabled = false;
             }
         });
     }
@@ -59,16 +118,22 @@ document.addEventListener('DOMContentLoaded', function () {
             event.preventDefault();
             const productId = this.dataset.productId;
             const quantity = Number(quantityInput?.value || 1);
+            const variant = selectedVariant();
+            if (this.dataset.variantRequired === 'true' && !variant) {
+                alert('Please select a product option.');
+                return;
+            }
 
             try {
                 this.disabled = true;
-                await addToCart(productId, quantity);
+                await addToCart(productId, quantity, variant ? variant.value : null);
                 window.location.href = '/orders/checkout/';
             } catch (error) {
                 console.error(error);
                 alert(error.message || 'Unable to proceed to checkout.');
             } finally {
-                this.disabled = false;
+                if (variantSelect) updateVariantState();
+                else this.disabled = false;
             }
         });
     }
@@ -97,7 +162,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Gallery thumbnail click -> update main image
-    const mainImage = document.getElementById('mainProductImage');
     const thumbnailNodes = Array.from(document.querySelectorAll('.product-thumb'));
     const galleryPrev = document.getElementById('galleryPrev');
     const galleryNext = document.getElementById('galleryNext');

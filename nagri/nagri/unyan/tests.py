@@ -354,7 +354,7 @@ class HomepageSliderDisplayTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Welcome to Nagri')
 
-    def test_homepage_categories_render_in_duplicate_marquee_groups(self):
+    def test_homepage_categories_render_in_accessible_carousel(self):
         category = Category.objects.create(
             name='Fresh Produce',
             slug='fresh-produce',
@@ -363,11 +363,20 @@ class HomepageSliderDisplayTests(TestCase):
         response = self.client.get(reverse('home'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'class="category-marquee__group" role="list"', count=2)
         self.assertContains(
             response,
-            'class="category-marquee__group" role="list" aria-hidden="true"',
+            'class="category-carousel__group" role="list"',
+            count=2,
+        )
+        self.assertContains(
+            response,
+            'class="category-carousel__group" role="list" aria-hidden="true"',
             count=1,
+        )
+        self.assertContains(
+            response,
+            'class="category-carousel__item" role="listitem"',
+            count=2,
         )
         self.assertContains(
             response,

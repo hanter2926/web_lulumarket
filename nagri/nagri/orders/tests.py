@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from accounts.models import Address
 from cart.models import Cart, CartItem
-from products.models import Category, Inventory, Product
+from products.models import Category, Inventory, Product, ProductVariant
 from .models import Order, UpiPaymentSubmission
 from .views import verify_razorpay_signature
 
@@ -55,6 +55,51 @@ class OrderTests(TestCase):
             data,
             content_type="application/json",
         )
+
+    @override_settings(RAZORPAY_KEY_ID="", RAZORPAY_KEY_SECRET="")
+    def test_variant_cart_checkout_uses_variant_price_inventory_and_order_snapshots(self):
+        product, product_inventory = self._create_product(
+            slug="order-test-variant-cart",
+            price="15.00",
+            stock=6,
+        )
+        variant = ProductVariant.objects.create(
+            product=product,
+            attributes={"size": "M", "color": "Blue"},
+            sku="ORDER-TEST-M-BLUE",
+            price=Decimal("12.00"),
+            compare_price=Decimal("18.00"),
+        )
+        variant_inventory = variant.inventory
+        variant_inventory.stock_quantity = 4
+        variant_inventory.save(update_fields=["stock_quantity"])
+        cart = Cart.objects.create(user=self.user)
+        CartItem.objects.create(
+            cart=cart,
+            product=product,
+            variant=variant,
+            quantity=2,
+        )
+        self.client.force_login(self.user)
+
+        response = self._post_order_create({"cart_id": cart.pk})
+
+        self.assertEqual(response.status_code, 200)
+        order = Order.objects.get(pk=response.json()["order_id"])
+        item = order.items.get()
+        self.assertEqual(order.total_amount, Decimal("24.00"))
+        self.assertEqual(item.price, Decimal("12.00"))
+        self.assertEqual(item.regular_price, Decimal("18.00"))
+        self.assertEqual(item.variant, variant)
+        self.assertEqual(item.sku_snapshot, "ORDER-TEST-M-BLUE")
+        self.assertEqual(item.variant_attributes_snapshot, {"size": "M", "color": "Blue"})
+        self.assertTrue(order.inventory_reserved)
+
+        product_inventory.refresh_from_db()
+        variant_inventory.refresh_from_db()
+        self.assertEqual(product_inventory.stock_quantity, 6)
+        self.assertEqual(variant_inventory.stock_quantity, 2)
+        self.assertEqual(variant_inventory.reserved_quantity, 2)
 
     @override_settings(RAZORPAY_KEY_ID="", RAZORPAY_KEY_SECRET="")
     def test_order_create_rejects_invalid_and_unbounded_quantities(self):

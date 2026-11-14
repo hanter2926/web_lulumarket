@@ -872,8 +872,12 @@ def product_create(request):
         if not _category_allowed_for_seller(app, category_id):
             form.add_error("category", "This category is not approved for your seller account.")
         if form.is_valid():
-            product = form.save(seller=request.user)
-            messages.success(request, "Product created successfully.")
+            submit = request.POST.get("action") == "submit_review"
+            product = form.save(seller=request.user, submit_for_review=submit)
+            messages.success(
+                request,
+                "Product submitted for Admin review." if submit else "Draft saved.",
+            )
             return redirect("sellers:product_edit", product.pk)
     else:
         form = SellerProductForm()
@@ -897,8 +901,12 @@ def product_edit(request, pk):
         if not _category_allowed_for_seller(app, category_id):
             form.add_error("category", "This category is not approved for your seller account.")
         if form.is_valid():
-            form.save(seller=request.user)
-            messages.success(request, "Product updated successfully.")
+            submit = request.POST.get("action") == "submit_review"
+            form.save(seller=request.user, submit_for_review=submit)
+            messages.success(
+                request,
+                "Product submitted for Admin review." if submit else "Product updated successfully.",
+            )
             return redirect("sellers:product_edit", product.pk)
     else:
         form = SellerProductForm(instance=product)
@@ -931,6 +939,11 @@ def product_toggle_active(request, pk):
     product, forbidden = _get_owned_product_or_403(request, pk)
     if forbidden is not None:
         return forbidden
+    if product.review_status != "approved":
+        product.is_active = False
+        product.save(update_fields=["is_active", "updated_at"])
+        messages.warning(request, "Only an approved product can be published.")
+        return redirect("sellers:product_edit", product.pk)
     product.is_active = not product.is_active
     product.save(update_fields=["is_active", "updated_at"])
     messages.success(request, "Product visibility updated.")
@@ -1106,10 +1119,14 @@ def shopkeeper_product_add(request):
         if store is None and store_id:
             form.add_error("store", "This store does not belong to your shop.")
         if form.is_valid() and store is not None:
-            product = form.save(seller=request.user)
+            submit = request.POST.get("action") == "submit_review"
+            product = form.save(seller=request.user, submit_for_review=submit)
             product.store = store
             product.save(update_fields=["store", "updated_at"])
-            messages.success(request, "Product created successfully.")
+            messages.success(
+                request,
+                "Product submitted for Admin review." if submit else "Draft saved.",
+            )
             return redirect("sellers:shopkeeper_product_edit", pk=product.pk)
     else:
         form = SellerProductForm()
@@ -1131,11 +1148,15 @@ def shopkeeper_product_edit(request, pk):
         if selected_store is None and request.POST.get("store"):
             form.add_error("store", "This store does not belong to your shop.")
         if form.is_valid() and (selected_store is not None or not request.POST.get("store")):
-            form.save(seller=request.user)
+            submit = request.POST.get("action") == "submit_review"
+            form.save(seller=request.user, submit_for_review=submit)
             if selected_store is not None:
                 product.store = selected_store
                 product.save(update_fields=["store", "updated_at"])
-            messages.success(request, "Product updated successfully.")
+            messages.success(
+                request,
+                "Product submitted for Admin review." if submit else "Product updated successfully.",
+            )
             return redirect("sellers:shopkeeper_product_edit", pk=product.pk)
     else:
         form = SellerProductForm(instance=product)

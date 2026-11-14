@@ -7,10 +7,15 @@ from .models import Order, OrderItem
 
 class OrderItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
+    variant = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = OrderItem
-        fields = ["id", "product", "quantity", "price"]
+        fields = [
+            "id", "product", "variant", "quantity", "price", "regular_price",
+            "sku_snapshot", "variant_attributes_snapshot",
+            "tax_rate_snapshot", "tax_amount_snapshot",
+        ]
 
 
 class OrderSerializer(serializers.ModelSerializer):

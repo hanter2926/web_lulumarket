@@ -1,11 +1,30 @@
+from datetime import timedelta
 from decimal import Decimal
+import json
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from orders.models import Order, OrderItem
-from .models import Category, Product, SubCategory
+from .forms import serialize_product_variants
+from .inventory import adjust_available_stock, release_stock_reservation, reserve_stock
+from .models import (
+    Category,
+    MeasurementRequirement,
+    Product,
+    ProductAttributeDefinition,
+    ProductAttributeValue,
+    ProductMeasurement,
+    ProductVariant,
+    StockMovement,
+    SubCategory,
+    VariantAttributeDefinition,
+    VariantMeasurement,
+)
 
 
 class ProductTests(TestCase):
@@ -218,3 +237,160 @@ class ProductTests(TestCase):
         content = empty_response.content.decode()
         self.assertIn("No Products Available", content)
         self.assertIn("We couldn't find any products matching your search.", content)
+
+
+class ProductManagementModelTests(TestCase):
+    def setUp(self):
+        self.category = Category.objects.create(
+            name="Management Test Category",
+            slug="management-test-category",
+        )
+        self.product = Product.objects.create(
+            name="Management Test Product",
+            slug="management-test-product",
+            category=self.category,
+            price=Decimal("100.00"),
+            compare_price=Decimal("120.00"),
+        )
+
+    def test_scheduled_product_and_variant_prices_are_calculated(self):
+        now = timezone.now()
+        self.product.scheduled_sale_price = Decimal("80.00")
+        self.product.scheduled_sale_start = now - timedelta(minutes=1)
+        self.product.scheduled_sale_end = now + timedelta(minutes=1)
+        self.assertEqual(self.product.get_current_price(now), Decimal("80.00"))
+        self.assertEqual(self.product.get_regular_price(now), Decimal("120.00"))
+        self.assertEqual(self.product.get_discount_amount(now), Decimal("40.00"))
+
+        variant = ProductVariant.objects.create(
+            product=self.product,
+            attributes={"size": "M"},
+            price=Decimal("90.00"),
+            compare_price=Decimal("110.00"),
+            scheduled_sale_price=Decimal("70.00"),
+            scheduled_sale_start=now - timedelta(minutes=1),
+            scheduled_sale_end=now + timedelta(minutes=1),
+        )
+        self.assertEqual(variant.get_current_price(now), Decimal("70.00"))
+        self.assertEqual(variant.get_regular_price(now), Decimal("110.00"))
+
+    def test_measurement_conversion_and_positive_validation(self):
+        self.assertEqual(
+            ProductMeasurement.convert_dimension_to_mm(Decimal("2"), "inch"),
+            Decimal("50.800"),
+        )
+        self.assertEqual(
+            ProductMeasurement.convert_weight_to_grams(Decimal("1.25"), "kg"),
+            Decimal("1250.000"),
+        )
+        with self.assertRaises(ValidationError):
+            ProductMeasurement(
+                product=self.product,
+                length_mm=Decimal("0"),
+            ).full_clean()
+
+    def test_required_measurement_and_typed_attribute_validation(self):
+        MeasurementRequirement.objects.create(
+            category=self.category,
+            field_name="length_mm",
+            is_required=True,
+        )
+        with self.assertRaises(ValidationError):
+            ProductMeasurement(product=self.product).full_clean()
+
+        definition = ProductAttributeDefinition.objects.create(
+            category=self.category,
+            key="material",
+            label="Material",
+            data_type="dropdown",
+            is_required=True,
+            options=["Cotton", "Wool"],
+        )
+        value = ProductAttributeValue(
+            product=self.product,
+            definition=definition,
+            value="Wool",
+        )
+        value.full_clean()
+        value.value = "Nylon"
+        with self.assertRaises(ValidationError):
+            value.full_clean()
+
+    def test_variant_attribute_requirements_and_duplicate_combinations(self):
+        VariantAttributeDefinition.objects.create(
+            category=self.category,
+            key="size",
+            label="Size",
+            options=["S", "M"],
+        )
+        with self.assertRaises(ValidationError):
+            ProductVariant(product=self.product, attributes={}).full_clean()
+
+        ProductVariant.objects.create(
+            product=self.product,
+            attributes={"size": "M"},
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            ProductVariant.objects.create(
+                product=self.product,
+                attributes={"size": "M"},
+            )
+
+    def test_variant_stock_adjustment_and_reservation_history(self):
+        variant = ProductVariant.objects.create(
+            product=self.product,
+            attributes={"size": "L"},
+        )
+        inventory = variant.inventory
+        adjust_available_stock(inventory, 8)
+        inventory.refresh_from_db()
+        reserve_stock(inventory, 3, order_id=42)
+        inventory.refresh_from_db()
+        self.assertEqual(inventory.stock_quantity, 5)
+        self.assertEqual(inventory.reserved_quantity, 3)
+
+        release_stock_reservation(inventory, 3, order_id=42)
+        inventory.refresh_from_db()
+        self.assertEqual(inventory.stock_quantity, 8)
+        self.assertEqual(inventory.reserved_quantity, 0)
+        self.assertEqual(
+            StockMovement.objects.filter(variant_inventory=inventory).count(),
+            3,
+        )
+        with self.assertRaises(ValidationError):
+            adjust_available_stock(inventory, -1)
+
+    def test_seller_variant_serialization_includes_disabled_state_and_measurements(self):
+        variant = ProductVariant.objects.create(
+            product=self.product,
+            attributes={"size": "XL"},
+            is_active=False,
+        )
+        VariantMeasurement.objects.create(
+            variant=variant,
+            dimension_unit="cm",
+            length_mm=Decimal("100"),
+            product_weight_g=Decimal("1500"),
+        )
+
+        payload = json.loads(serialize_product_variants(self.product))
+
+        self.assertEqual(len(payload), 1)
+        self.assertFalse(payload[0]["enabled"])
+        self.assertEqual(payload[0]["measurement"]["length"], "10.000")
+        self.assertEqual(payload[0]["measurement"]["product_weight"], "1500.000")
+
+    def test_product_admin_add_form_renders_management_fieldsets(self):
+        admin_user = get_user_model().objects.create_superuser(
+            username="product-management-admin",
+            email="product-management-admin@example.com",
+            password="test-password",
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(reverse("admin:products_product_add"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Size &amp; Weight")
+        self.assertContains(response, "Product Variants")
+        self.assertContains(response, "Inventory Management")

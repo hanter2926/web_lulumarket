@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models import Sum
 
 from products.models import Product
 from accounts.models import Address
@@ -175,16 +176,117 @@ class OrderItem(models.Model):
     ]
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="order_items")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="order_items")
+    variant = models.ForeignKey(
+        "products.ProductVariant",
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="order_items",
+    )
     quantity = models.PositiveIntegerField(default=1)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(max_digits=12, decimal_places=2)
+    regular_price = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+    sku_snapshot = models.CharField(max_length=64, blank=True)
+    variant_attributes_snapshot = models.JSONField(default=dict, blank=True)
+    tax_rate_snapshot = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    tax_amount_snapshot = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     fulfillment_status = models.CharField(max_length=20, choices=FULFILLMENT_STATUS_CHOICES, default="pending")
+
+    def clean(self):
+        super().clean()
+        if self.variant_id and self.variant.product_id != self.product_id:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({"variant": "The selected variant does not belong to this product."})
 
     def __str__(self):
         return f"{self.product.name} x {self.quantity}"
     
     def get_subtotal(self):
         return self.price * self.quantity
+
+
+class OrderRefund(models.Model):
+    STATUS_CHOICES = (
+        ("requested", "Requested"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+        ("completed", "Completed"),
+    )
+
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="refunds")
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="requested")
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    provider_refund_id = models.CharField(max_length=255, blank=True)
+    notes = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="reviewed_order_refunds",
+    )
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+    stock_restocked_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def clean(self):
+        super().clean()
+        if self.amount <= 0 or self.amount > self.order.total_amount:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({"amount": "Refund amount must be positive and cannot exceed the order total."})
+        if self.status in {"approved", "completed"}:
+            previous_refunds = self.order.refunds.exclude(pk=self.pk).filter(
+                status__in=("approved", "completed")
+            ).aggregate(total=Sum("amount"))["total"] or 0
+            if previous_refunds + self.amount > self.order.total_amount:
+                from django.core.exceptions import ValidationError
+
+                raise ValidationError({"amount": "Approved refunds cannot exceed the order total."})
+
+    def __str__(self):
+        return f"Refund for {self.order.order_number} ({self.get_status_display()})"
+
+
+class OrderRefundItem(models.Model):
+    refund = models.ForeignKey(OrderRefund, on_delete=models.CASCADE, related_name="items")
+    order_item = models.ForeignKey(OrderItem, on_delete=models.PROTECT, related_name="refund_items")
+    quantity = models.PositiveIntegerField(default=1)
+    restockable = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("refund", "order_item"), name="unique_refund_order_item"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.quantity <= 0:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({"quantity": "Refund quantity must be greater than zero."})
+        if self.refund_id and self.order_item_id and self.refund.order_id != self.order_item.order_id:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({"order_item": "Refund item must belong to the refund's order."})
+        if self.order_item_id and self.quantity > self.order_item.quantity:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({"quantity": "Refund quantity cannot exceed the ordered quantity."})
+        if self.refund_id and self.order_item_id:
+            already_refunded = self.order_item.refund_items.exclude(refund=self.refund).filter(
+                refund__status__in=("approved", "completed")
+            ).aggregate(total=Sum("quantity"))["total"] or 0
+            if self.refund.status in {"approved", "completed"} and already_refunded + self.quantity > self.order_item.quantity:
+                from django.core.exceptions import ValidationError
+
+                raise ValidationError({"quantity": "Approved refunds cannot exceed the ordered quantity."})
 
 
 class UpiPaymentSubmission(models.Model):

@@ -68,17 +68,22 @@
                                 </h3>
                                 <p class="item-category">{{ item.product.category.name }}</p>
                                 <div class="item-meta">
-                                    <span class="item-sku">SKU: {{ item.product.id }}</span>
+                                    {% if item.variant %}
+                                        <span>
+                                            {% for key, value in item.variant.attributes.items %}{% if not forloop.first %} / {% endif %}{{ key|title }}: {{ value }}{% endfor %}
+                                        </span>
+                                    {% endif %}
+                                    <span class="item-sku">SKU: {% if item.variant %}{{ item.variant.sku }}{% else %}{{ item.product.sku }}{% endif %}</span>
                                     <span class="item-quantity">Qty: <strong>{{ item.quantity }}</strong></span>
                                 </div>
                             </div>
                             
                             <div class="item-pricing">
                                 <div class="price-per-unit">
-                                    <small>₹{{ item.product.price }} each</small>
+                                    <small>₹{{ item.current_price }} each</small>
                                 </div>
                                 <div class="price-total">
-                                    ₹{{ item.product.price|floatformat:2 }} × {{ item.quantity }} = <strong>₹{{ item.product.price|mul:item.quantity }}</strong>
+                                    ₹{{ item.current_price|floatformat:2 }} × {{ item.quantity }} = <strong>₹{{ item.current_price|mul:item.quantity }}</strong>
                                 </div>
                             </div>
                         </div>

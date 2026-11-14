@@ -121,15 +121,15 @@
                                 </div>
 
                                 <div class="product-price">
-                                    <span class="price-current">₹{{ product.price }}</span>
-                                    {% if product.compare_price and product.compare_price > product.price %}
-                                        <span class="price-original">₹{{ product.compare_price }}</span>
-                                        <span class="price-discount">{{ product.price|discount_percent:product.compare_price }}% Off</span>
+                                    <span class="price-current">₹{{ product.get_current_price }}</span>
+                                    {% if product.get_regular_price > product.get_current_price %}
+                                        <span class="price-original">₹{{ product.get_regular_price }}</span>
+                                        <span class="price-discount">{{ product.get_discount_percentage }}% Off</span>
                                     {% endif %}
                                 </div>
 
                                 <div class="product-stock">
-                                    {% if product.inventory.stock_quantity > 0 %}
+                                    {% if product.in_stock %}
                                         <span class="stock-in"><i class="fas fa-check-circle"></i> In Stock</span>
                                     {% else %}
                                         <span class="stock-out"><i class="fas fa-times-circle"></i> Out of Stock</span>
@@ -140,7 +140,11 @@
                                     <a href="{% url 'product_detail' product.id %}" class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
                                         <i class="fas fa-eye"></i> View
                                     </a>
-                                    {% if product.inventory.stock_quantity > 0 %}
+                                    {% if product.has_variants %}
+                                        <a href="{% url 'product_detail' product.id %}" class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation();">
+                                            Choose options
+                                        </a>
+                                    {% elif product.in_stock %}
                                         <button class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation(); addToCart({{ product.id }})" data-product-id="{{ product.id }}">
                                             <i class="fas fa-shopping-cart"></i>
                                         </button>

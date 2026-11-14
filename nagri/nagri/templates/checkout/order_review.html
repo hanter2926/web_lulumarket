@@ -50,9 +50,12 @@
                             <div class="review-item">
                                 <div>
                                     <strong>{{ item.product.name }}</strong>
+                                    {% if item.variant %}
+                                        <small>{% for key, value in item.variant.attributes.items %}{% if not forloop.first %} / {% endif %}{{ key|title }}: {{ value }}{% endfor %}</small>
+                                    {% endif %}
                                     <small>Qty: {{ item.quantity }}</small>
                                 </div>
-                                <span>₹{{ item.product.price|floatformat:2 }}</span>
+                                <span>₹{{ item.current_price|floatformat:2 }}</span>
                             </div>
                         {% endfor %}
                     </div>

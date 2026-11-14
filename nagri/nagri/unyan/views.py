@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import redirect, render, get_object_or_404
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
@@ -27,14 +27,18 @@ def home(request):
     """Home page view with featured products, bestsellers, new arrivals, and promotional sliders."""
     now = timezone.now()
     featured_products = (
-        Product.objects.filter(is_featured=True, is_active=True)
+        Product.objects.filter(is_featured=True, is_active=True, review_status="approved")
         .select_related("category")
+        .prefetch_related("images", "variants__inventory")
         .only(
             "id",
             "name",
             "image",
             "price",
             "compare_price",
+            "scheduled_sale_price",
+            "scheduled_sale_start",
+            "scheduled_sale_end",
             "rating",
             "is_featured",
             "is_bestseller",
@@ -44,14 +48,18 @@ def home(request):
         .order_by("-created_at")[:6]
     )
     bestseller_products = (
-        Product.objects.filter(is_bestseller=True, is_active=True)
+        Product.objects.filter(is_bestseller=True, is_active=True, review_status="approved")
         .select_related("category")
+        .prefetch_related("images", "variants__inventory")
         .only(
             "id",
             "name",
             "image",
             "price",
             "compare_price",
+            "scheduled_sale_price",
+            "scheduled_sale_start",
+            "scheduled_sale_end",
             "rating",
             "is_featured",
             "is_bestseller",
@@ -61,14 +69,18 @@ def home(request):
         .order_by("-rating")[:6]
     )
     new_arrivals = (
-        Product.objects.filter(is_active=True)
+        Product.objects.filter(is_active=True, review_status="approved")
         .select_related("category")
+        .prefetch_related("images", "variants__inventory")
         .only(
             "id",
             "name",
             "image",
             "price",
             "compare_price",
+            "scheduled_sale_price",
+            "scheduled_sale_start",
+            "scheduled_sale_end",
             "rating",
             "is_featured",
             "is_bestseller",
@@ -78,14 +90,18 @@ def home(request):
         .order_by("-created_at")[:6]
     )
     top_rated_products = (
-        Product.objects.filter(is_active=True)
+        Product.objects.filter(is_active=True, review_status="approved")
         .select_related("category")
+        .prefetch_related("images", "variants__inventory")
         .only(
             "id",
             "name",
             "image",
             "price",
             "compare_price",
+            "scheduled_sale_price",
+            "scheduled_sale_start",
+            "scheduled_sale_end",
             "rating",
             "is_featured",
             "is_bestseller",
@@ -94,16 +110,19 @@ def home(request):
         )
         .order_by("-rating")[:6]
     )
-    discovery_products = Product.objects.filter(is_active=True).select_related("category", "inventory").prefetch_related("images")
+    discovery_products = Product.objects.filter(
+        is_active=True,
+        review_status="approved",
+    ).select_related("category", "inventory").prefetch_related("images", "variants__inventory")
     trending_products = discovery_products.order_by("-rating", "-created_at")[:6]
     budget_products = discovery_products.filter(price__lte=99).order_by("-created_at")[:6]
     recommended_products = discovery_products.filter(is_featured=True).order_by("-rating", "-created_at")[:6]
     recently_viewed_ids = request.session.get("recently_viewed_products", [])
     recently_viewed_products = discovery_products.filter(id__in=recently_viewed_ids).order_by("-updated_at")[:6]
     flash_sale_queryset = (
-        Product.objects.filter(is_active=True, is_flash_sale=True)
+        Product.objects.filter(is_active=True, is_flash_sale=True, review_status="approved")
         .select_related("category", "inventory")
-        .prefetch_related("images")
+        .prefetch_related("images", "variants__inventory")
         .order_by("flash_sale_end", "-created_at")
     )
     active_flash_sale_queryset = flash_sale_queryset.filter(
@@ -131,7 +150,13 @@ def home(request):
             flash_sale_end__isnull=False,
             flash_sale_end__lt=now,
         ).exists()
-    categories = Category.objects.annotate(product_count=Count("products", distinct=True)).order_by("name")
+    categories = Category.objects.annotate(
+        product_count=Count(
+            "products",
+            filter=Q(products__is_active=True, products__review_status="approved"),
+            distinct=True,
+        )
+    ).order_by("name")
     
     # Prefer the admin-managed HomeSlider model (accounts.HomeSlider).
     # Fall back to the unyan HomeSlider if accounts.HomeSlider is not available.

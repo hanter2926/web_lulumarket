@@ -40,11 +40,17 @@
                                 {% endif %}
                                 <div>
                                     <p class="product-name">{{ item.product.name }}</p>
-                                    <small class="text-muted">SKU: {{ item.product.id }}</small>
+                                    {% if item.variant %}
+                                        <small class="text-muted">
+                                            {% for key, value in item.variant.attributes.items %}{% if not forloop.first %} / {% endif %}{{ key|title }}: {{ value }}{% endfor %}
+                                        </small>
+                                        <br>
+                                    {% endif %}
+                                    <small class="text-muted">SKU: {% if item.variant %}{{ item.variant.sku }}{% else %}{{ item.product.sku }}{% endif %}</small>
                                 </div>
                             </div>
                         </td>
-                        <td class="price-cell">₹{{ item.product.price }}</td>
+                        <td class="price-cell">₹{{ item.current_price }}</td>
                         <td class="quantity-cell">
                             <div class="quantity-input">
                                 <button class="qty-btn qty-minus" data-item-id="{{ item.id }}">-</button>
@@ -52,7 +58,7 @@
                                 <button class="qty-btn qty-plus" data-item-id="{{ item.id }}">+</button>
                             </div>
                         </td>
-                        <td class="subtotal-cell">₹{{ item.product.price|mul:item.quantity }}</td>
+                        <td class="subtotal-cell">₹{{ item.current_price|mul:item.quantity }}</td>
                         <td class="action-cell">
                             <button class="btn btn-sm btn-danger remove-item" data-item-id="{{ item.id }}">
                                 <i class="fas fa-trash"></i> Remove

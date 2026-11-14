@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import razorpay
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
@@ -18,7 +19,7 @@ import logging
 from django.db import DatabaseError, transaction
 
 from cart.models import Cart
-from products.models import Inventory, Product
+from products.models import Inventory, Product, ProductVariant, VariantInventory
 from accounts.models import Address
 from rewards.utils import (
     calculate_reward_adjustment,
@@ -27,6 +28,14 @@ from rewards.utils import (
 )
 
 from .models import Order, OrderItem, UpiPaymentSubmission
+from .services import (
+    complete_order_stock,
+    create_order_item,
+    effective_line_price,
+    regular_line_price,
+    release_order_stock,
+    reserve_order_stock,
+)
 from .serializers import OrderItemSerializer, OrderSerializer
 from django.urls import reverse
 
@@ -91,13 +100,13 @@ def order_detail_view(request, order_id):
 def checkout_view(request):
     """First step of checkout - review cart items"""
     cart, _ = Cart.objects.get_or_create(user=request.user)
-    items = cart.items.all().select_related('product')
+    items = cart.items.all().select_related("product", "variant")
     
     if not items.exists():
         messages.warning(request, 'Your cart is empty. Please add items before checkout.')
         return redirect('cart_detail')
     
-    subtotal = sum(item.product.price * item.quantity for item in items)
+    subtotal = sum(effective_line_price(item.product, item.variant) * item.quantity for item in items)
     
     # Store checkout session data
     request.session['checkout_subtotal'] = str(subtotal)
@@ -247,24 +256,16 @@ def checkout_payment_view(request):
         payment_form = PaymentMethodForm()
         coupon_form = CouponForm()
     
-    # Recompute subtotals from the cart as the authoritative source.
-    try:
-        cart, _ = Cart.objects.get_or_create(user=request.user)
-        items = cart.items.select_related('product').all()
-        # discounted subtotal uses product.price
-        discounted_subtotal = sum((item.product.price or Decimal(0)) * item.quantity for item in items)
-        # original subtotal uses compare_price when it's greater than price
-        original_subtotal = Decimal(0)
-        for item in items:
-            p = item.product
-            try:
-                orig_price = p.compare_price if (p.compare_price and p.compare_price > p.price) else p.price
-            except Exception:
-                orig_price = p.price
-            original_subtotal += (orig_price or Decimal(0)) * item.quantity
-    except Exception:
-        discounted_subtotal = Decimal(0)
-        original_subtotal = Decimal(0)
+    cart, _ = Cart.objects.get_or_create(user=request.user)
+    items = cart.items.select_related("product", "variant").all()
+    discounted_subtotal = sum(
+        effective_line_price(item.product, item.variant) * item.quantity
+        for item in items
+    )
+    original_subtotal = sum(
+        regular_line_price(item.product, item.variant) * item.quantity
+        for item in items
+    )
 
     delivery_charge = Decimal(get_delivery_charge(delivery_method))
     reward_claim = get_available_claim_for_checkout(request.user)
@@ -278,10 +279,7 @@ def checkout_payment_view(request):
     # Compute discount amount/percent from the two subtotals
     discount_amount = (original_subtotal - discounted_subtotal) if original_subtotal > discounted_subtotal else Decimal(0)
     if original_subtotal and original_subtotal > 0:
-        try:
-            discount_percent = (discount_amount / original_subtotal) * Decimal(100)
-        except Exception:
-            discount_percent = Decimal(0)
+        discount_percent = (discount_amount / original_subtotal) * Decimal(100)
     else:
         discount_percent = Decimal(0)
 
@@ -321,7 +319,7 @@ def checkout_review_view(request):
     
     # Get cart and address
     cart = get_object_or_404(Cart, user=user)
-    cart_items = cart.items.all().select_related('product')
+    cart_items = cart.items.all().select_related("product", "variant")
     address = get_object_or_404(Address, id=address_id, user=user)
     
     if not cart_items.exists():
@@ -329,15 +327,14 @@ def checkout_review_view(request):
         return redirect('cart_detail')
     
     # Calculate totals: use product.compare_price as original where applicable
-    discounted_subtotal = sum(item.product.price * item.quantity for item in cart_items)
-    original_subtotal = Decimal(0)
-    for item in cart_items:
-        p = item.product
-        try:
-            orig_price = p.compare_price if (p.compare_price and p.compare_price > p.price) else p.price
-        except Exception:
-            orig_price = p.price
-        original_subtotal += (orig_price or Decimal(0)) * item.quantity
+    discounted_subtotal = sum(
+        effective_line_price(item.product, item.variant) * item.quantity
+        for item in cart_items
+    )
+    original_subtotal = sum(
+        regular_line_price(item.product, item.variant) * item.quantity
+        for item in cart_items
+    )
 
     delivery_charge = get_delivery_charge(delivery_method)
     discount_amount = (original_subtotal - discounted_subtotal) if original_subtotal > discounted_subtotal else Decimal(0)
@@ -353,7 +350,10 @@ def checkout_review_view(request):
     
     if request.method == 'POST':
         with transaction.atomic():
-            cart_items = list(cart.items.select_for_update().order_by("product_id"))
+            cart_items = list(
+                cart.items.select_for_update()
+                .order_by("product_id", "variant_id", "id")
+            )
             if not cart_items:
                 messages.warning(request, 'Your cart is empty.')
                 return redirect('cart_detail')
@@ -361,19 +361,49 @@ def checkout_review_view(request):
                 messages.error(request, f'Each quantity must be between 1 and {MAX_ORDER_QUANTITY}.')
                 return redirect('checkout_review')
 
-            product_ids = [item.product_id for item in cart_items]
+            product_ids = sorted({item.product_id for item in cart_items})
             locked_products = {
                 product.pk: product
                 for product in Product.objects.select_for_update().filter(pk__in=product_ids).order_by("pk")
             }
+            variant_ids = sorted({item.variant_id for item in cart_items if item.variant_id})
+            locked_variants = {
+                variant.pk: variant
+                for variant in ProductVariant.objects.select_for_update()
+                .filter(pk__in=variant_ids)
+                .order_by("product_id", "pk")
+            }
+            simple_product_ids = [
+                item.product_id for item in cart_items if item.variant_id is None
+            ]
             locked_inventory = {
                 inventory.product_id: inventory
                 for inventory in Inventory.objects.select_for_update()
-                .filter(product_id__in=product_ids)
+                .filter(product_id__in=simple_product_ids)
                 .order_by("product_id")
             }
+            locked_variant_inventory = {
+                inventory.variant_id: inventory
+                for inventory in VariantInventory.objects.select_for_update()
+                .filter(variant_id__in=variant_ids)
+                .order_by("variant_id")
+            }
             for cart_item in cart_items:
-                inventory = locked_inventory.get(cart_item.product_id)
+                product = locked_products.get(cart_item.product_id)
+                if product is None or not product.is_active or product.review_status != "approved":
+                    messages.error(request, "One or more products are no longer available.")
+                    return redirect("checkout_review")
+                if cart_item.variant_id:
+                    variant = locked_variants.get(cart_item.variant_id)
+                    if variant is None or variant.product_id != product.pk or not variant.is_active:
+                        messages.error(request, "A selected product variant is no longer available.")
+                        return redirect("checkout_review")
+                    inventory = locked_variant_inventory.get(variant.pk)
+                else:
+                    if product.variants.exists():
+                        messages.error(request, f"Select a variant for {product.name}.")
+                        return redirect("checkout_review")
+                    inventory = locked_inventory.get(product.pk)
                 if inventory is None or inventory.stock_quantity < cart_item.quantity:
                     messages.error(
                         request,
@@ -385,16 +415,9 @@ def checkout_review_view(request):
             original_subtotal = Decimal("0.00")
             for cart_item in cart_items:
                 product = locked_products[cart_item.product_id]
-                discounted_subtotal += product.price * cart_item.quantity
-                original_price = (
-                    product.compare_price
-                    if product.compare_price and product.compare_price > product.price
-                    else product.price
-                )
-                original_subtotal += original_price * cart_item.quantity
-                inventory = locked_inventory[product.pk]
-                inventory.stock_quantity -= cart_item.quantity
-                inventory.save(update_fields=["stock_quantity", "last_updated"])
+                variant = locked_variants.get(cart_item.variant_id) if cart_item.variant_id else None
+                discounted_subtotal += effective_line_price(product, variant) * cart_item.quantity
+                original_subtotal += regular_line_price(product, variant) * cart_item.quantity
 
             delivery_charge = get_delivery_charge(delivery_method)
             discount_amount = max(original_subtotal - discounted_subtotal, Decimal("0.00"))
@@ -434,7 +457,7 @@ def checkout_review_view(request):
                 payment_method=payment_method,
                 coupon_code=coupon_code,
                 status='pending',
-                inventory_reserved=True,
+                inventory_reserved=False,
                 is_paid=False,
             )
 
@@ -442,13 +465,16 @@ def checkout_review_view(request):
                 mark_reward_claim_used_for_order(order)
 
             for cart_item in cart_items:
-                OrderItem.objects.create(
+                product = locked_products[cart_item.product_id]
+                variant = locked_variants.get(cart_item.variant_id) if cart_item.variant_id else None
+                create_order_item(
                     order=order,
-                    product=locked_products[cart_item.product_id],
+                    product=product,
+                    variant=variant,
                     quantity=cart_item.quantity,
-                    price=locked_products[cart_item.product_id].price,
                 )
 
+            reserve_order_stock(order, actor=user)
             cart.items.all().delete()
             for key in list(request.session.keys()):
                 if key.startswith('checkout_'):
@@ -559,22 +585,32 @@ def upi_submit_view(request, order_id):
         messages.error(request, 'UPI ID not configured. Contact the site administrator.')
         return redirect('payment_page', order_id=order.id)
 
-    # Use server-side amount to avoid manipulation
-    amount = order.total_amount
+    with transaction.atomic():
+        order = Order.objects.select_for_update().get(pk=order.pk, user=request.user)
+        if order.is_paid or order.status == "cancelled":
+            messages.error(request, "This order is not available for UPI payment.")
+            return redirect("order_detail", order_id=order.pk)
+        if order.upi_submissions.filter(status="pending").exists():
+            messages.info(request, "A UPI payment is already awaiting verification.")
+            return redirect("order_detail", order_id=order.pk)
+        if not order.inventory_reserved:
+            try:
+                reserve_order_stock(order, actor=request.user)
+            except ValidationError:
+                messages.error(request, "The order no longer has enough stock. Please place a new order.")
+                return redirect("order_detail", order_id=order.pk)
 
-    submission = UpiPaymentSubmission.objects.create(
-        order=order,
-        upi_id=upi_id,
-        amount=amount,
-        utr=utr or None,
-        receipt=receipt or None,
-        status='pending',
-    )
-
-    # Mark order status to pending_verification and set provider
-    order.status = 'pending_verification'
-    order.payment_provider = 'manual_upi'
-    order.save(update_fields=['status', 'payment_provider', 'updated_at'])
+        UpiPaymentSubmission.objects.create(
+            order=order,
+            upi_id=upi_id,
+            amount=order.total_amount,
+            utr=utr or None,
+            receipt=receipt or None,
+            status="pending",
+        )
+        order.status = "pending_verification"
+        order.payment_provider = "manual_upi"
+        order.save(update_fields=["status", "payment_provider", "updated_at"])
 
     messages.success(request, 'UPI payment submitted. It will be verified by admin shortly.')
     return redirect('order_detail', order_id=order.id)
@@ -673,6 +709,7 @@ def verify_payment(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        complete_order_stock(order, actor=request.user)
         order.razorpay_payment_id = razorpay_payment_id
         order.razorpay_signature = razorpay_signature
         order.is_paid = True
@@ -690,7 +727,7 @@ def verify_payment(request):
 def payment_webhook(request):
     payload = request.data
     event = payload.get("event")
-    if event != "payment.captured":
+    if event not in {"payment.captured", "payment.failed"}:
         return Response({"detail": "Ignored event."}, status=status.HTTP_200_OK)
 
     payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
@@ -721,16 +758,33 @@ def payment_webhook(request):
     order = get_object_or_404(Order, razorpay_order_id=order_id)
     with transaction.atomic():
         order = Order.objects.select_for_update().get(pk=order.pk)
+        expected_status = "captured" if event == "payment.captured" else "failed"
         if (
-            payment_entity.get("status") != "captured"
+            payment_entity.get("status") != expected_status
             or payment_entity.get("currency") != "INR"
             or payment_entity.get("amount") != int(order.total_amount * 100)
         ):
             return Response({"detail": "Payment details do not match this order."}, status=status.HTTP_400_BAD_REQUEST)
+        if event == "payment.failed":
+            if order.is_paid:
+                return Response({"detail": "Paid orders cannot be released after a failed payment event."}, status=status.HTTP_400_BAD_REQUEST)
+            release_order_stock(order, reason="payment_rejected")
+            order.inventory_reserved = False
+            order.status = "cancelled"
+            order.cancellation_reason = "PAYMENT_ISSUE"
+            order.cancellation_comment = "Payment provider reported a failed payment."
+            order.cancelled_at = timezone.now()
+            order.save(update_fields=[
+                "status", "cancellation_reason", "cancellation_comment",
+                "cancelled_at", "inventory_reserved", "updated_at",
+            ])
+            return Response({"status": "failed", "order_id": order.pk}, status=status.HTTP_200_OK)
         if order.status == "cancelled":
             return Response({"detail": "Cancelled orders cannot be marked paid."}, status=status.HTTP_400_BAD_REQUEST)
         if order.is_paid and order.razorpay_payment_id != payment_id:
             return Response({"detail": "Order has already been paid."}, status=status.HTTP_400_BAD_REQUEST)
+        if not order.is_paid:
+            complete_order_stock(order)
         order.razorpay_payment_id = payment_id
         order.razorpay_signature = signature or order.razorpay_signature
         order.is_paid = True
@@ -807,11 +861,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if order.inventory_reserved:
-                for item in order.items.all().order_by("product_id"):
-                    inventory = Inventory.objects.select_for_update().filter(product_id=item.product_id).first()
-                    if inventory is not None:
-                        inventory.stock_quantity += item.quantity
-                        inventory.save(update_fields=["stock_quantity", "last_updated"])
+                release_order_stock(order, reason="order_cancelled", actor=request.user)
                 order.inventory_reserved = False
             order.status = "cancelled"
             order.cancellation_reason = reason
@@ -845,7 +895,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             if cart_id:
                 cart = get_object_or_404(Cart, id=cart_id, user=user)
-                cart_items = list(cart.items.select_for_update().order_by("product_id"))
+                cart_items = list(
+                    cart.items.select_for_update().order_by("product_id", "variant_id", "id")
+                )
                 if not cart_items:
                     return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
                 if any(
@@ -856,7 +908,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                         {"detail": f"Cart item quantities must be between 1 and {MAX_ORDER_QUANTITY}."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-                product_ids = [item.product_id for item in cart_items]
+                product_ids = sorted({item.product_id for item in cart_items})
+                variant_ids = sorted({item.variant_id for item in cart_items if item.variant_id})
                 products = {
                     product.pk: product
                     for product in Product.objects.select_for_update().filter(pk__in=product_ids).order_by("pk")
@@ -864,8 +917,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 order_items = [
                     {
                         "product": products[item.product_id],
+                        "variant_id": item.variant_id,
                         "quantity": item.quantity,
-                        "price": products[item.product_id].price,
                     }
                     for item in cart_items
                 ]
@@ -873,18 +926,51 @@ class OrderViewSet(viewsets.ModelViewSet):
                 product = get_object_or_404(
                     Product.objects.select_for_update(),
                     id=product_id,
+                    is_active=True,
+                    review_status="approved",
                 )
-                order_items = [{"product": product, "quantity": quantity, "price": product.price}]
+                variant_id = request.data.get("variant_id")
+                variant_ids = [variant_id] if variant_id else []
+                order_items = [{
+                    "product": product,
+                    "variant_id": variant_id,
+                    "quantity": quantity,
+                }]
                 product_ids = [product.pk]
 
+            variants = {
+                variant.pk: variant
+                for variant in ProductVariant.objects.select_for_update()
+                .filter(pk__in=variant_ids)
+                .order_by("product_id", "pk")
+            }
+            simple_product_ids = [
+                item["product"].pk for item in order_items if not item["variant_id"]
+            ]
             inventory_by_product = {
                 inventory.product_id: inventory
                 for inventory in Inventory.objects.select_for_update()
-                .filter(product_id__in=product_ids)
+                .filter(product_id__in=simple_product_ids)
                 .order_by("product_id")
             }
+            inventory_by_variant = {
+                inventory.variant_id: inventory
+                for inventory in VariantInventory.objects.select_for_update()
+                .filter(variant_id__in=variant_ids)
+                .order_by("variant_id")
+            }
             for item in order_items:
-                inventory = inventory_by_product.get(item["product"].pk)
+                product = item["product"]
+                if not product.is_active or product.review_status != "approved":
+                    return Response({"detail": f"{product.name} is no longer available."}, status=status.HTTP_400_BAD_REQUEST)
+                variant = variants.get(item["variant_id"]) if item["variant_id"] else None
+                if item["variant_id"] and (
+                    variant is None or variant.product_id != product.pk or not variant.is_active
+                ):
+                    return Response({"detail": "The selected variant is unavailable."}, status=status.HTTP_400_BAD_REQUEST)
+                if not variant and product.variants.exists():
+                    return Response({"detail": f"Select a variant for {product.name}."}, status=status.HTTP_400_BAD_REQUEST)
+                inventory = inventory_by_variant.get(variant.pk) if variant else inventory_by_product.get(product.pk)
                 if inventory is None or inventory.stock_quantity < item["quantity"]:
                     return Response(
                         {"detail": f"Insufficient stock for {item['product'].name}."},
@@ -895,16 +981,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             original_subtotal = Decimal("0.00")
             for item in order_items:
                 product = item["product"]
-                discounted_subtotal += product.price * item["quantity"]
-                original_price = (
-                    product.compare_price
-                    if product.compare_price and product.compare_price > product.price
-                    else product.price
-                )
-                original_subtotal += original_price * item["quantity"]
-                inventory = inventory_by_product[product.pk]
-                inventory.stock_quantity -= item["quantity"]
-                inventory.save(update_fields=["stock_quantity", "last_updated"])
+                variant = variants.get(item["variant_id"]) if item["variant_id"] else None
+                discounted_subtotal += effective_line_price(product, variant) * item["quantity"]
+                original_subtotal += regular_line_price(product, variant) * item["quantity"]
 
             total_amount = discounted_subtotal
             order_number = f"ORD-{uuid.uuid4().hex[:10].upper()}"
@@ -918,16 +997,17 @@ class OrderViewSet(viewsets.ModelViewSet):
                 total_amount=total_amount,
                 status="pending",
                 payment_provider="razorpay",
-                inventory_reserved=True,
+                inventory_reserved=False,
                 is_paid=False,
             )
             for item in order_items:
-                OrderItem.objects.create(
+                create_order_item(
                     order=order,
                     product=item["product"],
+                    variant=variants.get(item["variant_id"]) if item["variant_id"] else None,
                     quantity=item["quantity"],
-                    price=item["price"],
                 )
+            reserve_order_stock(order, actor=user)
 
             if razorpay_is_configured():
                 try:
